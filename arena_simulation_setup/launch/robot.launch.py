@@ -79,6 +79,18 @@ def generate_launch_description():
         arguments=[
             ['--dir', ' ', record_data_dir.substitution],
         ],
+        remappings=[
+            # HuNav Agent Manager is launched in the task generator namespace, not the robot namespace.
+            # Without this, the recorder (running in /<namespace>) will subscribe to /<namespace>/human_states
+            # which stays empty.
+            (
+                'human_states',
+                launch.substitutions.PathJoinSubstitution([
+                    task_generator_node.substitution,
+                    'human_states',
+                ]),
+            ),
+        ],
         condition=launch.conditions.IfCondition(PythonExpression(['bool("', record_data_dir.substitution, '")'])),
     )
 
