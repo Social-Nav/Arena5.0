@@ -1,12 +1,12 @@
 [submodule "arena_tools"]
 	path = arena_tools
-	url = https://github.com/voshch/arena-tools.git
+	url = https://github.com/Social-Nav/arena-tools.git
 [submodule "arena_isaac"]
 	path = arena_isaac
 	url = https://github.com/Social-Nav/arena-isaac.git
 [submodule "arena_evaluation"]
 	path = arena_evaluation
-	url = https://github.com/voshch/arena-evaluation.git
+	url = https://github.com/Social-Nav/arena-evaluation.git
 [submodule "arena_robots"]
 	path = arena_robots
-	url = https://github.com/voshch/robots.git
+	url = https://github.com/Social-Nav/robots.git
