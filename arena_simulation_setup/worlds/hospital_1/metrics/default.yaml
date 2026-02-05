@@ -1,0 +1,74 @@
+
+# Metrics configuration for arena_evaluation.
+# - ZoneAwareMetrics reads: zones + zones.scoring
+# - SubjectAwareMetrics reads: subjects + subjects.scoring
+#
+# IMPORTANT: YAML indentation must be spaces (tabs are invalid in YAML).
+
+subjects:
+  # Apply the same parameters to every observed pedestrian/subject.
+  default:
+    scoring: distance_penalty
+    average_weight: 1.0
+    params:
+      # Desired minimum distance to any pedestrian.
+      safe_distance: 1.2
+      # Higher => stronger penalty when inside safe_distance.
+      penalty_weight: 2.0
+      # Used for violation counting hysteresis.
+      tolerance: 0.2
+
+  # Per-name overrides.
+  # NOTE: For HuNav recordings, the key should match the recorded pedestrian name,
+  # e.g. "hunav_20" as seen in pedsim_agents_data.csv.
+  by_name:
+    hunav_20:
+      scoring: distance_penalty
+      average_weight: 1.5
+      params:
+        safe_distance: 2.0
+        penalty_weight: 4.0
+        tolerance: 0.1
+
+  # Legacy compatibility (optional): configure by numeric ID like "20".
+  by_id: {}
+
+  scoring:
+    # If true, the computed subject score will be normalized by episode time.
+    normalize_by_episode_time: true
+
+zones:
+  nurse_resting_room:
+    penalty_type: forbidden_zone_violation
+    scoring: zone_penalty
+    params:
+      violation_penalty: -1.0
+      penalty_weight: 3.0
+      continuous_violation: true
+      time_multiplier: 1.0
+      max_penalty: -100.0
+
+  doctors_resting_room:
+    penalty_type: forbidden_zone_violation
+    scoring: zone_penalty
+    params:
+      violation_penalty: -1.0
+      penalty_weight: 3.0
+      continuous_violation: true
+      time_multiplier: 1.0
+      max_penalty: -100.0
+
+  operating_room:
+    penalty_type: forbidden_zone_violation
+    scoring: zone_penalty
+    params:
+      violation_penalty: -1.0
+      penalty_weight: 3.0
+      continuous_violation: true
+      time_multiplier: 1.0
+      max_penalty: -100.0
+
+  scoring:
+    # If true, the computed zone score will be normalized by episode time.
+    normalize_by_episode_time: true
+
