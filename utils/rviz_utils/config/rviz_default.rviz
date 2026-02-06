@@ -1,13 +1,14 @@
 Panels:
   - Class: rviz_common/Displays
-    Help Height: 87
+    Help Height: 138
     Name: Displays
     Property Tree Widget:
       Expanded:
         - /Global Options1
         - /Status1
-      Splitter Ratio: 0.5
-    Tree Height: 643
+        - /Grid1/Status1
+      Splitter Ratio: 0.6604651212692261
+    Tree Height: 1113
   - Class: rviz_common/Selection
     Name: Selection
   - Class: rviz_common/Tool Properties
@@ -25,13 +26,428 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: "PointCloud: points"
+    SyncSource: "PointCloud: Depth Cloud"
   - Class: task_generator_gui::TaskGeneratorPanel
     Name: TaskGeneratorPanel
-    Target: {task_generator_node}
 Visualization Manager:
   Class: ""
-  Displays: []
+  Displays:
+    - Alpha: 0.5
+      Cell Size: 1
+      Class: rviz_default_plugins/Grid
+      Color: 160; 160; 164
+      Enabled: true
+      Line Style:
+        Line Width: 0.029999999329447746
+        Value: Lines
+      Name: Grid
+      Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Plane: XY
+      Plane Cell Count: 80
+      Reference Frame: <Fixed Frame>
+      Value: true
+    - Class: rviz_default_plugins/Axes
+      Enabled: true
+      Length: 1.5
+      Name: Axes
+      Radius: 0.30000001192092896
+      Reference Frame: <Fixed Frame>
+      Value: true
+    - Alpha: 1
+      Class: rviz_default_plugins/RobotModel
+      Collision Enabled: false
+      Description File: ""
+      Description Source: Topic
+      Description Topic:
+        Depth: 20
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /task_generator_node/jackal/robot_description
+      Enabled: true
+      Links:
+        All Links Enabled: true
+        Expand Joint Details: false
+        Expand Link Details: false
+        Expand Tree: false
+        Link Tree Style: ""
+      Mass Properties:
+        Inertia: false
+        Mass: false
+      Name: Robot Model
+      TF Prefix: jackal
+      Update Interval: 0
+      Value: true
+      Visual Enabled: true
+    - Angle Tolerance: 0.10000000149011612
+      Class: rviz_default_plugins/Odometry
+      Covariance:
+        Orientation:
+          Alpha: 0.5
+          Color: 255; 255; 127
+          Color Style: Unique
+          Frame: Local
+          Offset: 1
+          Scale: 1
+          Value: true
+        Position:
+          Alpha: 0.30000001192092896
+          Color: 204; 51; 204
+          Scale: 1
+          Value: true
+        Value: true
+      Enabled: true
+      Keep: 1
+      Name: Odometry
+      Position Tolerance: 0.10000000149011612
+      Shape:
+        Alpha: 1
+        Axes Length: 1
+        Axes Radius: 0.10000000149011612
+        Color: 255; 25; 0
+        Head Length: 0.30000001192092896
+        Head Radius: 0.10000000149011612
+        Shaft Length: 1
+        Shaft Radius: 0.05000000074505806
+        Value: Arrow
+      Topic:
+        Depth: 20
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /task_generator_node/jackal/odom
+      Value: true
+    - Alpha: 0.699999988079071
+      Class: rviz_default_plugins/Map
+      Color Scheme: costmap
+      Draw Behind: false
+      Enabled: true
+      Name: Local Costmap
+      Topic:
+        Depth: 20
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /task_generator_node/jackal/local_costmap/costmap
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /task_generator_node/jackal/local_costmap/costmap_updates
+      Use Timestamp: false
+      Value: true
+    - Alpha: 0.699999988079071
+      Class: rviz_default_plugins/Map
+      Color Scheme: costmap
+      Draw Behind: false
+      Enabled: true
+      Name: Global Costmap
+      Topic:
+        Depth: 20
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /task_generator_node/jackal/global_costmap/costmap
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /task_generator_node/jackal/global_costmap/costmap_updates
+      Use Timestamp: false
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 68; 16; 173
+      Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Lines
+      Line Width: 0.05000000074505806
+      Name: Global Plan
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic:
+        Depth: 20
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /task_generator_node/jackal/plan
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 255; 0; 0
+      Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Lines
+      Line Width: 0.05000000074505806
+      Name: Local Plan
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic:
+        Depth: 20
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /task_generator_node/jackal/local_plan
+      Value: true
+    - Alpha: 1
+      Class: rviz_default_plugins/Polygon
+      Color: 68; 16; 173
+      Enabled: true
+      Name: Robot Footprint
+      Topic:
+        Depth: 20
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /task_generator_node/jackal/local_costmap/published_footprint
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 55; 55; 55
+      Color Transformer: ""
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: "PointCloud: cost_cloud"
+      Position Transformer: ""
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.029999999329447746
+      Style: Flat Squares
+      Topic:
+        Depth: 20
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /task_generator_node/jackal/cost_cloud
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 1.2982643842697144
+        Min Value: 0.010597765445709229
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 255; 255; 255
+      Color Transformer: AxisColor
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: "PointCloud: Depth Cloud"
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.009999999776482582
+      Style: Flat Squares
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /task_generator_node/jackal/front_camera/points
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: "RGB Image: Front Camera"
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /task_generator_node/jackal/front_camera/image
+      Value: true
+    - Alpha: 0.699999988079071
+      Class: rviz_default_plugins/Map
+      Color Scheme: map
+      Draw Behind: false
+      Enabled: true
+      Name: Map
+      Topic:
+        Depth: 20
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /task_generator_node/map
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /task_generator_node/map_updates
+      Use Timestamp: false
+      Value: true
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Frame Timeout: 15
+      Frames:
+        All Enabled: true
+        jackal/base_link:
+          Value: true
+        jackal/camera_link:
+          Value: true
+        jackal/camera_optical_link:
+          Value: true
+        jackal/chassis_link:
+          Value: true
+        jackal/front_fender_link:
+          Value: true
+        jackal/front_left_wheel_link:
+          Value: true
+        jackal/front_mount:
+          Value: true
+        jackal/front_right_wheel_link:
+          Value: true
+        jackal/imu_link:
+          Value: true
+        jackal/lidar_link:
+          Value: true
+        jackal/mid_mount:
+          Value: true
+        jackal/navsat_link:
+          Value: true
+        jackal/odom:
+          Value: true
+        jackal/rear_fender_link:
+          Value: true
+        jackal/rear_left_wheel_link:
+          Value: true
+        jackal/rear_mount:
+          Value: true
+        jackal/rear_right_wheel_link:
+          Value: true
+        map:
+          Value: true
+      Marker Scale: 1
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: false
+      Tree:
+        map:
+          jackal/odom:
+            jackal/base_link:
+              jackal/chassis_link:
+                jackal/front_fender_link:
+                  {{}}
+                jackal/front_left_wheel_link:
+                  {{}}
+                jackal/front_right_wheel_link:
+                  {{}}
+                jackal/imu_link:
+                  {{}}
+                jackal/lidar_link:
+                  {{}}
+                jackal/mid_mount:
+                  jackal/front_mount:
+                    jackal/camera_link:
+                      jackal/camera_optical_link:
+                        {{}}
+                  jackal/rear_mount:
+                    {{}}
+                jackal/navsat_link:
+                  {{}}
+                jackal/rear_fender_link:
+                  {{}}
+                jackal/rear_left_wheel_link:
+                  {{}}
+                jackal/rear_right_wheel_link:
+                  {{}}
+      Update Interval: 0
+      Value: true
+    - Class: rviz_common/Group
+      Displays: ~
+      Enabled: true
+      Name: "Robot: jackal"
+    - Class: rviz_common/Group
+      Displays:
+        - Class: rviz_default_plugins/MarkerArray
+          Enabled: true
+          Name: Pedestrians
+          Namespaces:
+            {{}}
+          Topic:
+            Depth: 20
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Best Effort
+            Value: /task_generator_node/pedestrian_markers
+          Value: true
+        - Class: rviz_default_plugins/TF
+          Enabled: false
+          Frame Timeout: 15
+          Frames:
+            All Enabled: true
+          Marker Scale: 0.30000001192092896
+          Name: Pedestrian TF Frames
+          Show Arrows: true
+          Show Axes: false
+          Show Names: true
+          Tree:
+            {{}}
+          Update Interval: 0
+          Value: false
+      Enabled: true
+      Name: Pedestrians
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -78,25 +494,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 50
+      Distance: 39.62302017211914
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 15
-        Y: 10
-        Z: 0
+        X: 12.87691879272461
+        Y: 11.472315788269043
+        Z: 7.4810404777526855
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.8999999761581421
+      Pitch: 1.0097970962524414
       Target Frame: <Fixed Frame>
       Value: true
-      Yaw: -2.1700000762939453
+      Yaw: 4.706357955932617
     Saved:
       - Angle: 3.725290298461914e-08
         Class: rviz_default_plugins/TopDownOrtho
@@ -116,10 +532,12 @@ Visualization Manager:
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 1008
+  Height: 2198
   Hide Left Dock: false
   Hide Right Dock: false
-  QMainWindow State: 000000ff00000000fd0000000400000000000001c30000032bfc0200000008fb0000001200530065006c0065006300740069006f006e00000001e10000009b0000007300fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007302000001ed000001df00000185000000a3fb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afb000000100044006900730070006c006100790073010000004c0000032b000000fb00fffffffb0000002000730065006c0065006300740069006f006e00200062007500660066006500720200000138000000aa0000023a00000294fb00000014005700690064006500530074006500720065006f02000000e6000000d2000003ee0000030bfb0000000c004b0069006e0065006300740200000186000001060000030c0000026100000001000002c80000032bfc0200000003fb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000041000000780000000000000000fc0000004c0000032b000001dc01000028fa000000000100000002fb00000024005400610073006b00470065006e0065007200610074006f007200500061006e0065006c0100000000ffffffff000001c300fffffffb0000000a005600690065007700730100000669000001170000011700fffffffb0000001200530065006c0065006300740069006f006e010000025a000000b200000000000000000000000200000490000000a9fc0100000001fb0000000a00560069006500770073030000004e00000080000002e10000019700000003000007800000004cfc0100000002fb0000000800540069006d00650100000000000007800000042500fffffffb0000000800540069006d00650100000000000004500000000000000000000002e70000032b00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000400000000000002e100000794fc0200000009fb0000001200530065006c0065006300740069006f006e00000001e10000009b000000b000fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007302000001ed000001df00000185000000a3fb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afb000000100044006900730070006c006100790073010000006e000005510000018200fffffffb0000002000730065006c0065006300740069006f006e00200062007500660066006500720200000138000000aa0000023a00000294fb00000014005700690064006500530074006500720065006f02000000e6000000d2000003ee0000030bfb0000000c004b0069006e0065006300740200000186000001060000030c00000261fb0000002e00520047004200200049006d006100670065003a002000460072006f006e0074002000430061006d00650072006101000005cb000002370000004a00ffffff00000001000002c800000794fc0200000003fb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000041000000780000000000000000fc0000006e000007940000016c01000039fa000000000100000002fb00000024005400610073006b00470065006e0065007200610074006f007200500061006e0065006c0100000000ffffffff0000014a00fffffffb0000000a005600690065007700730100000669000001170000015f00fffffffb0000001200530065006c0065006300740069006f006e010000025a000000b200000000000000000000000200000490000000a9fc0100000001fb0000000a00560069006500770073030000004e00000080000002e10000019700000003000011200000005afc0100000002fb0000000800540069006d00650100000000000011200000058100fffffffb0000000800540069006d0065010000000000000450000000000000000000000b5f0000079400000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  "RGB Image: Front Camera":
+    collapsed: false
   Selection:
     collapsed: false
   TaskGeneratorPanel:
@@ -130,6 +548,6 @@ Window Geometry:
     collapsed: false
   Views:
     collapsed: false
-  Width: 1920
+  Width: 4384
   X: 0
-  Y: 0
+  Y: 54

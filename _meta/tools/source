@@ -9,7 +9,8 @@ else
     shell='bash'
     THIS_FILE="${BASH_SOURCE[0]}"
 fi
-SOURCE_FILE=$(realpath "$THIS_FILE")
+
+SOURCE_FILE=$(realpath -s "$THIS_FILE")
 export SOURCE_FILE
 export shell
 
@@ -23,7 +24,8 @@ if [ "$current_stack" != "unlimited" ] && [ "$current_stack" -lt 65536 ]; then
 fi
 unset current_stack
 
-ARENA_WS_DIR="${ARENA_WS_DIR:-$(pwd)}"
+# ARENA_WS_DIR="${ARENA_WS_DIR:-$(pwd)}"
+ARENA_WS_DIR="${ARENA_WS_DIR:-$(dirname "$SOURCE_FILE")}"
 
 export ARENA_WS_DIR
 export ARENA_DIR="$ARENA_WS_DIR/src/Arena"
