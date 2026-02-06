@@ -146,90 +146,90 @@ class ConfigFileGenerator(Node):
     def create_config(self) -> str:
         default_file = self._read_default_file()
 
-        # cache
-        self.topics = self.get_topic_names_and_types()
+        # # cache
+        # self.topics = self.get_topic_names_and_types()
 
-        displays = []
+        # displays = []
 
-        # Add the map display
-        displays.append({
-            'Class': 'rviz_default_plugins/Map',
-            'Enabled': True,
-            'Name': 'Map',
-            'Topic': {
-                'Value': os.path.join(self._TASKGEN_NODE, 'map'),
-                'Depth': 20,
-                'History Policy': 'Keep Last',
-                'Reliability Policy': 'Reliable',
-                'Durability Policy': 'Transient Local',
-            },
-            'Use Timestamp': False,
-            'Alpha': 0.7
-        })
+        # # Add the map display
+        # displays.append({
+        #     'Class': 'rviz_default_plugins/Map',
+        #     'Enabled': True,
+        #     'Name': 'Map',
+        #     'Topic': {
+        #         'Value': os.path.join(self._TASKGEN_NODE, 'map'),
+        #         'Depth': 20,
+        #         'History Policy': 'Keep Last',
+        #         'Reliability Policy': 'Reliable',
+        #         'Durability Policy': 'Transient Local',
+        #     },
+        #     'Use Timestamp': False,
+        #     'Alpha': 0.7
+        # })
 
-        # Add TF display
-        displays.append({
-            'Class': 'rviz_default_plugins/TF',
-            'Enabled': True,
-            'Name': 'TF',
-            'Frame Timeout': 15,
-            'Marker Scale': 1.0,
-            'Show Arrows': True,
-            'Show Axes': True,
-            'Show Names': False
-        })
+        # # Add TF display
+        # displays.append({
+        #     'Class': 'rviz_default_plugins/TF',
+        #     'Enabled': True,
+        #     'Name': 'TF',
+        #     'Frame Timeout': 15,
+        #     'Marker Scale': 1.0,
+        #     'Show Arrows': True,
+        #     'Show Axes': True,
+        #     'Show Names': False
+        # })
 
-        published_topics = [topic[0] for topic in self.get_topic_names_and_types()]
+        # published_topics = [topic[0] for topic in self.get_topic_names_and_types()]
 
-        for robot_name in self.robot_names:
-            robot_group = self._create_robot_group(robot_name)
-            displays.append(robot_group)
+        # for robot_name in self.robot_names:
+        #     robot_group = self._create_robot_group(robot_name)
+        #     displays.append(robot_group)
 
-        # HUNAVSIM: pedestrian group
-        pedestrian_group = self._create_pedestrian_group()
-        displays.append(pedestrian_group)
+        # # HUNAVSIM: pedestrian group
+        # pedestrian_group = self._create_pedestrian_group()
+        # displays.append(pedestrian_group)
 
-        # PedSim configuration - commented out but kept for future use
+        # # PedSim configuration - commented out but kept for future use
+        # # try:
+        # #     if not self.has_parameter('pedsim'):
+        # #         self.declare_parameter('pedsim', False)
+        # #     if self.get_parameter('pedsim').value:
+        # #         displays.append(Config.TRACKED_PERSONS)
+        # #         displays.append(Config.TRACKED_GROUPS)
+        # #         displays.append(Config.PEDSIM_WALLS)
+        # #         displays.append(Config.PEDSIM_WAYPOINTS)
+        # # except Exception as e:
+        # #     self.get_logger().warn(f"Error checking pedsim parameter: {e}")
+
+        # # Set the default view to Orbit (instead of TopDownOrtho)
+
+        # python_yaw: float = 3.8
         # try:
-        #     if not self.has_parameter('pedsim'):
-        #         self.declare_parameter('pedsim', False)
-        #     if self.get_parameter('pedsim').value:
-        #         displays.append(Config.TRACKED_PERSONS)
-        #         displays.append(Config.TRACKED_GROUPS)
-        #         displays.append(Config.PEDSIM_WALLS)
-        #         displays.append(Config.PEDSIM_WAYPOINTS)
-        # except Exception as e:
-        #     self.get_logger().warn(f"Error checking pedsim parameter: {e}")
+        #     python_yaw = sum(
+        #         2 * (i % 2 - 0.5) * float(d) / 10**i
+        #         for i, d
+        #         in enumerate(sys.version.split(' ', 1)[0].split('.'))
+        #     )  # i am going insane
+        # except BaseException:
+        #     pass
 
-        # Set the default view to Orbit (instead of TopDownOrtho)
+        # default_file["Visualization Manager"]["Views"]["Current"] = {
+        #     "Class": "rviz_default_plugins/Orbit",
+        #     "Distance": 50.0,
+        #     "Focal Point": {
+        #         "X": 15.0 + self._origin[0],
+        #         "Y": 10.0 + self._origin[1],
+        #         "Z": 0.0 + self._origin[2],
+        #     },
+        #     "Name": "Current View",
+        #     "Near Clip Distance": 0.01,
+        #     "Pitch": 0.9,
+        #     "Target Frame": "<Fixed Frame>",
+        #     "Value": True,
+        #     "Yaw": python_yaw
+        # }
 
-        python_yaw: float = 3.8
-        try:
-            python_yaw = sum(
-                2 * (i % 2 - 0.5) * float(d) / 10**i
-                for i, d
-                in enumerate(sys.version.split(' ', 1)[0].split('.'))
-            )  # i am going insane
-        except BaseException:
-            pass
-
-        default_file["Visualization Manager"]["Views"]["Current"] = {
-            "Class": "rviz_default_plugins/Orbit",
-            "Distance": 50.0,
-            "Focal Point": {
-                "X": 15.0 + self._origin[0],
-                "Y": 10.0 + self._origin[1],
-                "Z": 0.0 + self._origin[2],
-            },
-            "Name": "Current View",
-            "Near Clip Distance": 0.01,
-            "Pitch": 0.9,
-            "Target Frame": "<Fixed Frame>",
-            "Value": True,
-            "Yaw": python_yaw
-        }
-
-        default_file["Visualization Manager"]["Displays"] = displays
+        # default_file["Visualization Manager"]["Displays"] = displays
 
         file_path = self._tmp_config_file(default_file)
         self.get_logger().info(f'created config file at {file_path}')
