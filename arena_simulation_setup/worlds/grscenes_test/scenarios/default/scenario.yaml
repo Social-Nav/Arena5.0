@@ -1,0 +1,53 @@
+# GRScenes Test Scenario - Default
+#
+# Scene bounds (after scale 0.01):
+#   X: [-5.03, 7.32]   (width ~12.35 m)
+#   Y: [-9.05,  1.44]  (depth ~10.49 m)
+#   Z:  0.0  (floor)
+#
+# Coordinate guide (all in meters, Z=0):
+#   [1.0, -4.0]   scene center
+#   [5.0, -3.0]   right side, near front
+#   [-2.0, -3.5]  left side, near front
+#   [3.0, -7.0]   right side, back
+#   [-1.5, -7.5]  left side, back
+#   [1.0, -8.0]   center, back wall
+#
+# pose: [x, y, yaw_degrees]
+# waypoints: list of [x, y, yaw_degrees]  (yaw is ignored by hunav, kept for compat)
+# model: any name from arena_models (used for visual only)
+# velocity / desired_velocity: m/s (optional, default 0.8)
+
+dynamic:
+  # Pedestrian 1: walks across the room front-to-back
+  - name: hunav_1
+    model: female_adult_business_02
+    pose: [-1.18678, -1.65354, 180.0]
+    velocity: 0.8
+    desired_velocity: 1.0
+    waypoints:
+      # - [1.0, -8.0, 0.0]
+      # - [1.0, -3.0, 180.0]
+      - [-3.04318, -1.40611, -90]
+      - [-2.8337, -3.60197, 0.0]
+      - [0.31431, -3.60197, 0.0]
+
+  # # Pedestrian 2: walks side-to-side
+  # - name: hunav_2
+  #   model: male_adult_construction_01
+  #   pose: [-2.0, -5.5, 90.0]
+  #   velocity: 0.8
+  #   desired_velocity: 1.0
+  #   waypoints:
+  #     - [5.0, -5.5, 270.0]
+  #     - [-2.0, -5.5, 90.0]
+
+  # # Pedestrian 3: diagonal path
+  # - name: hunav_3
+  #   model: female_adult_medical_01
+  #   pose: [-1.5, -7.5, 45.0]
+  #   velocity: 0.8
+  #   desired_velocity: 0.9
+  #   waypoints:
+  #     - [4.0, -2.5, 225.0]
+  #     - [-1.5, -7.5, 45.0]
