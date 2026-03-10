@@ -19,10 +19,11 @@
 # velocity / desired_velocity: m/s (optional, default 0.8)
 
 dynamic:
-  # Pedestrian 1: walks across the room front-to-back
+  # Pedestrian 1:
   - name: hunav_1
     model: female_adult_business_02
     pose: [-1.18678, -1.65354, 180.0]
+    behavior_tree: BTRegularNav.xml   # use standard nav BT
     velocity: 0.8
     desired_velocity: 1.0
     waypoints:
@@ -30,19 +31,20 @@ dynamic:
       # - [1.0, -3.0, 180.0]
       - [-3.04318, -1.40611, -90]
       - [-2.8337, -3.60197, 0.0]
-      - [0.31431, -3.60197, 0.0]
+      - [3.76094, -3.70353, 0.0]
+      - [3.85088, -0.63728, 0.0]
 
-  # # Pedestrian 2: walks side-to-side
-  # - name: hunav_2
-  #   model: male_adult_construction_01
-  #   pose: [-2.0, -5.5, 90.0]
-  #   velocity: 0.8
-  #   desired_velocity: 1.0
-  #   waypoints:
-  #     - [5.0, -5.5, 270.0]
-  #     - [-2.0, -5.5, 90.0]
+  # Pedestrian 2
+  - name: hunav_2
+    model: male_adult_construction_01
+    pose: [6.20239, -3.55329, 180.0]
+    behavior_tree: BTRegularNav.xml   # use standard nav BT
+    velocity: 0.8
+    desired_velocity: 1.0
+    waypoints:
+      - [-2.40285, -7.57357, 180.0]
 
-  # # Pedestrian 3: diagonal path
+  # # Pedestrian 3:
   # - name: hunav_3
   #   model: female_adult_medical_01
   #   pose: [-1.5, -7.5, 45.0]
