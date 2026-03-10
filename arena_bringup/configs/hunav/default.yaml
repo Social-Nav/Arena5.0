@@ -13,7 +13,7 @@ init_pose:
 behavior:
   type: 1 # hunav_msgs::msg::BEH_REGULAR
   configuration: 0
-  goal_force_factor: 10.0        # was 1.0  — F_goal_max = 10*0.8/0.5 = 16 N (must beat obstacle sum)
-  obstacle_force_factor: 2.0     # was 11000 — 8 hits at door: 8*2*e^{-0.75} ≈ 7.5 N < goal (16 N)
-  social_force_factor: 5.0       # was 120.0 — official isaac wrapper default
+  goal_force_factor: 10.0        # was 1.0  
+  obstacle_force_factor: 2.0     # was 11000 
+  social_force_factor: 5.0       # was 120.0 
   other_force_factor: 20.0
