@@ -3,8 +3,8 @@ group_id: -1
 skin: 0
 max_vel: 0.8
 radius: 0.3
-goal_radius: 2.0
-cyclic_goals: true
+goal_radius: 0.2
+cyclic_goals: false
 init_pose:
   x: 0.0
   y: 0.0
@@ -13,7 +13,7 @@ init_pose:
 behavior:
   type: 1 # hunav_msgs::msg::BEH_REGULAR
   configuration: 0
-  goal_force_factor: 1.0
-  obstacle_force_factor: 11000.0
-  social_force_factor: 120.0
+  goal_force_factor: 10.0        # was 1.0  
+  obstacle_force_factor: 2.0     # was 11000 
+  social_force_factor: 5.0       # was 120.0 
   other_force_factor: 20.0

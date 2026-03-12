@@ -31,6 +31,7 @@ from isaacsim_msgs.msg import (
 from isaacsim_msgs.srv import (
     DeletePrims,
     EditPrims,
+    LoadUsdScene,
     NavigatePedestrians,
     SpawnDoors,
     SpawnElevators,
@@ -86,6 +87,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
             DeletePedestrians=self.node.create_client_wrapper(DeletePrims, "/isaac/DeletePedestrians"),
             DeletePrims=self.node.create_client_wrapper(DeletePrims, "/isaac/DeletePrims"),
             EditPrims=self.node.create_client_wrapper(EditPrims, "/isaac/EditPrims"),
+            LoadUsdScene=self.node.create_client_wrapper(LoadUsdScene, "/isaac/LoadUsdScene"),
             NavigatePedestrians=self.node.create_client_wrapper(NavigatePedestrians, "/isaac/NavigatePedestrians"),
             SpawnDoors=self.node.create_client_wrapper(SpawnDoors, "/isaac/SpawnDoors"),
             SpawnFloors=self.node.create_client_wrapper(SpawnFloors, "/isaac/SpawnFloors"),
@@ -535,6 +537,65 @@ class IsaacSimulator(BaseSim, NodeInterface):
         )
 
         self._logger.info("All service clients initialized and available.")
+
+    async def load_usd_scene(
+        self,
+        usd_path: str,
+        scene_prim_path: str = "/World/Scene",
+        scale: float = 1.0,
+        position: typing.Optional[list] = None,
+        orientation: typing.Optional[list] = None,
+        add_colliders: bool = True,
+        disable_collision_cooking: bool = True,
+    ) -> bool:
+        """
+        Load a complete USD scene (e.g., GRScenes) into Isaac Sim.
+
+        Args:
+            usd_path: Absolute path to the USD file
+            scene_prim_path: Target prim path in the scene hierarchy
+            scale: Scale factor for the scene
+            position: Position [x, y, z]
+            orientation: Orientation quaternion [x, y, z, w]
+            add_colliders: Whether to add physics colliders
+            disable_collision_cooking: Disable cooking for faster loading
+
+        Returns:
+            bool: True if scene loaded successfully
+        """
+        self._logger.info(f"Loading USD scene: {usd_path}")
+
+        req = LoadUsdScene.Request()
+        req.usd_path = usd_path
+        req.scene_prim_path = scene_prim_path
+        req.scale = float(scale)
+        if position is None:  
+            req.position = [0.0, 0.0, 0.0]  
+        else:  
+            req.position = position  
+        if orientation is None:  
+            req.orientation = [0.0, 0.0, 0.0, 1.0]  
+        else:  
+            req.orientation = orientation  
+        req.add_colliders = add_colliders
+        req.disable_collision_cooking = disable_collision_cooking
+
+        try:
+            response = await self._clients.LoadUsdScene.call_timeout(req, timeout_sec=120.0)
+            if response is None:
+                self._logger.error("LoadUsdScene service timed out")
+                return False
+
+            if response.success:
+                self._logger.info(f"USD scene loaded: {response.scene_prim_path}")
+                return True
+            else:
+                self._logger.error(f"Failed to load USD scene: {response.message}")
+                return False
+
+        except Exception as e:
+            self._logger.error(f"Exception loading USD scene: {e}\n{traceback.format_exc()}")
+            return False
 
     @classmethod
     async def create(cls, *args, namespace, **kwargs):

@@ -209,7 +209,7 @@ class ClientWrapper(typing.Generic[ServiceT]):
         if timeout_sec is None:
             timeout_sec = self._timeout
         res = await AsyncUtil.timeout(
-            self._client.call_async(request),
+            self._node.await_ros(self._client.call_async(request)),
             timeout_sec=timeout_sec
         )
         if res is None:
