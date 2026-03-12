@@ -36,8 +36,10 @@ Scene IDs look like: `MV4AFHQKTKJZ2AABAAAAADQ8_usd`
 
 ## 2. Set the USD Scene Path in `world.yaml`
 
-Open [`world.yaml`](world.yaml) and update the `path` field to point to your
+Open [`world.yaml`](arena_simulation_setup/worlds/grscenes_test/world.yaml) and update the `path` field to point to your
 local copy of the GRScenes dataset:
+
+> **Note:** This README is at the repo root. The referenced `world.yaml` is located under `arena_simulation_setup/worlds/grscenes_test/`. Unless otherwise specified, commands and paths assume your working directory is the repo root.
 
 ```yaml
 world_type: "usd"

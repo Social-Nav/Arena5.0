@@ -543,8 +543,8 @@ class IsaacSimulator(BaseSim, NodeInterface):
         usd_path: str,
         scene_prim_path: str = "/World/Scene",
         scale: float = 1.0,
-        position: list = None,
-        orientation: list = None,
+        position: typing.Optional[list] = None,
+        orientation: typing.Optional[list] = None,
         add_colliders: bool = True,
         disable_collision_cooking: bool = True,
     ) -> bool:
@@ -569,8 +569,14 @@ class IsaacSimulator(BaseSim, NodeInterface):
         req.usd_path = usd_path
         req.scene_prim_path = scene_prim_path
         req.scale = float(scale)
-        req.position = position or [0.0, 0.0, 0.0]
-        req.orientation = orientation or [0.0, 0.0, 0.0, 1.0]
+        if position is None:  
+            req.position = [0.0, 0.0, 0.0]  
+        else:  
+            req.position = position  
+        if orientation is None:  
+            req.orientation = [0.0, 0.0, 0.0, 1.0]  
+        else:  
+            req.orientation = orientation  
         req.add_colliders = add_colliders
         req.disable_collision_cooking = disable_collision_cooking
 
