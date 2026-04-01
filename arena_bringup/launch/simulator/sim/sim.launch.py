@@ -22,6 +22,12 @@ def generate_launch_description():
         name='headless',
         default_value='False',
     )
+    save_data = LaunchArgument(
+        name='save_data',
+        default_value='false',
+        choices=['true', 'false'],
+        description='Enable VLN dataset logging'
+    )
 
     # TODO temporary
     world = LaunchArgument(
@@ -59,6 +65,7 @@ def generate_launch_description():
             ),
             launch_arguments={
                 'use_sim_time': use_sim_time.substitution,
+                'save_data': save_data.substitution,
                 # 'headless': headless.substitution
             }.items(),
         )

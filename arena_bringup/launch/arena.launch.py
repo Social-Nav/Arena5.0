@@ -116,6 +116,12 @@ def generate_launch_description():
         default_value='False',
         description='Enable debug features'
     )
+    save_data = LaunchArgument(
+        name='save_data',
+        default_value='false',
+        choices=['true', 'false'],
+        description='Enable VLN dataset logging'
+    )
     train_config = LaunchArgument(
         name='train_config',
         default_value='',
@@ -234,6 +240,7 @@ def generate_launch_description():
                     **world.dict,
                     **record_data_dir.dict,
                     **debug.dict,
+                    **save_data.dict,
                     'namespace': namespace,
                     'headless': headlessness,
                     'reference': str(reference),
