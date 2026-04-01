@@ -39,6 +39,7 @@ from isaacsim_msgs.srv import (
     SpawnPrims,
     SpawnUrdf,
     SpawnUsd,
+    SpawnUsdRobot,
     SpawnWalls,
 )
 from std_msgs.msg import String as StdString
@@ -93,6 +94,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
             SpawnPrims=self.node.create_client_wrapper(SpawnPrims, "/isaac/SpawnPrims"),
             SpawnUrdf=self.node.create_client_wrapper(SpawnUrdf, "/isaac/SpawnUrdf"),
             SpawnUsd=self.node.create_client_wrapper(SpawnUsd, "/isaac/SpawnUsd"),
+            SpawnUsdRobot=self.node.create_client_wrapper(SpawnUsdRobot, "/isaac/SpawnUsdRobot"),
             SpawnWalls=self.node.create_client_wrapper(SpawnWalls, "/isaac/SpawnWalls"),
             SpawnElevators=self.node.create_client_wrapper(SpawnElevators, "/isaac/SpawnElevators"),
             PauseSimulation=self.node.create_client_wrapper(std_srvs.srv.Trigger, "/isaac/PauseSimulation"),
@@ -106,20 +108,41 @@ class IsaacSimulator(BaseSim, NodeInterface):
     async def robot_spawn(self, robots):
         async def impl(robot: Robot) -> bool:
             try:
-                model = await (await robot.model.resolve()).model.get(
-                    (
+                resolved_robot_model = await robot.model.resolve()
+                try:
+                    model = await resolved_robot_model.model.get(
+                        ModelType.USD,
+                        loader_args=robot.asdict(),
+                    )
+                except FileNotFoundError:
+                    self._logger.debug(
+                        f"USD model for {robot.model.name} not found; falling back to URDF"
+                    )
+                    model = await resolved_robot_model.model.get(
                         ModelType.URDF,
-                        # ModelType.USD
-                    ),
-                    loader_args=robot.asdict()
-                )
+                        loader_args=robot.asdict(),
+                    )
+
+                robot_params = (await arena_robots.Robot.RobotIdentifier(robot.model.name).resolve()).model_params
+                fq_name = self._NS_ROBOT(robot.sim_path)
+
+                if model.type == ModelType.USD:
+                    assert model.path is not None, f"USD model {model.name} must have a valid file path"
+
+                    await self._clients.SpawnUsdRobot.call_timeout(
+                        SpawnUsdRobot.Request(
+                            name=fq_name,
+                            usd_path=str(model.path),
+                            robot_namespace=robot.name,
+                            pose=robot.pose.to_msg(),
+                        )
+                    )
+
+                    self._logger.info(f"Spawned USD robot '{robot.name}' via SpawnUsdRobot")
+                    return True
 
                 if model.type == ModelType.URDF:
                     assert model.path is not None, f"URDF model {model.name} must have a valid file path"
-                    robot_params = (await arena_robots.Robot.RobotIdentifier(robot.model.name).resolve()).model_params
-
-                    fq_name = self._NS_ROBOT(robot.sim_path)
-                    
                     await self._clients.SpawnUrdf.call_timeout(
                         SpawnUrdf.Request(
                             name=fq_name,
@@ -152,7 +175,6 @@ class IsaacSimulator(BaseSim, NodeInterface):
 
                     return True
 
-                # TODO
                 raise NotImplementedError(
                     f"robot model of type {model.type} can't be spawned by {self.__class__.__name__}"
                 )
