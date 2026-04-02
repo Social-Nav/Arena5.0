@@ -28,6 +28,78 @@ from arena_simulation_setup.utils.geometry import Position
 from .Map import Map
 from .Scenario import ScenarioView
 
+@attrs.define
+class USDWorldDescription:
+    """
+    Description of a USD (Universal Scene Description) world.
+    Used for pre-generated 3D scenes like GRScenes.
+    """
+
+    @attrs.define 
+    class USDScene:
+        path: str = ""
+        scale: float = 1.0
+        position: list = attrs.field(factory=lambda: [0, 0, 0])
+        orientation: list = attrs.field(factory=lambda: [0, 0, 0, 1])  # quaternion (x, y, z, w)
+
+    @attrs.define
+    class SpawnPoints:
+        robot: list[dict] = attrs.field(factory=list)
+        pedestrian: list[dict] = attrs.field(factory=list)
+
+    @attrs.define
+    class InteractiveObjects:
+        """Interactive objects configuration(not used yet,but in grscenes)"""
+        auto_load: bool = True
+        filter: dict = attrs.field(factory=dict)
+
+    world_type: str = "usd"
+    usd_scene: USDScene = attrs.field(factory=USDScene)
+    spawn_points: SpawnPoints = attrs.field(factory=SpawnPoints)
+    interactive_objects: InteractiveObjects = attrs.field(factory=InteractiveObjects)
+    metadata: dict = attrs.field(factory=dict)
+
+    def get_usd_path(self) -> str | None:
+        if isinstance(self.usd_scene, dict):
+            return self.usd_scene.get("path")
+        if hasattr(self.usd_scene, "path"):
+            return self.usd_scene.path
+        return None
+    
+    @property
+    def is_usd_world(self) -> bool:
+        return self.world_type == "usd"
+
+    # Compatibility properties for WorldManager and EnvironmentManager
+    # USD scenes have entities built-in, so these return empty iterables
+    @property
+    def all_walls(self) -> typing.Iterable:
+        return []
+
+    @property
+    def all_doors(self) -> typing.Iterable:
+        return []
+
+    @property
+    def all_floors(self) -> typing.Iterable:
+        return []
+
+    @property
+    def all_elevators(self) -> typing.Iterable:
+        return []
+
+    @property
+    def all_static_entities(self) -> list:
+        return []
+
+    @property
+    def all_dynamic_entities(self) -> list:
+        return []
+
+    @property
+    def zones(self) -> list:
+        return []
+
 
 @attrs.define
 class WorldDescription:
@@ -229,12 +301,20 @@ class World(PathView):
     def world_path(self) -> Path:
         return self.path / 'world.yaml'
 
-    def load(self) -> WorldDescription:
+    def load(self) -> WorldDescription | USDWorldDescription:
+        """Load world configuration from world.yaml.
+
+        Returns:
+            WorldDescription for YAML-based worlds
+            USDWorldDescription for USD-based worlds (e.g., GRScenes)
+        """
         with open(self.world_path) as f:
-            return converter.structure(
-                yaml.safe_load(f),
-                WorldDescription
-            )
+            data = yaml.safe_load(f)
+
+            if isinstance(data, dict) and data.get("world_type") == "usd":
+                return converter.structure(data, USDWorldDescription)
+            else:
+                return converter.structure(data, WorldDescription)
 
     def save(self, world: WorldDescription, map_only: bool = False, **kwargs) -> Path:
         os.makedirs(self.path, exist_ok=True)
