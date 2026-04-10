@@ -9,7 +9,7 @@ world_type: "usd"
 
 usd_scene:
   # Path to the GRScenes USD file
-  path: "/home/pggg/InternUtopia/internutopia/assets/scenes/GRScenes-100/commercial_scenes/scenes/MV4AFHQKTKJZ2AABAAAAADY8_usd/start_result_navigation.usd"
+  path: "/data/scenes/commercial_scenes/scenes/MV4AFHQKTKJZ2AABAAAAADQ8_usd/start_result_navigation.usd"
   scale: 0.01  # Convert cm to meters
   position: [0.0, 0.0, 0.0]
   orientation: [0.0, 0.0, 0.0, 1.0]  # quaternion [x, y, z, w]
@@ -17,19 +17,19 @@ usd_scene:
 # Spawn points for robots and pedestrians
 # Scene center after scaling: X~1.14m, Y~-3.8m
 # Using positions within navigable floor area
-spawn_points:
-  robot:
-    - position: [1.0, -4.0, 0.05]  # Near center of scene
-      orientation: [0.0, 0.0, 0.0, 1.0]
-  pedestrian:
-    - position: [3.0, -3.0, 0.05]
-    - position: [-1.0, -5.0, 0.05]
-    - position: [2.0, -6.0, 0.05]
+# spawn_points:
+#   robot:
+#     - position: [1.0, -4.0, 0.05]  # Near center of scene
+#       orientation: [0.0, 0.0, 0.0, 1.0]
+#   pedestrian:
+#     - position: [3.0, -3.0, 0.05]
+#     - position: [-1.0, -5.0, 0.05]
+#     - position: [2.0, -6.0, 0.05]
 
-# Interactive objects configuration
-interactive_objects:
-  auto_load: true
-  filter: {}
+# # Interactive objects configuration
+# interactive_objects:
+#   auto_load: true
+#   filter: {}
 
 # Scene metadata
 metadata:

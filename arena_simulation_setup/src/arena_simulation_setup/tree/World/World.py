@@ -35,39 +35,43 @@ class USDWorldDescription:
     Used for pre-generated 3D scenes like GRScenes.
     """
 
-    @attrs.define 
+    @attrs.define
     class USDScene:
-        path: str = ""
+        """USD scene configuration with path and transform"""
+        path: str = ""  # Path to USD file
         scale: float = 1.0
         position: list = attrs.field(factory=lambda: [0, 0, 0])
         orientation: list = attrs.field(factory=lambda: [0, 0, 0, 1])  # quaternion (x, y, z, w)
 
     @attrs.define
     class SpawnPoints:
+        """Spawn point configurations"""
         robot: list[dict] = attrs.field(factory=list)
         pedestrian: list[dict] = attrs.field(factory=list)
 
     @attrs.define
     class InteractiveObjects:
-        """Interactive objects configuration(not used yet,but in grscenes)"""
+        """Interactive objects configuration"""
         auto_load: bool = True
         filter: dict = attrs.field(factory=dict)
 
-    world_type: str = "usd"
+    world_type: str = "usd"  # Identifier for USD scene type
     usd_scene: USDScene = attrs.field(factory=USDScene)
     spawn_points: SpawnPoints = attrs.field(factory=SpawnPoints)
     interactive_objects: InteractiveObjects = attrs.field(factory=InteractiveObjects)
     metadata: dict = attrs.field(factory=dict)
 
     def get_usd_path(self) -> str | None:
+        """Get the USD file path from usd_scene configuration"""
         if isinstance(self.usd_scene, dict):
-            return self.usd_scene.get("path")
-        if hasattr(self.usd_scene, "path"):
+            return self.usd_scene.get('path')
+        if hasattr(self.usd_scene, 'path'):
             return self.usd_scene.path
         return None
-    
+
     @property
     def is_usd_world(self) -> bool:
+        """Check if this is a USD world"""
         return self.world_type == "usd"
 
     # Compatibility properties for WorldManager and EnvironmentManager
@@ -99,7 +103,6 @@ class USDWorldDescription:
     @property
     def zones(self) -> list:
         return []
-
 
 @attrs.define
 class WorldDescription:
@@ -311,10 +314,12 @@ class World(PathView):
         with open(self.world_path) as f:
             data = yaml.safe_load(f)
 
-            if isinstance(data, dict) and data.get("world_type") == "usd":
+            # Check if this is a USD world configuration
+            if isinstance(data, dict) and data.get('world_type') == 'usd':
                 return converter.structure(data, USDWorldDescription)
-            else:
-                return converter.structure(data, WorldDescription)
+
+            # Default: parse as regular YAML world description
+            return converter.structure(data, WorldDescription)
 
     def save(self, world: WorldDescription, map_only: bool = False, **kwargs) -> Path:
         os.makedirs(self.path, exist_ok=True)

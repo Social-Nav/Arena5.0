@@ -463,20 +463,24 @@ class HunavHumanSimulator(
             self._logger.error(f"Error in obstacle callback: {e}")
 
     def _update_agent_obstacles(self, current_agents):
-        """Update agent closest_obs with latest obstacle data before HuNav call"""
-        # if not self._latest_obstacles:
-        #     return current_agents
+        """Update agent closest_obs with latest obstacle data before HuNav call
 
+        Uses PhysX raycast results from RaycastObstaclePublisher (Isaac Sim side)
+        when available; falls back to wall_points for traditional YAML worlds.
+        """
         for agent in current_agents.agents:
-            # if agent.name in self._latest_obstacles:
-            # agent.closest_obs = self._latest_obstacles[agent.name]
-            agent.closest_obs.extend(self._wall_points)
-            self._logger.debug(
-                f"Updated agent {agent.name} with {len(agent.closest_obs)} obstacles"
-            )
-            self._logger.debug(f"Wall Points: {self._wall_points}")
+            agent.closest_obs.clear()
 
-        # self._logger.info(f"current_agents after obstacle update: {current_agents}")
+            if agent.name in self._latest_obstacles:
+                # GRScenes / Isaac Sim: use PhysX raycast hits
+                agent.closest_obs.extend(self._latest_obstacles[agent.name])
+            elif self._wall_points:
+                # Traditional Arena YAML worlds: use pre-computed wall points
+                agent.closest_obs.extend(self._wall_points)
+
+            self._logger.debug(
+                f"Agent {agent.name}: {len(agent.closest_obs)} obstacle points"
+            )
         return current_agents
 
     async def _get_agents_callback(self, request, response):

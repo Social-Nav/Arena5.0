@@ -31,7 +31,7 @@ from isaacsim_msgs.msg import (
 from isaacsim_msgs.srv import (
     DeletePrims,
     EditPrims,
-    LoadUsdScene,
+    LoadUsdScene,    
     NavigatePedestrians,
     SpawnDoors,
     SpawnElevators,
@@ -544,16 +544,16 @@ class IsaacSimulator(BaseSim, NodeInterface):
         )
 
         self._logger.info("All service clients initialized and available.")
-
+    
     async def load_usd_scene(
-            self,
-            usd_path: str,
-            scene_prim_path: str = "/World/Scene",
-            scale: float = 1.0,
-            position: list = None,
-            orientation: list = None,
-            add_colliders: bool = True,
-            disable_collision_cooking: bool = True,
+        self,
+        usd_path: str,
+        scene_prim_path: str = "/World/Scene",
+        scale: float = 1.0,
+        position: list = None,
+        orientation: list = None,
+        add_colliders: bool = True,
+        disable_collision_cooking: bool = True,
     ) -> bool:
         """
         Load a complete USD scene (e.g., GRScenes) into Isaac Sim.
@@ -571,7 +571,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
             bool: True if scene loaded successfully
         """
         self._logger.info(f"Loading USD scene: {usd_path}")
-        
+
         req = LoadUsdScene.Request()
         req.usd_path = usd_path
         req.scene_prim_path = scene_prim_path
@@ -586,14 +586,14 @@ class IsaacSimulator(BaseSim, NodeInterface):
             if response is None:
                 self._logger.error("LoadUsdScene service timed out")
                 return False
-            
+
             if response.success:
                 self._logger.info(f"USD scene loaded: {response.scene_prim_path}")
                 return True
             else:
                 self._logger.error(f"Failed to load USD scene: {response.message}")
                 return False
-        
+
         except Exception as e:
             self._logger.error(f"Exception loading USD scene: {e}\n{traceback.format_exc()}")
             return False

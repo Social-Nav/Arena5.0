@@ -1,4 +1,4 @@
-from .World import World, WorldDescription, WorldIdentifier,USDWorldDescription
+from .World import World, WorldDescription, WorldIdentifier, USDWorldDescription
 
 __all__ = [
     'World',
