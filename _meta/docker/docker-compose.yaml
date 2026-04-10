@@ -17,6 +17,7 @@ services:
       - "$HOST_ARENA_WS_DIR/install:/opt/arena_ws/install"
       - "$HOST_ARENA_WS_DIR/log:/opt/arena_ws/log"
       - "$HOST_ARENA_WS_DIR/.env:/opt/arena_ws/.env"
+      - "$HOST_SCENES_DIR:/data/scenes"
     environment:
       - QT_X11_NO_MITSHM=1
       - TMPDIR=/tmp/shared
@@ -62,6 +63,7 @@ services:
       - "$HOST_ARENA_WS_DIR/install:/opt/arena_ws/install"
       - "$HOST_ARENA_WS_DIR/log:/opt/arena_ws/log"
       - "$HOST_ARENA_WS_DIR/.env:/opt/arena_ws/.env"
+      - "$HOST_SCENES_DIR:/data/scenes"
     environment:
       - DISPLAY
       - TMPDIR=/tmp/shared
