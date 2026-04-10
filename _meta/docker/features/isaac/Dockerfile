@@ -22,6 +22,8 @@ RUN python --version && \
 WORKDIR /opt/msg_build
 
 ADD src/Arena/arena_isaac/isaacsim_msgs src/isaacsim_msgs
+ADD src/deps/hunav/hunav_sim/hunav_msgs src/hunav_msgs
+ADD src/Arena/utils/msgs/arena_people_msgs src/arena_people_msgs
 
 # 4. Install build dependencies (Including NumPy for the C-extensions)
 RUN . /opt/ros/jazzy/setup.sh && \
@@ -31,7 +33,7 @@ RUN . /opt/ros/jazzy/setup.sh && \
 # 5. Build - Forcing the directory name to python3.11
 RUN . /opt/ros/jazzy/setup.sh && \
     colcon build \
-    --packages-select isaacsim_msgs \
+    --packages-select isaacsim_msgs hunav_msgs arena_people_msgs \
     --cmake-args \
     -DPYTHON_EXECUTABLE=/opt/venv/bin/python \
     -DPYTHON_LIBRARY=/usr/lib/x86_64-linux-gnu/libpython3.11.so.1.0 \

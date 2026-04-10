@@ -3,11 +3,11 @@ import itertools
 import os
 import typing
 from collections.abc import Callable, Collection, Iterator, Sequence
-from typing import Any
+from typing import Any, Union
 
 import attrs
 from arena_simulation_setup.shared import Elevator
-from arena_simulation_setup.tree.World import WorldDescription
+from arena_simulation_setup.tree.World import WorldDescription, USDWorldDescription
 
 from task_generator import NodeInterface
 from task_generator.shared import (
@@ -204,11 +204,87 @@ class EnvironmentManager(NodeInterface, _Realizer):
 
         self.id_generator = itertools.count(434)
 
-    async def spawn_world_obstacles(self, world: WorldDescription):
+    async def spawn_world_obstacles(self, world: Union[WorldDescription, USDWorldDescription]):
         """
         Loads given obstacles into the simulator,
         the map file is retrieved from launch parameter "world"
+
+        For USD worlds (e.g., GRScenes), the scene is loaded directly via Isaac Sim
+        and we skip programmatic wall/floor/door spawning since they're built into the USD.
         """
+        
+        # Check if this is a USD world - load the complete USD scene
+        if isinstance(world, USDWorldDescription):
+            self._logger.info("USD world detected - loading USD scene into Isaac Sim")
+
+            usd_path = world.get_usd_path()
+            if usd_path:
+                if hasattr(self._simulator, 'load_usd_scene'):
+                    usd_scene = world.usd_scene
+                    scale = usd_scene.scale if hasattr(usd_scene, 'scale') else 1.0
+                    position = usd_scene.position if hasattr(usd_scene, 'position') else None
+                    orientation = usd_scene.orientation if hasattr(usd_scene, 'orientation') else None
+
+                    success = await self._simulator.load_usd_scene(
+                        usd_path=usd_path,
+                        scene_prim_path="/World/Scene",
+                        scale=scale,
+                        position=position,
+                        orientation=orientation,
+                        add_colliders=False,  # GRScenes navigation USD already has collisions
+                        disable_collision_cooking=True,
+                    )
+                    if success:
+                        self._logger.info(f"USD scene loaded successfully: {usd_path}")
+                    else:
+                        self._logger.error(f"Failed to load USD scene: {usd_path}")
+                else:
+                    self._logger.warning("Simulator does not support USD scene loading")
+
+            # For USD worlds, still initialize HuNav but without walls/doors
+            await self._human_simulator.spawn_world(
+                walls=tuple(),
+                doors=tuple(),
+            )
+            return
+
+
+        # Check if this is a USD world - load the complete USD scene
+        if isinstance(world, USDWorldDescription):
+            self._logger.info("USD world detected - loading USD scene into Isaac Sim")
+
+            usd_path = world.get_usd_path()
+            if usd_path:
+                if hasattr(self._simulator, 'load_usd_scene'):
+                    usd_scene = world.usd_scene
+                    scale = usd_scene.scale if hasattr(usd_scene, 'scale') else 1.0
+                    position = usd_scene.position if hasattr(usd_scene, 'position') else None
+                    orientation = usd_scene.orientation if hasattr(usd_scene, 'orientation') else None
+
+                    success = await self._simulator.load_usd_scene(
+                        usd_path = usd_path,
+                        scene_prim_path = "/World/Scene",
+                        scale = scale,
+                        position = position,
+                        orientation = orientation,
+                        add_colliders = False, # GRScenes navigation USD already has collisions
+                        disable_collision_cooking=True,
+                    )
+                    if success:
+                        self._logger.info(f"USD scene loaded successfully: {usd_path}")
+                    else:
+                        self._logger.error(f"Failed to load USD scene: {usd_path}")
+                else:
+                    self._logger.warning("Simulator does not support USD scene loading")
+            
+            # For USD worlds, still initialize HuNav but without walls/doors
+            await self._human_simulator.spawn_world(
+                walls=tuple(),
+                doors=tuple(),
+            )
+            return
+        
+        # Arena based Yaml world spawning
 
         futures: list[typing.Awaitable] = []
 
