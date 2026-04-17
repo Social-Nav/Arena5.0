@@ -60,7 +60,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
 
         Task.declare_parameters(self)
 
-        self._auto_reset = self.rosparam[bool].get('auto_reset', True)
+        self._auto_reset = self.rosparam[bool].get('auto_reset', False)
         self._train_mode = self.rosparam[bool].get('train_mode', False)
 
         self._reset_lock: asyncio.Lock = asyncio.Lock()

@@ -47,6 +47,7 @@ setup(
         'console_scripts': [
             f'generate_world = {package_name}.utils.generative.world_generator:main',
             f'world_generator = {package_name}.utils.generative.world_generator_ros:main',
+            f'laser_scan_to_cloud = {package_name}.laser_scan_to_cloud:main',
         ],
     },
 )

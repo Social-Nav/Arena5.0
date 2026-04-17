@@ -28,6 +28,12 @@ from task_generator.shared import Orientation, Pose, Position, Robot
 
 import rclpy.node
 
+_TERMINAL_NAV_STATUSES = frozenset({
+    action_msgs.msg.GoalStatus.STATUS_SUCCEEDED,
+    action_msgs.msg.GoalStatus.STATUS_ABORTED,
+    action_msgs.msg.GoalStatus.STATUS_CANCELED,
+})
+
 
 class RobotManager(NodeInterface):
     """
@@ -51,9 +57,12 @@ class RobotManager(NodeInterface):
     _robot: Robot
     _move_base_pub: rclpy.publisher.Publisher
     _goal_pub: rclpy.publisher.Publisher
+    _cmd_vel_pub: rclpy.publisher.Publisher
     _pub_goal_timer: rclpy.timer.Timer
     _clear_costmap_around_robot_srv: rclpy.client.Client
     _is_goal_reached: bool
+    _nav_stop_ticks: int
+    _stop_vel_timer: typing.Optional[rclpy.timer.Timer]
     _rate_setup: rclpy.timer.Rate
     _config: RobotView
 
@@ -104,6 +113,9 @@ class RobotManager(NodeInterface):
         self._goal_pos = Pose()
         self._is_goal_reached = False
         self._robot_radius = 0.25
+        self._cmd_vel_pub = None
+        self._nav_stop_ticks = 0
+        self._stop_vel_timer = None
 
         self._goal_tolerance_distance = self.node.conf.Robot.GOAL_TOLERANCE_RADIUS.value
         self._goal_tolerance_angle = self.node.conf.Robot.GOAL_TOLERANCE_ANGLE.value
@@ -151,6 +163,17 @@ class RobotManager(NodeInterface):
             10,
         )
 
+        self._cmd_vel_pub = self.node.create_publisher(
+            geometry_msgs.msg.Twist,
+            self.namespace('cmd_vel'),
+            1,
+        )
+
+        self._stop_vel_timer = self.node.create_timer(
+            0.1,
+            self._stop_vel_timer_cb,
+        )
+
         self.node.create_subscription(
             nav_msgs.Odometry,
             self.namespace("odom"),
@@ -166,7 +189,8 @@ class RobotManager(NodeInterface):
         )
 
         await self._launch_robot(node_names)
-        await self._odom_base_transform()
+        if self.node.conf.Arena.SIM.value != Constants.SimSimulator.ISAAC:
+            await self._odom_base_transform()
 
         self._robot_radius = self.node.rosparam[float].get(
             'robot_radius',
@@ -241,8 +265,8 @@ class RobotManager(NodeInterface):
         pose.position.z += self._config.model_params.z_offset
         self.robot.pose = pose
         await self._environment_manager.move_robot((self.robot,))
-        import time
-        time.sleep(0.001)  # wait for the robot to move
+        # Yield once so downstream consumers can process the teleport request.
+        await asyncio.sleep(0.05)
         await self._clear_local_costmap(-1)
 
     async def _clear_local_costmap(self, reset_distance: float = -1) -> bool:
@@ -287,6 +311,48 @@ class RobotManager(NodeInterface):
         )
         return True
 
+    async def _wait_for_sim_tick(self, timeout_s: float = 1.5) -> bool:
+        """Wait until simulation time advances at least once.
+
+        In Isaac reset flow the simulator is paused while positions are reassigned.
+        Waiting for a sim tick avoids sending a new goal while nav2 still sees the
+        previous odometry state.
+        """
+        start = self.node.sim_time.to_msg()
+        start_stamp = (start.sec, start.nanosec)
+        period_s = 0.05
+        waited_s = 0.0
+
+        while waited_s < timeout_s:
+            await asyncio.sleep(period_s)
+            now = self.node.sim_time.to_msg()
+            if (now.sec, now.nanosec) != start_stamp:
+                return True
+            waited_s += period_s
+
+        return False
+
+    async def _wait_for_pose_sync(
+        self,
+        target: Pose,
+        timeout_s: float = 2.0,
+        xy_tolerance: float = 0.20,
+    ) -> bool:
+        """Wait until odometry pose is near the teleported start pose."""
+        period_s = 0.05
+        waited_s = 0.0
+
+        while waited_s < timeout_s:
+            dx = self._pose.position.x - target.position.x
+            dy = self._pose.position.y - target.position.y
+            if (dx * dx + dy * dy) ** 0.5 <= xy_tolerance:
+                return True
+
+            await asyncio.sleep(period_s)
+            waited_s += period_s
+
+        return False
+
     async def reset(
         self,
         start_pos: typing.Optional[Pose],
@@ -312,10 +378,16 @@ class RobotManager(NodeInterface):
                 )
         if goal_pos is not None:
             self._goal_pos = self._environment_manager.realize(goal_pos)
+            self._is_goal_reached = False
+            self._nav_stop_ticks = 0  # new goal incoming, stop publishing stop-zeros
 
             if self._publish_goal_task is not None:
                 self._publish_goal_task.cancel()
-            self._publish_goal_task = asyncio.create_task(self._publish_goal_loop())
+
+            start_target = self._start_pos if start_pos is not None else None
+            self._publish_goal_task = asyncio.create_task(
+                self._publish_goal_loop(goal=self._goal_pos, start_target=start_target)
+            )
 
             if self._robot.record_data_dir:
                 self.node.rosparam[list[float]].set(
@@ -324,34 +396,38 @@ class RobotManager(NodeInterface):
                 )
         return self._pose, self._goal_pos
 
-    async def _publish_goal_loop(self):
-        """Publish the goal to the robot.
-        """
-        # only way to circumvent amcl absolutely trolling us is to create this loop
+    async def _publish_goal_loop(
+        self,
+        *,
+        goal: Pose,
+        start_target: typing.Optional[Pose] = None,
+    ):
+        """Publish the goal to the robot once reset state is synchronized."""
+        if not await self._wait_for_sim_tick(timeout_s=1.5):
+            self._logger.warn(
+                "Simulation time did not advance before goal publish; nav may use stale pose."
+            )
 
-        with self.node.sim_time_rate(1.0, 60) as (done, rate):
-            while not done.is_set():
-                await rate.get()
+        if start_target is not None and not await self._wait_for_pose_sync(start_target, timeout_s=2.0):
+            self._logger.warn(
+                "Odometry did not reach reset start pose before goal publish; proceeding anyway."
+            )
 
-                if self._is_goal_reached:
-                    break
+        self._logger.info(
+            f"Publishing goal once: x={goal.position.x}, y={goal.position.y}, orientation={goal.orientation.to_yaw()}"
+        )
 
-                goal = self._goal_pos
-                self._logger.info(f"Publishing goal: x={goal.position.x}, y={goal.position.y}, orientation={goal.orientation.to_yaw()}")
+        if self._goal_timer is not None:
+            self._goal_timer.cancel()
+            self._goal_timer.destroy()
 
-                self._goal_pos = goal
+        goal_msg = geometry_msgs.msg.PoseStamped()
+        goal_msg.header.frame_id = "map"
+        goal_msg.header.stamp = self.node.sim_time.to_msg()
+        goal_msg.pose = goal.to_msg()
+        self._goal_pub.publish(goal_msg)
 
-                if self._goal_timer is not None:
-                    self._goal_timer.cancel()
-                    self._goal_timer.destroy()
-
-                goal_msg = geometry_msgs.msg.PoseStamped()
-                goal_msg.header.frame_id = "map"
-                goal_msg.header.stamp = self.node.sim_time.to_msg()
-                goal_msg.pose = goal.to_msg()
-                self._goal_pub.publish(goal_msg)
-
-                self._goal_start_time = self.node.sim_time
+        self._goal_start_time = self.node.sim_time
 
     async def _launch_robot(self, node_paths: set[str]):
         """Launch the robot external nodes.
@@ -421,6 +497,12 @@ class RobotManager(NodeInterface):
             Orientation.from_msg(quat)
         )
 
+    def _stop_vel_timer_cb(self):
+        """Publish zero velocity when the robot should be stopped."""
+        if self._nav_stop_ticks > 0 and self._cmd_vel_pub is not None:
+            self._cmd_vel_pub.publish(geometry_msgs.msg.Twist())
+            self._nav_stop_ticks -= 1
+
     def _goal_status_callback(self, data: action_msgs.msg.GoalStatusArray):
         """Callback for goal status updates.
 
@@ -428,7 +510,16 @@ class RobotManager(NodeInterface):
             data(action_msgs.msg.GoalStatusArray): The goal status data.
         """
         last_goal = next(reversed(list(data.status_list)), None)
-        self._is_goal_reached = (last_goal is not None) and last_goal.status == action_msgs.msg.GoalStatus.STATUS_SUCCEEDED
+        status = last_goal.status if last_goal is not None else None
+        reached = (status == action_msgs.msg.GoalStatus.STATUS_SUCCEEDED)
+        if status in _TERMINAL_NAV_STATUSES:
+            # On any terminal nav status (succeeded, aborted, canceled):
+            # publish an immediate zero and arm the timer to keep publishing
+            # zeros for 1.5s to flush any stale velocity from the pipeline.
+            if self._cmd_vel_pub is not None:
+                self._cmd_vel_pub.publish(geometry_msgs.msg.Twist())
+            self._nav_stop_ticks = 15  # 1.5 s at 10 Hz
+        self._is_goal_reached = reached
 
     async def update(self):
         """Live - update some kwargs of robot
@@ -441,5 +532,9 @@ class RobotManager(NodeInterface):
         if self._goal_timer is not None:
             self._goal_timer.cancel()
             self._goal_timer.destroy()
+        if self._stop_vel_timer is not None:
+            self._stop_vel_timer.cancel()
+            self._stop_vel_timer.destroy()
+            self._stop_vel_timer = None
         await self._environment_manager.remove_robot((self.robot,))
         # TODO kill node in navigation stack
