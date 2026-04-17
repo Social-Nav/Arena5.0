@@ -133,6 +133,7 @@ local_costmap:
       global_frame: ${frame:-}${robot_odom_frame:-odom}
       robot_base_frame: ${frame:-}${robot_base_frame:-base_link}
       use_sim_time: True
+      transform_tolerance: 0.5
       rolling_window: true
       width: 15
       height: 15
@@ -154,7 +155,7 @@ local_costmap:
         max_obstacle_height: 2.0
         mark_threshold: 0
         observation_sources: ${observation_sources_string}
-        "${**observation_sources_dict}": ''
+        ${**observation_sources_dict}: ''
       static_layer:
         map_subscribe_transient_local: True
         map_topic: ${task_generator_node}/map
@@ -174,6 +175,7 @@ global_costmap:
       global_frame: map
       robot_base_frame: ${frame:-}${robot_base_frame:-base_link}
       use_sim_time: True
+      transform_tolerance: 0.5
       footprint: ${footprint}
       resolution: 0.05
       width: 20
