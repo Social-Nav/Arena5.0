@@ -6,11 +6,27 @@ from collections.abc import Collection
 from pathlib import Path
 
 import aiofiles
+import yaml
 
 from . import Model, ModelProvider, ModelType
 
 
 class ModelProvider_USD(ModelProvider.provides(ModelType.USD)):
+    @classmethod
+    def _resolve_redirect_path(cls, model_dir: Path, params_path: Path, redirect: str) -> Path:
+        redirect_path = Path(redirect)
+        if redirect_path.is_absolute():
+            return redirect_path
+
+        # Prefer resolving relative to model_params.yaml real location so this
+        # also works when model_params.yaml is a symlink in install/share.
+        params_based = (params_path.resolve().parent / redirect_path).resolve()
+        if params_based.exists():
+            return params_based
+
+        # Fallback: resolve relative to model directory.
+        return (model_dir / redirect_path).resolve()
+
     @classmethod
     async def load(cls, model_dir, model, loader_args) -> Model:
         model_paths = (
@@ -21,6 +37,24 @@ class ModelProvider_USD(ModelProvider.provides(ModelType.USD)):
         )
 
         found = next(filter(os.path.exists, model_paths), None)
+        if found is None:
+            params_path = model_dir / "model_params.yaml"
+            if params_path.exists():
+                with open(params_path) as f:
+                    params = yaml.safe_load(f) or {}
+
+                if isinstance(params, dict):
+                    redirect = params.get("usd_redirect")
+                    if isinstance(redirect, str) and redirect.strip():
+                        redirected = cls._resolve_redirect_path(model_dir, params_path, redirect.strip())
+                        if redirected.exists():
+                            found = redirected
+                        else:
+                            raise FileNotFoundError(
+                                f"usd_redirect points to missing file: {redirected} "
+                                f"(from {params_path})"
+                            )
+
         if found is None:
             raise FileNotFoundError(f"USD model for {model} not found in {model_dir}")
         return Model(
