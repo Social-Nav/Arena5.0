@@ -18,6 +18,11 @@ def generate_launch_description():
         default_value='false',
         description='data saving flag',
     )
+    robot = LaunchArgument(
+        name='robot',
+        default_value='jackal',
+        description='robot model name (used for nav topic namespace)',
+    )
     return LaunchDescription([
         *ld,
         launch.actions.SetEnvironmentVariable(
@@ -28,13 +33,18 @@ def generate_launch_description():
             name='ARENA_SAVE_DATA',
             value=save_data.substitution,
         ),
+        launch.actions.SetEnvironmentVariable(
+            name='ARENA_ROBOT',
+            value=robot.substitution,
+        ),
         launch.actions.ExecuteProcess(
             cmd=[
-                'bash','-c','arena feature isaac launch --save-data "$ARENA_SAVE_DATA"'
+                'bash','-c','arena feature isaac launch --save-data "$ARENA_SAVE_DATA" --robot "$ARENA_ROBOT"'
             ],
-            sigterm_timeout=launch.substitutions.LaunchConfiguration('sigterm_timeout', default='5'),
-            sigkill_timeout=launch.substitutions.LaunchConfiguration('sigkill_timeout', default='5'),
+            sigterm_timeout=launch.substitutions.LaunchConfiguration('sigterm_timeout', default='60'),
+            sigkill_timeout=launch.substitutions.LaunchConfiguration('sigkill_timeout', default='30'),
             on_exit=[launch.actions.Shutdown()],
             output='log',
         )
     ])
+
