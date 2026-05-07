@@ -18,6 +18,10 @@
 # model: any name from arena_models (used for visual only)
 # velocity / desired_velocity: m/s (optional, default 0.8)
 
+robots:
+  - start: [2.0, -4.0, 3.14]      
+    goal:  [-3.0, -1.0, 3.14]
+
 dynamic:
   # Pedestrian 1:
   - name: hunav_1

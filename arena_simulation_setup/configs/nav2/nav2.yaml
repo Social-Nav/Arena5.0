@@ -128,7 +128,7 @@ docking_server:
 local_costmap:
   local_costmap:
     ros__parameters:
-      update_frequency: 10.0
+      update_frequency: 20.0
       publish_frequency: 10.0
       global_frame: ${frame:-}${robot_odom_frame:-odom}
       robot_base_frame: ${frame:-}${robot_base_frame:-base_link}
