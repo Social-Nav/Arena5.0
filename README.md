@@ -74,6 +74,6 @@ sudo systemctl restart containerd
 ### Isaac eval crashes or videos are not produced
 
 - Ensure the Isaac feature image has been rebuilt after any message definition changes: `arena feature isaac update`.
-- Ensure `ffmpeg` is installed on the host/container path; eval video export and H.264 verification depend on it via `arena_bringup/arena_bringup/dual_vln_eval.py:376`.
+- Ensure `ffmpeg` is installed on the host/container path; eval video export and H.264 verification depend on it via `arena_bringup/arena_bringup/internnav_eval.py:376`.
 - If Isaac starts but crashes during ROS service creation, verify it is loading `/opt/isaac_bridge_msgs` from the container rather than stale host-side Python 3.11 message builds.
 - On ROS 2 Jazzy, Nav2 plugin class names in YAML must use the `::` form (for example `nav2_navfn_planner::NavfnPlanner` and `nav2_behaviors::Spin`), otherwise planner or behavior server bringup can fail even when Isaac itself is healthy.

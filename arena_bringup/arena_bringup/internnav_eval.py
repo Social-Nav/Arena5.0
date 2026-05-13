@@ -104,7 +104,7 @@ topic = sys.argv[1]
 task_reset_topic = sys.argv[2]
 scenario_reset_topic = sys.argv[3]
 rclpy.init()
-node = Node('dual_vln_eval_finished_watcher')
+node = Node('internnav_eval_finished_watcher')
 qos = QoSProfile(depth=1)
 qos.reliability = ReliabilityPolicy.RELIABLE
 qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
@@ -153,7 +153,7 @@ from std_msgs.msg import String
 topic = sys.argv[1]
 output_path = Path(sys.argv[2])
 rclpy.init()
-node = Node('dual_vln_eval_status_watcher')
+node = Node('internnav_eval_status_watcher')
 qos = QoSProfile(depth=1)
 qos.reliability = ReliabilityPolicy.RELIABLE
 qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
@@ -236,7 +236,7 @@ def _default_eval_video_sim_top_down_topic(robot: str) -> str:
 
 
 def _default_eval_video_debug_overlay_topic() -> str:
-    return 'dual_vln/debug_image'
+    return 'internnav/debug_image'
 
 
 def _task_root_from_topic(topic: str) -> str:
@@ -548,7 +548,7 @@ def _normalize_scan_ranges(scan: LaserScan):
 
 class EvalVideoRecorder(Node):
     def __init__(self, *, output_dir, map_yaml_path, task_reset_topic, scenario_reset_topic, finished_topic, ego_topic, depth_topic, camera_info_topic, debug_overlay_topic, sim_top_down_topic, odom_topic, goal_topic, scan_topic, fps, top_down_size_px, top_down_window_m):
-        super().__init__('dual_vln_eval_video_recorder')
+        super().__init__('internnav_eval_video_recorder')
         self.output_dir = Path(output_dir)
         self.videos_dir = self.output_dir / 'videos'
         self.index_path = self.output_dir / 'video_index.json'
@@ -1098,8 +1098,11 @@ def _apply_runtime_defaults(args) -> dict:
         args.dual_vln_python_executable = env_python
         adjustments['dual_vln_python_executable'] = f'{env_python} ({env_python_name})'
 
-    if getattr(args, 'dual_vln_status_topic', '') == '/task_generator_node/dual_vln/status':
-        args.dual_vln_status_topic = f'/task_generator_node/{args.robot}/dual_vln/status'
+    if getattr(args, 'dual_vln_status_topic', '') in {
+        '/task_generator_node/dual_vln/status',
+        '/task_generator_node/internnav/status',
+    }:
+        args.dual_vln_status_topic = f'/task_generator_node/{args.robot}/internnav/status'
         adjustments['dual_vln_status_topic'] = args.dual_vln_status_topic
 
     if _is_internnav_run(args):
@@ -1150,10 +1153,10 @@ def _apply_runtime_defaults(args) -> dict:
     return adjustments
 
 
-def _classify_end_reason(*, finished_observed: bool, launch_returncode: int | None, timed_out: bool, dual_vln_status):
-    if isinstance(dual_vln_status, dict):
-        status = str(dual_vln_status.get('status', ''))
-        degraded = bool(dual_vln_status.get('degraded', False))
+def _classify_end_reason(*, finished_observed: bool, launch_returncode: int | None, timed_out: bool, internnav_status):
+    if isinstance(internnav_status, dict):
+        status = str(internnav_status.get('status', ''))
+        degraded = bool(internnav_status.get('degraded', False))
         if status in {
             'adapter_exception',
             'invalid_adapter_output',
@@ -1165,7 +1168,7 @@ def _classify_end_reason(*, finished_observed: bool, launch_returncode: int | No
             return 'adapter_failure'
         if degraded and status in {'inference_timeout', 'exception'}:
             return 'infrastructure_exception'
-        if dual_vln_status.get('debug', {}).get('safe_stop'):
+        if internnav_status.get('debug', {}).get('safe_stop'):
             return 'safe_stop'
 
     if finished_observed:
@@ -1211,7 +1214,7 @@ def _terminate_process_tree(proc: subprocess.Popen, *, grace_period_sec: float =
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Run a reproducible Arena dual_vln eval.')
+    parser = argparse.ArgumentParser(description='Run a reproducible Arena InternNav eval.')
     parser.add_argument('--sim', default='isaac')
     parser.add_argument('--human', default='hunav')
     parser.add_argument('--world', default='map_empty')
@@ -1226,34 +1229,34 @@ def main() -> int:
     parser.add_argument('--log-level', default='warn')
     parser.add_argument('--vln-instruction', default='navigate')
     parser.add_argument('--vln-instruction-file', default='')
-    parser.add_argument('--dual-vln-mode', default='heuristic')
-    parser.add_argument('--dual-vln-model-path', default='')
-    parser.add_argument('--dual-vln-device', default='cpu')
-    parser.add_argument('--dual-vln-inference-rate-hz', type=float, default=10.0)
-    parser.add_argument('--dual-vln-inference-timeout-sec', type=float, default=0.2)
-    parser.add_argument('--dual-vln-rgb-topic', default='')
-    parser.add_argument('--dual-vln-depth-topic', default='')
-    parser.add_argument('--dual-vln-camera-info-topic', default='')
-    parser.add_argument('--dual-vln-python-executable', default='')
-    parser.add_argument('--dual-vln-adapter-target', default='')
-    parser.add_argument('--dual-vln-require-real-backend', action='store_true')
-    parser.add_argument('--dual-vln-strict-device', action='store_true')
-    parser.add_argument('--dual-vln-look-down', action='store_true')
-    parser.add_argument('--dual-vln-enable-visualization', action='store_true')
-    parser.add_argument('--dual-vln-visualization-topic', default='dual_vln/debug_image')
-    parser.add_argument('--dual-vln-visualization-rate-hz', type=float, default=5.0)
+    parser.add_argument('--internnav-mode', '--dual-vln-mode', dest='dual_vln_mode', default='heuristic')
+    parser.add_argument('--internnav-model-path', '--dual-vln-model-path', dest='dual_vln_model_path', default='')
+    parser.add_argument('--internnav-device', '--dual-vln-device', dest='dual_vln_device', default='cpu')
+    parser.add_argument('--internnav-inference-rate-hz', '--dual-vln-inference-rate-hz', dest='dual_vln_inference_rate_hz', type=float, default=10.0)
+    parser.add_argument('--internnav-inference-timeout-sec', '--dual-vln-inference-timeout-sec', dest='dual_vln_inference_timeout_sec', type=float, default=0.2)
+    parser.add_argument('--internnav-rgb-topic', '--dual-vln-rgb-topic', dest='dual_vln_rgb_topic', default='')
+    parser.add_argument('--internnav-depth-topic', '--dual-vln-depth-topic', dest='dual_vln_depth_topic', default='')
+    parser.add_argument('--internnav-camera-info-topic', '--dual-vln-camera-info-topic', dest='dual_vln_camera_info_topic', default='')
+    parser.add_argument('--internnav-python-executable', '--dual-vln-python-executable', dest='dual_vln_python_executable', default='')
+    parser.add_argument('--internnav-adapter-target', '--dual-vln-adapter-target', dest='dual_vln_adapter_target', default='')
+    parser.add_argument('--internnav-require-real-backend', '--dual-vln-require-real-backend', dest='dual_vln_require_real_backend', action='store_true')
+    parser.add_argument('--internnav-strict-device', '--dual-vln-strict-device', dest='dual_vln_strict_device', action='store_true')
+    parser.add_argument('--internnav-look-down', '--dual-vln-look-down', dest='dual_vln_look_down', action='store_true')
+    parser.add_argument('--internnav-enable-visualization', '--dual-vln-enable-visualization', dest='dual_vln_enable_visualization', action='store_true')
+    parser.add_argument('--internnav-visualization-topic', '--dual-vln-visualization-topic', dest='dual_vln_visualization_topic', default='internnav/debug_image')
+    parser.add_argument('--internnav-visualization-rate-hz', '--dual-vln-visualization-rate-hz', dest='dual_vln_visualization_rate_hz', type=float, default=5.0)
     parser.add_argument('--save-eval-video', action='store_true')
     parser.add_argument('--eval-video-fps', type=float, default=10.0)
     parser.add_argument('--eval-video-top-down-size-px', type=int, default=640)
     parser.add_argument('--eval-video-top-down-window-m', type=float, default=10.0)
     parser.add_argument('--eval-video-sim-top-down-topic', default='')
     parser.add_argument('--eval-video-debug-overlay-topic', default='')
-    parser.add_argument('--dual-vln-status-topic', default='/task_generator_node/dual_vln/status')
+    parser.add_argument('--internnav-status-topic', '--dual-vln-status-topic', dest='dual_vln_status_topic', default='/task_generator_node/internnav/status')
     parser.add_argument('--finished-topic', default='/task_generator_node/finished')
     parser.add_argument('--task-reset-topic', default='/task_generator_node/task_reset')
     parser.add_argument('--launch-timeout-sec', type=float, default=0.0)
     parser.add_argument('--shutdown-grace-period-sec', type=float, default=20.0)
-    parser.add_argument('--output-prefix', default='dual_vln_eval')
+    parser.add_argument('--output-prefix', default='internnav_eval')
     parser.add_argument(
         '--output-root',
         default='',
@@ -1278,7 +1281,7 @@ def main() -> int:
     output_dir = os.path.join(output_root, relative_dir)
     snapshots_dir = os.path.join(output_dir, 'snapshots')
     os.makedirs(snapshots_dir, exist_ok=True)
-    dual_vln_status_path = os.path.join(output_dir, 'dual_vln_status.json')
+    dual_vln_status_path = os.path.join(output_dir, 'internnav_status.json')
     postprocess_commands_path = os.path.join(output_dir, 'postprocess_commands.txt')
     videos_dir = os.path.join(output_dir, 'videos')
     video_index_path = os.path.join(output_dir, 'video_index.json')
@@ -1287,7 +1290,7 @@ def main() -> int:
     if args.save_eval_video and not args.dual_vln_rgb_topic:
         raise SystemExit(
             'save_eval_video requires a resolvable RGB topic. '
-            'Pass --dual-vln-rgb-topic explicitly or use a robot/mode with runtime defaults.'
+            'Pass --internnav-rgb-topic explicitly or use a robot/mode with runtime defaults.'
         )
 
     robot_ego_topic = _robot_topic(args.task_reset_topic, args.robot, args.dual_vln_rgb_topic)
@@ -1304,7 +1307,7 @@ def main() -> int:
     snapshot_files = {}
     for label, src in {
         'task_generator': os.path.join(bringup_share, 'configs', 'task_generator.yaml'),
-        'dual_vln_controller': os.path.join(sim_setup_share, 'configs', 'nav2', 'controllers', 'dual_vln', 'controller_config.yaml'),
+        'internnav_controller': os.path.join(sim_setup_share, 'configs', 'nav2', 'controllers', 'dual_vln', 'controller_config.yaml'),
     }.items():
         copied = _copy_if_exists(src, os.path.join(snapshots_dir, os.path.basename(src)))
         if copied is not None:
@@ -1532,10 +1535,10 @@ def main() -> int:
         finished_observed=finished_observed,
         launch_returncode=launch_returncode,
         timed_out=timed_out,
-        dual_vln_status=dual_vln_status,
+        internnav_status=dual_vln_status,
     )
 
-    manifest['artifacts']['dual_vln_status_present'] = dual_vln_status is not None
+    manifest['artifacts']['internnav_status_present'] = dual_vln_status is not None
     manifest['artifacts']['snapshot_files'] = sorted(snapshot_files.values())
     manifest['artifacts']['video_index_present'] = video_index is not None
     manifest['artifacts']['video_index'] = video_index

@@ -120,7 +120,7 @@ def _action_to_command(action: Any, params: dict[str, Any]) -> Optional[tuple[fl
     return 0.0, 0.0, 'unsupported_discrete_action', debug
 
 
-def _goal_debug(observation: DualVLNObservation) -> dict[str, Any]:
+def _goal_debug(observation: ModelSimObservation) -> dict[str, Any]:
     pose = observation.pose
     goal = observation.goal
     debug: dict[str, Any] = {
@@ -164,7 +164,7 @@ class Pose2D:
 
 
 @dataclass
-class DualVLNObservation:
+class ModelSimObservation:
     pose: Optional[Pose2D]
     goal: Optional[Pose2D]
     instruction: str
@@ -194,7 +194,7 @@ class DualVLNObservation:
 
 
 @dataclass
-class DualVLNDecision:
+class ModelSimDecision:
     linear_x: float = 0.0
     angular_z: float = 0.0
     status: str = 'safe_stop'
@@ -202,7 +202,7 @@ class DualVLNDecision:
     debug: dict[str, Any] = field(default_factory=dict)
 
 
-class DualVLNBackend(ABC):
+class ModelSimBackend(ABC):
     backend_type = 'base'
     model_source = 'internal'
     model_download = 'N/A'
@@ -237,15 +237,15 @@ class DualVLNBackend(ABC):
         )
 
     @abstractmethod
-    def compute(self, observation: DualVLNObservation) -> DualVLNDecision:
+    def compute(self, observation: ModelSimObservation) -> ModelSimDecision:
         raise NotImplementedError
 
 
-_BACKEND_REGISTRY: dict[str, type[DualVLNBackend]] = {}
+_BACKEND_REGISTRY: dict[str, type[ModelSimBackend]] = {}
 
 
-def register_backend(*modes: str) -> Callable[[type[DualVLNBackend]], type[DualVLNBackend]]:
-    def _decorator(cls: type[DualVLNBackend]) -> type[DualVLNBackend]:
+def register_backend(*modes: str) -> Callable[[type[ModelSimBackend]], type[ModelSimBackend]]:
+    def _decorator(cls: type[ModelSimBackend]) -> type[ModelSimBackend]:
         for mode in modes:
             _BACKEND_REGISTRY[mode.strip().lower()] = cls
         return cls
@@ -253,7 +253,7 @@ def register_backend(*modes: str) -> Callable[[type[DualVLNBackend]], type[DualV
     return _decorator
 
 
-def _finalize_decision(decision: DualVLNDecision, params: dict[str, Any]) -> DualVLNDecision:
+def _finalize_decision(decision: ModelSimDecision, params: dict[str, Any]) -> ModelSimDecision:
     decision.status = str(decision.status or 'safe_stop')
     decision.debug = _sanitize_debug(decision.debug)
     if not _is_finite_number(decision.linear_x) or not _is_finite_number(decision.angular_z):
@@ -272,17 +272,17 @@ def _finalize_decision(decision: DualVLNDecision, params: dict[str, Any]) -> Dua
 
 
 def _safe_stop_decision(
-    observation: DualVLNObservation,
+    observation: ModelSimObservation,
     *,
     status: str,
     reason: str,
     debug: Optional[Mapping[str, Any]] = None,
-) -> DualVLNDecision:
+) -> ModelSimDecision:
     merged_debug = _goal_debug(observation)
     merged_debug.update(_sanitize_debug(debug or {}))
     merged_debug['failure_reason'] = reason
     merged_debug['safe_stop'] = True
-    return DualVLNDecision(status=status, degraded=True, debug=merged_debug)
+    return ModelSimDecision(status=status, degraded=True, debug=merged_debug)
 
 
 def _load_adapter_target(target: str) -> Any:
@@ -345,7 +345,7 @@ def _looks_like_adapter_factory(target: Callable[..., Any]) -> bool:
     return True
 
 
-def _resolve_adapter_callable(target: Any, logger, params: dict[str, Any], adapter_target: str) -> Callable[[DualVLNObservation], Any]:
+def _resolve_adapter_callable(target: Any, logger, params: dict[str, Any], adapter_target: str) -> Callable[[ModelSimObservation], Any]:
     candidate = target
     if inspect.isclass(candidate):
         candidate = _call_adapter_factory(candidate, logger, params)
@@ -367,13 +367,13 @@ def _resolve_adapter_callable(target: Any, logger, params: dict[str, Any], adapt
 
 
 @register_backend('heuristic')
-class HeuristicBackend(DualVLNBackend):
+class HeuristicBackend(ModelSimBackend):
     backend_type = 'heuristic'
     model_source = 'arena_builtin_safe_controller'
     model_download = 'built-in (no external weights)'
     io_contract = 'pose + goal -> cmd_vel'
 
-    def compute(self, observation: DualVLNObservation) -> DualVLNDecision:
+    def compute(self, observation: ModelSimObservation) -> ModelSimDecision:
         pose = observation.pose
         # Use the fixed episode goal for fallback control while model inference
         # is in progress. Chasing a moving path lookahead can produce loops with
@@ -381,7 +381,7 @@ class HeuristicBackend(DualVLNBackend):
         goal = observation.goal or observation.subgoal
         target_source = 'goal' if observation.goal is not None else 'subgoal'
         if pose is None or goal is None:
-            return DualVLNDecision(status='missing_pose_or_goal', degraded=True)
+            return ModelSimDecision(status='missing_pose_or_goal', degraded=True)
 
         dx = goal.x - pose.x
         dy = goal.y - pose.y
@@ -399,7 +399,7 @@ class HeuristicBackend(DualVLNBackend):
 
         if dist <= goal_tolerance:
             if abs(goal_yaw_err) <= angle_tol:
-                return DualVLNDecision(
+                return ModelSimDecision(
                     status='goal_reached',
                     debug={
                         'goal_distance': dist,
@@ -408,7 +408,7 @@ class HeuristicBackend(DualVLNBackend):
                     },
                 )
 
-            return DualVLNDecision(
+            return ModelSimDecision(
                 linear_x=0.0,
                 angular_z=clamp(k_ang * goal_yaw_err, -max_ang, max_ang),
                 status='align_goal_heading',
@@ -440,7 +440,7 @@ class HeuristicBackend(DualVLNBackend):
             angular_z = clamp(k_ang * yaw_err, -max_ang, max_ang)
             arc_turn = False
 
-        return DualVLNDecision(
+        return ModelSimDecision(
             linear_x=linear_x,
             angular_z=angular_z,
             status=status,
@@ -455,7 +455,7 @@ class HeuristicBackend(DualVLNBackend):
 
 
 @register_backend('torchscript', 'model')
-class TorchScriptBackend(DualVLNBackend):
+class TorchScriptBackend(ModelSimBackend):
     backend_type = 'torchscript'
     model_source = INTERNNAV_REFERENCE
     model_download = INTERNNAV_CHECKPOINT_DOWNLOAD
@@ -500,11 +500,11 @@ class TorchScriptBackend(DualVLNBackend):
             )
             self._model = None
 
-    def compute(self, observation: DualVLNObservation) -> DualVLNDecision:
+    def compute(self, observation: ModelSimObservation) -> ModelSimDecision:
         if observation.pose is None or observation.goal is None:
-            return DualVLNDecision(status='missing_pose_or_goal', degraded=True)
+            return ModelSimDecision(status='missing_pose_or_goal', degraded=True)
         if self._model is None or self._torch is None:
-            return DualVLNDecision(status='model_unavailable', degraded=True)
+            return ModelSimDecision(status='model_unavailable', degraded=True)
 
         pose = observation.pose
         goal = observation.goal
@@ -527,7 +527,7 @@ class TorchScriptBackend(DualVLNBackend):
         if elapsed > timeout_sec:
             debug = _goal_debug(observation)
             debug['infer_time_sec'] = elapsed
-            return DualVLNDecision(
+            return ModelSimDecision(
                 status='inference_timeout',
                 degraded=True,
                 debug=debug,
@@ -539,9 +539,9 @@ class TorchScriptBackend(DualVLNBackend):
             angular_z = float(values[1])
         except Exception as exc:
             self._log('error', f'Failed to parse torchscript output: {exc}')
-            return DualVLNDecision(status='invalid_model_output', degraded=True)
+            return ModelSimDecision(status='invalid_model_output', degraded=True)
 
-        return _finalize_decision(DualVLNDecision(
+        return _finalize_decision(ModelSimDecision(
             linear_x=clamp(linear_x, -float(self._params['max_linear']), float(self._params['max_linear'])),
             angular_z=clamp(angular_z, -float(self._params['max_angular']), float(self._params['max_angular'])),
             status='model_command',
@@ -555,13 +555,13 @@ class TorchScriptBackend(DualVLNBackend):
 
 
 @register_backend('adapter', 'python', 'python_adapter', 'internnav')
-class PythonAdapterBackend(DualVLNBackend):
+class PythonAdapterBackend(ModelSimBackend):
     backend_type = 'python_adapter'
     model_source = 'external_python_adapter'
     model_download = 'provided by adapter_target'
     io_contract = (
         'adapter_target resolves to a class / callable / object method that accepts '
-        'DualVLNObservation and returns DualVLNDecision or a mapping using either '
+        'ModelSimObservation and returns ModelSimDecision or a mapping using either '
         '{linear_x, angular_z, status?, degraded?, debug?} or '
         '{discrete_action|action|output_action, output_pixel?, output_trajectory?, debug?}'
     )
@@ -569,7 +569,7 @@ class PythonAdapterBackend(DualVLNBackend):
 
     def __init__(self, logger, params: dict[str, Any]) -> None:
         super().__init__(logger, params)
-        self._adapter_callable: Optional[Callable[[DualVLNObservation], Any]] = None
+        self._adapter_callable: Optional[Callable[[ModelSimObservation], Any]] = None
         self._adapter_target = str(params.get('adapter_target', '')).strip()
         self._require_real_backend = bool(params.get('require_real_backend', False))
         if not self._adapter_target:
@@ -595,8 +595,8 @@ class PythonAdapterBackend(DualVLNBackend):
                     f"Failed to load required adapter_target='{self._adapter_target}': {exc}"
                 ) from exc
 
-    def _coerce_output(self, output: Any) -> DualVLNDecision:
-        if isinstance(output, DualVLNDecision):
+    def _coerce_output(self, output: Any) -> ModelSimDecision:
+        if isinstance(output, ModelSimDecision):
             return output
         if isinstance(output, Mapping):
             debug = _sanitize_debug(output.get('debug', {}))
@@ -621,7 +621,7 @@ class PythonAdapterBackend(DualVLNBackend):
                         first_step = _trajectory_first_step(trajectory)
                         if first_step is not None:
                             debug.setdefault('trajectory_first_step', list(first_step))
-                    return DualVLNDecision(
+                    return ModelSimDecision(
                         linear_x=linear_x,
                         angular_z=angular_z,
                         status=str(output.get('status', status)),
@@ -637,7 +637,7 @@ class PythonAdapterBackend(DualVLNBackend):
                     linear_x = clamp(math.hypot(x, y), 0.0, float(self._params['max_linear']))
                     angular_z = clamp(heading, -float(self._params['max_angular']), float(self._params['max_angular']))
                     debug.setdefault('trajectory_first_step', [x, y, yaw])
-                    return DualVLNDecision(
+                    return ModelSimDecision(
                         linear_x=linear_x,
                         angular_z=angular_z,
                         status=str(output.get('status', 'trajectory_command')),
@@ -645,7 +645,7 @@ class PythonAdapterBackend(DualVLNBackend):
                         debug=debug,
                     )
 
-            return DualVLNDecision(
+            return ModelSimDecision(
                 linear_x=float(output.get('linear_x', 0.0)),
                 angular_z=float(output.get('angular_z', 0.0)),
                 status=str(output.get('status', 'adapter_command')),
@@ -653,10 +653,10 @@ class PythonAdapterBackend(DualVLNBackend):
                 debug=debug,
             )
         raise TypeError(
-            f'Adapter output must be DualVLNDecision or dict, got {type(output).__name__}'
+            f'Adapter output must be ModelSimDecision or dict, got {type(output).__name__}'
         )
 
-    def compute(self, observation: DualVLNObservation) -> DualVLNDecision:
+    def compute(self, observation: ModelSimObservation) -> ModelSimDecision:
         if self._adapter_callable is None:
             return _safe_stop_decision(
                 observation,
@@ -714,7 +714,7 @@ class PythonAdapterBackend(DualVLNBackend):
             )
 
 
-def create_backend(mode: str, logger, params: dict[str, Any]) -> DualVLNBackend:
+def create_model_backend(mode: str, logger, params: dict[str, Any]) -> ModelSimBackend:
     normalized_mode = mode.strip().lower()
     backend_cls = _BACKEND_REGISTRY.get(normalized_mode)
     if backend_cls is None:
@@ -722,3 +722,11 @@ def create_backend(mode: str, logger, params: dict[str, Any]) -> DualVLNBackend:
             f"Unsupported dual_vln backend mode '{mode}'. Supported modes: {sorted(_BACKEND_REGISTRY)}"
         )
     return backend_cls(logger, params)
+
+
+# Backward-compatible aliases while the repository migrates from the older
+# Dual-VLN naming to the more general model-sim wrapper vocabulary.
+DualVLNObservation = ModelSimObservation
+DualVLNDecision = ModelSimDecision
+DualVLNBackend = ModelSimBackend
+create_backend = create_model_backend

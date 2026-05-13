@@ -17,11 +17,12 @@ setup(
     zip_safe=True,
     maintainer='dev',
     maintainer_email='dev@example.com',
-    description='Consolidated Arena VLN model wrapper and benchmark server package.',
+    description='Arena model-sim wrappers and InternNav server package.',
     license='MIT',
     entry_points={
         'console_scripts': [
-            'dual_vln_server = arena_vln_models.dual_vln_server:main',
+            'internnav_server = arena_vln_models.internnav_server:main',
+            'dual_vln_server = arena_vln_models.internnav_server:main',
         ],
     },
 )

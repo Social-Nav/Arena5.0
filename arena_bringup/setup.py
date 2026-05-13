@@ -51,7 +51,8 @@ setup(
     entry_points={
         'console_scripts': [
             'test = arena_bringup.test:main',
-            'dual_vln_eval = arena_bringup.dual_vln_eval:main',
+            'internnav_eval = arena_bringup.internnav_eval:main',
+            'dual_vln_eval = arena_bringup.internnav_eval:main',
         ],
         'launch_ros.node_action': [
             'NodeLogLevelExtension = arena_bringup.extensions.NodeLogLevelExtension:NodeLogLevelExtension',
