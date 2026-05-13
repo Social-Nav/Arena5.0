@@ -1,0 +1,28 @@
+site_name: Arena Benchmark Documentation
+site_description: English documentation for the Arena benchmark stack, evaluation flows, and Isaac/Gazebo workflows.
+site_url: https://social-nav.github.io/arena-benchmark/
+repo_url: https://github.com/voshch/Arena
+repo_name: voshch/Arena
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Benchmark:
+      - Overview: benchmark/overview.md
+      - Architecture: benchmark/architecture.md
+      - Running Benchmarks: benchmark/running-benchmarks.md
+      - Outputs and Metrics: benchmark/outputs-and-metrics.md
+      - Troubleshooting: benchmark/troubleshooting.md
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - tables
+  - pymdownx.highlight
+  - pymdownx.superfences
