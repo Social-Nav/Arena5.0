@@ -647,6 +647,49 @@ class RobotManager(NodeInterface):
             current_log_level = rclpy.logging.get_logger_effective_level(self.node.get_logger().name).name.lower()
             launch_description.add_action(SetGlobalLogLevelAction(current_log_level))
 
+            internnav_mode = self._get_compat_rosparam(str, 'internnav_mode', 'dual_vln_mode', 'heuristic')
+            internnav_model_path = self._get_compat_rosparam(
+                str, 'internnav_model_path', 'dual_vln_model_path', '', empty_is_missing=True
+            )
+            internnav_device = self._get_compat_rosparam(str, 'internnav_device', 'dual_vln_device', 'cpu')
+            internnav_inference_rate_hz = self._get_compat_rosparam(
+                float, 'internnav_inference_rate_hz', 'dual_vln_inference_rate_hz', 10.0
+            )
+            internnav_inference_timeout_sec = self._get_compat_rosparam(
+                float, 'internnav_inference_timeout_sec', 'dual_vln_inference_timeout_sec', 0.2
+            )
+            internnav_rgb_topic = self._get_compat_rosparam(
+                str, 'internnav_rgb_topic', 'dual_vln_rgb_topic', '', empty_is_missing=True
+            )
+            internnav_depth_topic = self._get_compat_rosparam(
+                str, 'internnav_depth_topic', 'dual_vln_depth_topic', '', empty_is_missing=True
+            )
+            internnav_camera_info_topic = self._get_compat_rosparam(
+                str, 'internnav_camera_info_topic', 'dual_vln_camera_info_topic', '', empty_is_missing=True
+            )
+            internnav_python_executable = self._get_compat_rosparam(
+                str, 'internnav_python_executable', 'dual_vln_python_executable', '', empty_is_missing=True
+            )
+            internnav_adapter_target = self._get_compat_rosparam(
+                str, 'internnav_adapter_target', 'dual_vln_adapter_target', '', empty_is_missing=True
+            )
+            internnav_look_down = self._get_compat_rosparam(
+                bool, 'internnav_look_down', 'dual_vln_look_down', False
+            )
+            internnav_enable_visualization = self._get_compat_rosparam(
+                bool, 'internnav_enable_visualization', 'dual_vln_enable_visualization', False
+            )
+            internnav_visualization_topic = self._get_compat_rosparam(
+                str,
+                'internnav_visualization_topic',
+                'dual_vln_visualization_topic',
+                'internnav/debug_image',
+                empty_is_missing=True,
+            )
+            internnav_visualization_rate_hz = self._get_compat_rosparam(
+                float, 'internnav_visualization_rate_hz', 'dual_vln_visualization_rate_hz', 5.0
+            )
+
             launch_arguments = {
                 'robot': self.model_name,
                 # 'simulator': self.node.conf.Arena.SIM.value.value,
@@ -663,20 +706,20 @@ class RobotManager(NodeInterface):
                 'agent_name': self._robot.agent,
                 'use_sim_time': 'True',
                 'amcl': 'true' if self.node.conf.Arena.SIM.value in (Constants.SimSimulator.GAZEBO,) else 'false',
-                'dual_vln_mode': self.node.rosparam[str].get('dual_vln_mode', 'heuristic'),
-                'dual_vln_model_path': self.node.rosparam[str].get('dual_vln_model_path', ''),
-                'dual_vln_device': self.node.rosparam[str].get('dual_vln_device', 'cpu'),
-                'dual_vln_inference_rate_hz': str(self.node.rosparam[float].get('dual_vln_inference_rate_hz', 10.0)),
-                'dual_vln_inference_timeout_sec': str(self.node.rosparam[float].get('dual_vln_inference_timeout_sec', 0.2)),
-                'dual_vln_rgb_topic': self.node.rosparam[str].get('dual_vln_rgb_topic', ''),
-                'dual_vln_depth_topic': self.node.rosparam[str].get('dual_vln_depth_topic', ''),
-                'dual_vln_camera_info_topic': self.node.rosparam[str].get('dual_vln_camera_info_topic', ''),
-                'dual_vln_python_executable': self.node.rosparam[str].get('dual_vln_python_executable', ''),
-                'dual_vln_adapter_target': self.node.rosparam[str].get('dual_vln_adapter_target', ''),
-                'dual_vln_look_down': str(self.node.rosparam[bool].get('dual_vln_look_down', False)).lower(),
-                'dual_vln_enable_visualization': str(self.node.rosparam[bool].get('dual_vln_enable_visualization', False)).lower(),
-                'dual_vln_visualization_topic': self.node.rosparam[str].get('dual_vln_visualization_topic', 'dual_vln/debug_image'),
-                'dual_vln_visualization_rate_hz': str(self.node.rosparam[float].get('dual_vln_visualization_rate_hz', 5.0)),
+                'internnav_mode': internnav_mode,
+                'internnav_model_path': internnav_model_path,
+                'internnav_device': internnav_device,
+                'internnav_inference_rate_hz': str(internnav_inference_rate_hz),
+                'internnav_inference_timeout_sec': str(internnav_inference_timeout_sec),
+                'internnav_rgb_topic': internnav_rgb_topic,
+                'internnav_depth_topic': internnav_depth_topic,
+                'internnav_camera_info_topic': internnav_camera_info_topic,
+                'internnav_python_executable': internnav_python_executable,
+                'internnav_adapter_target': internnav_adapter_target,
+                'internnav_look_down': str(internnav_look_down).lower(),
+                'internnav_enable_visualization': str(internnav_enable_visualization).lower(),
+                'internnav_visualization_topic': internnav_visualization_topic,
+                'internnav_visualization_rate_hz': str(internnav_visualization_rate_hz),
                 # Nav2 Jazzy collision_monitor currently rejects the turtlebot
                 # dual_vln polygon parameters during lifecycle configure.
                 # Keep the monitor enabled for other robots/planners.
@@ -754,6 +797,25 @@ class RobotManager(NodeInterface):
             return math.hypot(dx, dy)
         except Exception:
             return float('inf')
+
+    def _get_compat_rosparam(
+        self,
+        type_: type,
+        primary_name: str,
+        legacy_name: str,
+        default,
+        *,
+        empty_is_missing: bool = False,
+    ):
+        value = self.node.rosparam[type_].get(primary_name, None)
+        if value is not None and (not empty_is_missing or value != ''):
+            return value
+
+        legacy_value = self.node.rosparam[type_].get(legacy_name, None)
+        if legacy_value is not None and (not empty_is_missing or legacy_value != ''):
+            return legacy_value
+
+        return default
 
     def _stop_vel_timer_cb(self):
         """Publish zero velocity when the robot should be stopped."""

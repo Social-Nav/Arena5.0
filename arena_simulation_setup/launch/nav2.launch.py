@@ -37,6 +37,10 @@ def generate_launch_description():
     inter_planner = LaunchArgument('inter_planner')
     enable_collision_monitor = LaunchArgument('enable_collision_monitor', default_value='true')
 
+    controller_config_dir = PythonExpression(
+        ['"model_wrapper" if "', local_planner.substitution, '" == "dual_vln" else "', local_planner.substitution, '"']
+    )
+
     amcl = LaunchArgument('amcl')
     train_mode = LaunchArgument('train_mode', default_value='false')
 
@@ -77,7 +81,7 @@ def generate_launch_description():
                 'configs',
                 'nav2',
                 'controllers',
-                local_planner.substitution,
+                controller_config_dir,
                 'controller_config.yaml'
             ])
         ),

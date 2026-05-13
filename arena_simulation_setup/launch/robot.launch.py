@@ -19,6 +19,12 @@ def generate_launch_description():
     ld_items = []
     LaunchArgument.auto_append(ld_items)
 
+    def declare_legacy_alias(name: str, target: LaunchArgument) -> LaunchArgument:
+        return LaunchArgument(
+            name=name,
+            default_value=target.substitution,
+        )
+
     use_sim_time = LaunchArgument("use_sim_time")
 
     task_generator_node = LaunchArgument('task_generator_node')
@@ -33,9 +39,10 @@ def generate_launch_description():
     record_data_dir = LaunchArgument('record_data_dir', default_value='')
     amcl = LaunchArgument('amcl', default_value='false')
     train_mode = LaunchArgument('train_mode', default_value='false')
-    dual_vln_mode = LaunchArgument('dual_vln_mode', default_value='heuristic')
-    dual_vln_model_path = LaunchArgument(
-        'dual_vln_model_path',
+    internnav_mode = LaunchArgument('internnav_mode', default_value='heuristic')
+    dual_vln_mode = declare_legacy_alias('dual_vln_mode', internnav_mode)
+    internnav_model_path = LaunchArgument(
+        'internnav_model_path',
         default_value=launch.substitutions.EnvironmentVariable(
             'ARENA_INTERNNAV_MODEL_PATH',
             default_value=launch.substitutions.EnvironmentVariable(
@@ -44,14 +51,21 @@ def generate_launch_description():
             ),
         ),
     )
-    dual_vln_device = LaunchArgument('dual_vln_device', default_value='cpu')
-    dual_vln_inference_rate_hz = LaunchArgument('dual_vln_inference_rate_hz', default_value='10.0')
-    dual_vln_inference_timeout_sec = LaunchArgument('dual_vln_inference_timeout_sec', default_value='0.2')
-    dual_vln_rgb_topic = LaunchArgument('dual_vln_rgb_topic', default_value='')
-    dual_vln_depth_topic = LaunchArgument('dual_vln_depth_topic', default_value='')
-    dual_vln_camera_info_topic = LaunchArgument('dual_vln_camera_info_topic', default_value='')
-    dual_vln_python_executable = LaunchArgument(
-        'dual_vln_python_executable',
+    dual_vln_model_path = declare_legacy_alias('dual_vln_model_path', internnav_model_path)
+    internnav_device = LaunchArgument('internnav_device', default_value='cpu')
+    dual_vln_device = declare_legacy_alias('dual_vln_device', internnav_device)
+    internnav_inference_rate_hz = LaunchArgument('internnav_inference_rate_hz', default_value='10.0')
+    dual_vln_inference_rate_hz = declare_legacy_alias('dual_vln_inference_rate_hz', internnav_inference_rate_hz)
+    internnav_inference_timeout_sec = LaunchArgument('internnav_inference_timeout_sec', default_value='0.2')
+    dual_vln_inference_timeout_sec = declare_legacy_alias('dual_vln_inference_timeout_sec', internnav_inference_timeout_sec)
+    internnav_rgb_topic = LaunchArgument('internnav_rgb_topic', default_value='')
+    dual_vln_rgb_topic = declare_legacy_alias('dual_vln_rgb_topic', internnav_rgb_topic)
+    internnav_depth_topic = LaunchArgument('internnav_depth_topic', default_value='')
+    dual_vln_depth_topic = declare_legacy_alias('dual_vln_depth_topic', internnav_depth_topic)
+    internnav_camera_info_topic = LaunchArgument('internnav_camera_info_topic', default_value='')
+    dual_vln_camera_info_topic = declare_legacy_alias('dual_vln_camera_info_topic', internnav_camera_info_topic)
+    internnav_python_executable = LaunchArgument(
+        'internnav_python_executable',
         default_value=launch.substitutions.EnvironmentVariable(
             'ARENA_VLN_MODEL_PYTHON',
             default_value=launch.substitutions.EnvironmentVariable(
@@ -60,13 +74,21 @@ def generate_launch_description():
             ),
         ),
     )
-    dual_vln_adapter_target = LaunchArgument('dual_vln_adapter_target', default_value='')
-    dual_vln_require_real_backend = LaunchArgument('dual_vln_require_real_backend', default_value='false')
-    dual_vln_strict_device = LaunchArgument('dual_vln_strict_device', default_value='false')
-    dual_vln_look_down = LaunchArgument('dual_vln_look_down', default_value='false')
-    dual_vln_enable_visualization = LaunchArgument('dual_vln_enable_visualization', default_value='false')
-    dual_vln_visualization_topic = LaunchArgument('dual_vln_visualization_topic', default_value='dual_vln/debug_image')
-    dual_vln_visualization_rate_hz = LaunchArgument('dual_vln_visualization_rate_hz', default_value='5.0')
+    dual_vln_python_executable = declare_legacy_alias('dual_vln_python_executable', internnav_python_executable)
+    internnav_adapter_target = LaunchArgument('internnav_adapter_target', default_value='')
+    dual_vln_adapter_target = declare_legacy_alias('dual_vln_adapter_target', internnav_adapter_target)
+    internnav_require_real_backend = LaunchArgument('internnav_require_real_backend', default_value='false')
+    dual_vln_require_real_backend = declare_legacy_alias('dual_vln_require_real_backend', internnav_require_real_backend)
+    internnav_strict_device = LaunchArgument('internnav_strict_device', default_value='false')
+    dual_vln_strict_device = declare_legacy_alias('dual_vln_strict_device', internnav_strict_device)
+    internnav_look_down = LaunchArgument('internnav_look_down', default_value='false')
+    dual_vln_look_down = declare_legacy_alias('dual_vln_look_down', internnav_look_down)
+    internnav_enable_visualization = LaunchArgument('internnav_enable_visualization', default_value='false')
+    dual_vln_enable_visualization = declare_legacy_alias('dual_vln_enable_visualization', internnav_enable_visualization)
+    internnav_visualization_topic = LaunchArgument('internnav_visualization_topic', default_value='internnav/debug_image')
+    dual_vln_visualization_topic = declare_legacy_alias('dual_vln_visualization_topic', internnav_visualization_topic)
+    internnav_visualization_rate_hz = LaunchArgument('internnav_visualization_rate_hz', default_value='5.0')
+    dual_vln_visualization_rate_hz = declare_legacy_alias('dual_vln_visualization_rate_hz', internnav_visualization_rate_hz)
     enable_collision_monitor = LaunchArgument('enable_collision_monitor', default_value='true')
     agents_dir = LaunchArgument(
         'agents_dir',
@@ -159,8 +181,8 @@ def generate_launch_description():
         ),
     )
 
-    # Launch the dual_vln server when using dual_vln local planner
-    dual_vln_server_parameters = [
+    # Launch the InternNav wrapper when using the dual_vln local planner instance
+    internnav_server_parameters = [
         {
             'namespace': namespace.substitution,
             'mode': dual_vln_mode.substitution,
@@ -196,19 +218,19 @@ def generate_launch_description():
             ),
         }
     ]
-    dual_vln_enabled = IfCondition(
+    internnav_enabled = IfCondition(
         PythonExpression(["'", local_planner.substitution, "' == 'dual_vln' and '", train_mode.substitution, "' == 'false'"])
     )
-    dual_vln_server = launch_ros.actions.Node(
+    internnav_server = launch_ros.actions.Node(
         package='arena_vln_models',
-        executable='dual_vln_server',
-        name='dual_vln_server',
+        executable='internnav_server',
+        name='internnav_server',
         output='screen',
-        parameters=dual_vln_server_parameters,
+        parameters=internnav_server_parameters,
         additional_env={
             'ARENA_PYTHON': dual_vln_python_executable.substitution,
         },
-        condition=dual_vln_enabled,
+        condition=internnav_enabled,
     )
 
     ld = launch.LaunchDescription([
@@ -227,7 +249,7 @@ def generate_launch_description():
         nav2_launch,
         # state_pub_launch,
         rosnav_rl_action_server,
-        dual_vln_server,
+        internnav_server,
         data_recorder,
     ])
     return ld
