@@ -1,5 +1,4 @@
-from shapely import LineString, MultiLineString
-from shapely.geometry import Point, Polygon
+from shapely.geometry import LineString, MultiLineString, Point, Polygon
 
 from arena_simulation_setup.shared import Position, Wall
 

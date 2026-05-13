@@ -1,4 +1,4 @@
-import shapely
+from shapely.geometry import Polygon
 
 
 from . import (
@@ -18,11 +18,11 @@ class WorldGeneratorEmpty(WorldGeneratorImpl):
     config: Configuration
 
     def configure(self, configuration: dict):
-        self.config = self.Configuration.model_validate(configuration)
+        self.config = self.Configuration.validate_compat(configuration)
 
     def compute(self) -> WorldDescription:
 
-        room = shapely.Polygon([
+        room = Polygon([
             (0, 0),
             (self.config.width, 0),
             (self.config.width, self.config.height),

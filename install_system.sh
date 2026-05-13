@@ -121,12 +121,14 @@ sudo apt-get install -y \
     cmake \
     git \
     wget \
+    ffmpeg \
     libasio-dev \
     libtinyxml2-dev \
     libcunit1-dev \
     libpcl-dev \
     libboost-python-dev \
     python3-rosdep \
+    python3-imageio \
     libgps-dev \
     graphicsmagick \
     libgraphicsmagick1-dev \

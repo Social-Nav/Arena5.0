@@ -14,9 +14,9 @@ polygons:
 polygons_dict:
   StopPolygon:
     type: "polygon"
-    points: "[ [0.1, 0.1], [0.1, -0.1], [-0.1, -0.1], [-0.1, 0.1] ]"
+    points: [0.1, 0.1, 0.1, -0.1, -0.1, -0.1, -0.1, 0.1]
     action_type: "stop"
-    min_points: 4
+    max_points: 3
     visualize: True
     polygon_pub_topic: "polygon_stop"
     enabled: True

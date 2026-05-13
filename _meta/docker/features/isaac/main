@@ -45,12 +45,18 @@ source_fn(){
 }
 
 launch(){
-    arena_docker_compose up -d --remove-orphans isaac
+    arena_docker_compose up -d --remove-orphans --no-recreate isaac
     trap 'arena_docker_compose stop isaac || true' EXIT INT TERM
-    arena_docker_compose exec -T isaac bash -c "source /opt/arena_ws/install/local_setup.bash && python3-arena /opt/arena_ws/build/arena_isaac/arena_isaac/run_isaacsim.py $*" || return $?
+    arena_docker_compose exec -T isaac bash -c "source /opt/arena_ws/install/local_setup.bash && export PYTHONPATH=\"\$PYTHONPATH:/opt/ros/jazzy/lib/python3.12/site-packages:/isaac-sim/exts/isaacsim.ros2.bridge/jazzy/rclpy\" && ARENA_ISAAC_HEADLESS=\"\${ARENA_ISAAC_HEADLESS:-1}\" ARENA_ISAAC_RENDERER=\"\${ARENA_ISAAC_RENDERER:-RayTracedLighting}\" python3-arena /opt/arena_ws/build/arena_isaac/arena_isaac/run_isaacsim.py \$*" || return $?
 }
 
 # === MAIN SCRIPT ===
+
+# Source the main docker setup so we have arena_docker_compose
+if ! type arena_docker_compose >/dev/null 2>&1; then
+    source "$(dirname "$0")/../../source"
+fi
+
 help(){
     echo "Usage: $name <install|update|uninstall|source|launch|exec>"
 }

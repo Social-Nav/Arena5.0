@@ -26,6 +26,8 @@ unset current_stack
 ARENA_WS_DIR="${ARENA_WS_DIR:-$(pwd)}"
 
 export ARENA_WS_DIR
+export ARENA_WS="$ARENA_WS_DIR"
+export ARENA_WORKSPACE="$ARENA_WS_DIR"
 export ARENA_DIR="$ARENA_WS_DIR/src/Arena"
 export ARENA_FEATURES_DIR="${ARENA_FEATURES_DIR:-$ARENA_DIR/_meta/features}"
 
@@ -42,6 +44,14 @@ export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-1}
 export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
 export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/opt/ros/${ARENA_ROS_DISTRO}/lib/"
 export ASSET_BUCKETS=${ARENA_ASSET_BUCKETS:-"default"}
+
+if [ -z "${GIT_CONFIG_COUNT+x}" ]; then
+    export GIT_CONFIG_COUNT=2
+    export GIT_CONFIG_KEY_0="url.https://github.com/.insteadOf"
+    export GIT_CONFIG_VALUE_0="git@github.com:"
+    export GIT_CONFIG_KEY_1="url.https://github.com/.insteadOf"
+    export GIT_CONFIG_VALUE_1="ssh://git@github.com/"
+fi
 
 resolve_arena_feature(){
     local feature="$1"
@@ -141,7 +151,11 @@ if [ -z ${ARENA_SOURCED+x} ] ; then
                 result=$?
             ;;
             launch)
-		        killall -s 9 task_generator_node && sleep 1
+                if command -v killall > /dev/null 2>&1; then
+                    killall -s 9 task_generator_node && sleep 1
+                elif command -v pkill > /dev/null 2>&1; then
+                    pkill -9 -f task_generator_node && sleep 1
+                fi
                 ros2 launch arena_bringup arena.launch.py "$@"
                 result=$?
             ;;

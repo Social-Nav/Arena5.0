@@ -1,7 +1,12 @@
 from pathlib import Path
 
 import yaml
-from typing_extensions import Self
+
+try:
+    from typing import Self
+except ImportError:
+    from typing import TypeVar
+    Self = TypeVar('Self')
 
 from arena_simulation_setup import ASS_DIR
 from arena_simulation_setup.tree import Identifier, PathResolverBase

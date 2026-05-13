@@ -1,0 +1,13 @@
+controller_plugins:
+  - FollowPath
+
+controller_plugins_dict:
+  FollowPath:
+    # Reuse the existing DRLController interface (GetCommand -> Twist)
+    plugin: "rosnav_rl_planner::DRLController"
+    service_name: "get_command"  # resolved within robot namespace
+    command_response_timeout_sec: 120.0
+    subgoal_frequency: 3.0        # Hz
+    min_lookahead_dist: 2.5
+    max_lookahead_dist: 3.0
+    lookahead_time: 1.5

@@ -14,7 +14,11 @@ from pathlib import Path
 from typing import Optional
 
 import attrs
-from typing_extensions import Self
+
+try:
+    from typing import Self
+except ImportError:
+    Self = typing.TypeVar('Self')
 
 from arena_simulation_setup import (
     ARENA_ASSETS_DIR,

@@ -2,7 +2,7 @@ import logging
 import random
 from collections.abc import Iterable
 
-import shapely
+from shapely.geometry import Polygon
 
 from arena_simulation_setup.shared import Door, Position, Wall
 
@@ -50,7 +50,7 @@ class WorldGeneratorHallway(WorldGeneratorImpl):
     config: Configuration
 
     def configure(self, configuration: dict):
-        self.config = self.Configuration.model_validate(configuration)
+        self.config = self.Configuration.validate_compat(configuration)
         logger.info(self.config)
 
     def compute(self) -> WorldDescription:
@@ -131,7 +131,7 @@ class WorldGeneratorHallway(WorldGeneratorImpl):
             door_start = round(door_start, 1)
             door_end = round(door_end, 1)
 
-            room_polygon = shapely.Polygon((
+            room_polygon = Polygon((
                 (x, y),
                 (x + w, y),
                 (x + w, y + h),
@@ -139,17 +139,14 @@ class WorldGeneratorHallway(WorldGeneratorImpl):
             )).buffer(-self.config.wall_gap / 2)
 
             door_height = self.config.resolution * 2
-            door_polygon = shapely.Polygon((
+            door_polygon = Polygon((
                 (door_start, door_y - door_height),
                 (door_end, door_y - door_height),
                 (door_end, door_y + door_height),
                 (door_start, door_y + door_height)
             ))
 
-            room_walls = shapely.difference(
-                room_polygon.exterior,
-                door_polygon
-            )
+            room_walls = room_polygon.exterior.difference(door_polygon)
 
             rooms.append(
                 WorldDescription.Zone(

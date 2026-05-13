@@ -21,6 +21,13 @@ class BaseConfiguration(pydantic.BaseModel):
     resolution: float = 0.05  # m / px
     wall_gap: float = 0.05  # gap between adjacent walls
 
+    @classmethod
+    def validate_compat(cls, value: dict):
+        model_validate = getattr(cls, 'model_validate', None)
+        if callable(model_validate):
+            return model_validate(value)
+        return cls.parse_obj(value)
+
 
 class WorldGeneratorImpl(abc.ABC):
     """

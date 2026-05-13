@@ -20,6 +20,11 @@ python -m pip install git+https://github.com/voshch/vcstool.git || echo 'failed 
 #update repos
 if [ $_GIT -eq 1 ] ; then
     export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new"
+    export GIT_CONFIG_COUNT=2
+    export GIT_CONFIG_KEY_0="url.https://github.com/.insteadOf"
+    export GIT_CONFIG_VALUE_0="git@github.com:"
+    export GIT_CONFIG_KEY_1="url.https://github.com/.insteadOf"
+    export GIT_CONFIG_VALUE_1="ssh://git@github.com/"
     echo updating Arena...
     git pull --ff-only --autostash && git submodule update --recursive
     git submodule update --init --recursive arena_robots

@@ -5,7 +5,12 @@ from pathlib import Path
 
 import attrs
 import cattrs
-from typing_extensions import Self
+
+try:
+    from typing import Self
+except ImportError:
+    from typing import TypeVar
+    Self = TypeVar('Self')
 
 from arena_simulation_setup.tree.assets.Object import ObjectIdentifier
 from arena_simulation_setup.tree.assets.Pedestrian import PedestrianIdentifier

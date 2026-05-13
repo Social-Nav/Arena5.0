@@ -1,7 +1,12 @@
-from typing_extensions import Self
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional
+
+try:
+    from typing import Self
+except ImportError:
+    from typing import TypeVar
+    Self = TypeVar('Self')
 
 import attrs
 

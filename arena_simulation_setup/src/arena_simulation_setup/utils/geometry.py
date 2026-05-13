@@ -6,7 +6,11 @@ from collections.abc import Iterator, Sequence
 
 import attrs
 import numpy as np
-from typing_extensions import Self
+
+try:
+    from typing import Self
+except ImportError:
+    Self = typing.TypeVar('Self')
 from arena_simulation_setup.utils.cattrs import Idempotent, Parseable
 
 try:

@@ -1,0 +1,21 @@
+bounding_box:
+- - -0.5
+  - 0.5
+- - -0.35
+  - 0.35
+- - 0.0
+  - 0.75
+color:
+- brown
+desc: Simple table placeholder for Gazebo smoke eval
+face: -y
+hoi:
+- touch
+material:
+- wood
+name: table
+note: Auto-added minimal placeholder asset so dual_vln smoke eval can spawn map_empty obstacles in Gazebo.
+path: Object/table
+tags:
+- table
+- placeholder

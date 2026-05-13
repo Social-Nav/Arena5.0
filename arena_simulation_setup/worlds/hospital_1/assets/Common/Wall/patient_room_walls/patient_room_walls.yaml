@@ -6,7 +6,7 @@ main:
     height: 1.25
     z: 0.75
   - tile:
-      - model: Hospital/Towel_Dispenser
+      - model: Hospital/SM_ToiletPaper
         orientation: 1.5708 # rotate 90 degrees
         y: 0.1
         z: 1

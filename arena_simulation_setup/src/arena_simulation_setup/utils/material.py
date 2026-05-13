@@ -2,29 +2,68 @@ import re
 import typing
 from pathlib import Path
 
-import colourings
-from PIL import Image
+from PIL import Image, ImageColor
 
 
-def Color(color: typing.Any) -> colourings.Color:
-    """Convert a color representation to a Colourings Color object.
+class _ParsedColor:
+    def __init__(self, rgba: tuple[float, float, float, float]):
+        self._rgba = rgba
+
+    def get_rgba(self) -> tuple[float, float, float, float]:
+        return self._rgba
+
+
+def _normalize_channel(value: float, /) -> float:
+    if value > 1.0:
+        return max(0.0, min(255.0, value)) / 255.0
+    return max(0.0, min(1.0, value))
+
+
+def _parse_function_color(color: str) -> _ParsedColor:
+    match = re.fullmatch(r'(?P<kind>rgba?|hsla?)\((?P<body>[^)]*)\)', color.strip())
+    if match is None:
+        raise ValueError(f"Unsupported color format: {color}")
+
+    kind = match.group('kind').lower()
+    values = [part.strip() for part in match.group('body').split(',') if part.strip()]
+    if kind in {'rgb', 'rgba'}:
+        if len(values) not in {3, 4}:
+            raise ValueError(f"Invalid {kind} color: {color}")
+        rgba = tuple(_normalize_channel(float(value)) for value in values[:3])
+        alpha = _normalize_channel(float(values[3])) if len(values) == 4 else 1.0
+        return _ParsedColor((rgba[0], rgba[1], rgba[2], alpha))
+
+    raise ValueError(f"Unsupported color function: {color}")
+
+
+def Color(color: typing.Any) -> _ParsedColor:
+    """Convert a color representation to a parsed color object.
 
     Args:
         color (typing.Any): Color representation (e.g., hex string, RGB tuple).
 
     Returns:
-        colourings.Color: Corresponding Colourings Color object.
+        _ParsedColor: Parsed color with normalized RGBA channels.
     """
-    try:
-        return colourings.Color(color)
-    except Exception as e:
-        exc = e
+    if isinstance(color, _ParsedColor):
+        return color
 
-    try:
-        t, c = color.split('(', 1)
-        return colourings.Color(**{t: tuple(map(float, c.rstrip(')').split(',')))})  # type: ignore
-    except BaseException:
-        raise exc
+    if isinstance(color, (tuple, list)):
+        if len(color) not in {3, 4}:
+            raise ValueError(f"Invalid tuple color: {color}")
+        rgba = tuple(_normalize_channel(float(value)) for value in color[:3])
+        alpha = _normalize_channel(float(color[3])) if len(color) == 4 else 1.0
+        return _ParsedColor((rgba[0], rgba[1], rgba[2], alpha))
+
+    if isinstance(color, str):
+        stripped = color.strip()
+        if '(' in stripped and stripped.endswith(')'):
+            return _parse_function_color(stripped)
+
+        rgba = ImageColor.getcolor(stripped, 'RGBA')
+        return _ParsedColor(tuple(channel / 255.0 for channel in rgba))
+
+    raise ValueError(f"Unsupported color value: {color!r}")
 
 
 class ImgUtil:

@@ -197,13 +197,13 @@ class WorldDescription:
             - Static objects are drawn only if their dimensions can be determined from bbox, width/height, or default_asset_bbox.
             - If asset_color is None, static objects are not drawn.
         """
-        import shapely
         import shapely.affinity
+        from shapely.geometry import MultiLineString, MultiPolygon, Polygon, box
 
         map_kwargs: dict[str, typing.Any] = {}
 
         if asset_color is not None:
-            static_objects: list[tuple[str, shapely.Polygon]] = []
+            static_objects: list[tuple[str, Polygon]] = []
             for entity in self.all_static_entities:
                 try:
                     bbox = entity.asdict(expand_extra=True).get('bbox')
@@ -214,7 +214,7 @@ class WorldDescription:
                     (x_min, x_max), (y_min, y_max), *_ = bbox
                 except Exception:
                     continue
-                poly = shapely.box(x_min, y_min, x_max, y_max)
+                poly = box(x_min, y_min, x_max, y_max)
                 poly = shapely.affinity.rotate(poly, entity.pose.orientation.to_yaw(), use_radians=True)
                 poly = shapely.affinity.translate(poly, entity.pose.position.x, entity.pose.position.y)
                 static_objects.append((entity.name, poly))
@@ -224,9 +224,9 @@ class WorldDescription:
             map_kwargs["asset_name_color"] = asset_name_color
 
         png, origin = Map.generate_png(
-            rooms=shapely.MultiPolygon([shapely.Polygon(zone.corners) for zone in self.zones]),
-            doors=shapely.MultiPolygon([shapely.Polygon(door.corners) for door in self.all_doors]),
-            walls=shapely.MultiLineString(list(self.all_walls)),
+            rooms=MultiPolygon([Polygon(zone.corners) for zone in self.zones]),
+            doors=MultiPolygon([Polygon(door.corners) for door in self.all_doors]),
+            walls=MultiLineString(list(self.all_walls)),
             resolution=resolution,
             padding=5,
             **map_kwargs,

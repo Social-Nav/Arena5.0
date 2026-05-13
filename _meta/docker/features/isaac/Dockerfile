@@ -1,5 +1,26 @@
 # --- Stage 1: Builder (Strict Python 3.11 + ROS Jazzy) ---
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+ARG http_proxy
+ARG https_proxy
+ARG no_proxy
+
 FROM osrf/ros:jazzy-desktop AS builder
+
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+ARG http_proxy
+ARG https_proxy
+ARG no_proxy
+
+ENV HTTP_PROXY=${HTTP_PROXY} \
+    HTTPS_PROXY=${HTTPS_PROXY} \
+    NO_PROXY=${NO_PROXY} \
+    http_proxy=${http_proxy} \
+    https_proxy=${https_proxy} \
+    no_proxy=${no_proxy}
 
 # 1. Setup Deadsnakes for Python 3.11 (Jazzy is native 3.12)
 RUN apt-get update && apt-get install -y software-properties-common && \
@@ -43,11 +64,25 @@ RUN . /opt/ros/jazzy/setup.sh && \
 # --- Stage 2: Final Isaac Sim Image ---
 FROM nvcr.io/nvidia/isaac-sim:5.1.0
 
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+ARG http_proxy
+ARG https_proxy
+ARG no_proxy
+
+ENV HTTP_PROXY=${HTTP_PROXY} \
+    HTTPS_PROXY=${HTTPS_PROXY} \
+    NO_PROXY=${NO_PROXY} \
+    http_proxy=${http_proxy} \
+    https_proxy=${https_proxy} \
+    no_proxy=${no_proxy}
+
 # 6. Switch to root to fix system libs and paths
 USER root
 
-# Install cattrs directly into Isaac's internal site-packages to ensure it persists
-RUN /isaac-sim/python.sh -m pip install cattrs pyyaml
+# Install runtime Python dependencies directly into Isaac's internal site-packages to ensure they persist
+RUN /isaac-sim/python.sh -m pip install cattrs pyyaml pandas
 
 # Copy the libpython3.11 library from builder (missing in Isaac 5.1.0 base)
 COPY --from=builder /usr/lib/x86_64-linux-gnu/libpython3.11.so.1.0 /usr/lib/x86_64-linux-gnu/

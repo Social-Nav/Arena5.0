@@ -9,6 +9,7 @@ from arena_bringup.substitutions import (
     YAMLRetrieveSubstitution,
 )
 from launch.actions import GroupAction
+from launch.conditions import IfCondition
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.actions import Node, SetRemap
 from launch_ros.descriptions import ParameterFile
@@ -34,6 +35,7 @@ def generate_launch_description():
     global_planner = LaunchArgument('global_planner')
     local_planner = LaunchArgument('local_planner')
     inter_planner = LaunchArgument('inter_planner')
+    enable_collision_monitor = LaunchArgument('enable_collision_monitor', default_value='true')
 
     amcl = LaunchArgument('amcl')
     train_mode = LaunchArgument('train_mode', default_value='false')
@@ -240,10 +242,10 @@ def generate_launch_description():
         'planner_server',
         'behavior_server',
         'bt_navigator',
-        'waypoint_follower',
         'velocity_smoother',
-        'collision_monitor'
     ]
+
+    collision_monitor_enabled = IfCondition(enable_collision_monitor.substitution)
 
     bringup_cmd_group = GroupAction([
         *(SetRemap(src=r[0], dst=r[1]) for r in remappings),
@@ -253,15 +255,6 @@ def generate_launch_description():
             name='goal_pose_relay',
             arguments=['/goal_pose', 'goal_pose'],
         ),
-        Node(
-            package='pose_to_tf',
-            executable='pose_to_tf',
-            name='pose_to_tf',
-            parameters=[{'odom_frame': 'odom', 'pose_topic': 'pose'}],
-            output='screen'
-        ),
-
-
         # nav2 nodes
         Node(
             package='nav2_controller', executable='controller_server', name='controller_server',
@@ -284,16 +277,23 @@ def generate_launch_description():
             output='screen', parameters=[nav2_configured_params]
         ),
         Node(
-            package='nav2_waypoint_follower', executable='waypoint_follower', name='waypoint_follower',
-            output='screen', parameters=[nav2_configured_params]
-        ),
-        Node(
             package='nav2_velocity_smoother', executable='velocity_smoother', name='velocity_smoother',
             output='screen', parameters=[nav2_configured_params]
         ),
         Node(
             package='nav2_collision_monitor', executable='collision_monitor', name='collision_monitor',
-            output='screen', parameters=[nav2_configured_params]
+            output='screen', parameters=[nav2_configured_params],
+            condition=collision_monitor_enabled,
+        ),
+        Node(
+            package='nav2_lifecycle_manager', executable='lifecycle_manager', name='lifecycle_manager_collision_monitor',
+            output='screen',
+            parameters=[
+                {'autostart': True},
+                {'node_names': ['collision_monitor']},
+                nav2_configured_params
+            ],
+            condition=collision_monitor_enabled,
         ),
         Node(
             package='nav2_lifecycle_manager', executable='lifecycle_manager', name='lifecycle_manager_navigation',

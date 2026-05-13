@@ -15,6 +15,24 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     pipx \
     python3-colcon-common-extensions \
     python3-rosdep \
+    ros-${ROS_DISTRO}-fastcdr \
+    ros-${ROS_DISTRO}-fastrtps \
+    ros-${ROS_DISTRO}-fastrtps-cmake-module \
+    ros-${ROS_DISTRO}-irobot-create-description \
+    ros-${ROS_DISTRO}-navigation2 \
+    ros-${ROS_DISTRO}-nav2-bringup \
+    ros-${ROS_DISTRO}-nav2-map-server \
+    ros-${ROS_DISTRO}-nav2-amcl \
+    ros-${ROS_DISTRO}-rmw-fastrtps-cpp \
+    ros-${ROS_DISTRO}-rmw-fastrtps-shared-cpp \
+    ros-${ROS_DISTRO}-ros-gz-sim \
+    ros-${ROS_DISTRO}-ros-gz-bridge \
+    ros-${ROS_DISTRO}-ros-gz-image \
+    ros-${ROS_DISTRO}-rosidl-dynamic-typesupport-fastrtps \
+    ros-${ROS_DISTRO}-rosidl-typesupport-fastrtps-c \
+    ros-${ROS_DISTRO}-rosidl-typesupport-fastrtps-cpp \
+    ros-${ROS_DISTRO}-tf-transformations \
+    ros-${ROS_DISTRO}-topic-tools \
     sudo
 
 RUN pipx install git+https://github.com/voshch/vcstool.git
