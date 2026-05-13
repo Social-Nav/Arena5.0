@@ -37,7 +37,7 @@ def generate_launch_description():
     )
     inter_planner = LaunchArgument(
         name='inter_planner',
-        default_value='navigate_w_replanning_time',
+        default_value='navigate_to_pose_w_replanning_and_recovery',
         description='inter planner type (Behavior Tree)'
     )
     local_planner = LaunchArgument(
@@ -267,6 +267,7 @@ def generate_launch_description():
             **use_sim_time.dict,
             'simulator': sim.substitution,
             **world.dict,
+            **save_data.dict,
             'headless': PythonExpression([headless.substitution, '>0']),
         }.items(),
     )

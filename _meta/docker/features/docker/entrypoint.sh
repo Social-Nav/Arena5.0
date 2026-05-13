@@ -6,9 +6,10 @@ export PYENV_ROOT="$HOME/.pyenv"
 [[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"
 eval "$(pyenv init - bash)"
 
-set -e
 cd /opt/arena_ws
 source source
+
+set -e
 
 if [ ! -f /.built ]; then
     echo "Running initial setup..."

@@ -11,6 +11,8 @@ import arena_people_msgs.msg
 import arena_robots.Robot
 import arena_simulation_setup.tree.assets.Material
 import isaacsim_msgs.msg
+import launch
+import launch_ros.actions
 import numpy as np
 import std_msgs.msg
 import std_srvs.srv
@@ -40,6 +42,7 @@ from isaacsim_msgs.srv import (
     SpawnPrims,
     SpawnUrdf,
     SpawnUsd,
+    SpawnUsdRobot,
     SpawnWalls,
 )
 from std_msgs.msg import String as StdString
@@ -95,6 +98,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
             SpawnPrims=self.node.create_client_wrapper(SpawnPrims, "/isaac/SpawnPrims"),
             SpawnUrdf=self.node.create_client_wrapper(SpawnUrdf, "/isaac/SpawnUrdf"),
             SpawnUsd=self.node.create_client_wrapper(SpawnUsd, "/isaac/SpawnUsd"),
+            SpawnUsdRobot=self.node.create_client_wrapper(SpawnUsdRobot, "/isaac/SpawnUsdRobot"),
             SpawnWalls=self.node.create_client_wrapper(SpawnWalls, "/isaac/SpawnWalls"),
             SpawnElevators=self.node.create_client_wrapper(SpawnElevators, "/isaac/SpawnElevators"),
             PauseSimulation=self.node.create_client_wrapper(std_srvs.srv.Trigger, "/isaac/PauseSimulation"),
@@ -104,24 +108,97 @@ class IsaacSimulator(BaseSim, NodeInterface):
         # Publisher for external registration messages so IsaacSim's DoorManager
         # can be informed about spawned entities in the IsaacSim process.
         self._reg_pub = self.node.create_publisher(StdString, '/isaac/register_entity', 10)
+        self._map_world_tfs: set[str] = set()
+
+
+    async def _ensure_map_to_world_tf(self, robot_name: str) -> None:
+        """Publish a static map -> <robot>/world TF if not already running."""
+        if robot_name in self._map_world_tfs:
+            return
+
+        child_frame = str(Namespace(robot_name)('world'))
+        tf_node = launch_ros.actions.Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name=f'map_to_{robot_name}_world_tfpublisher',
+            arguments=['0', '0', '0', '0', '0', '0', 'map', child_frame],
+            parameters=[{'use_sim_time': True}],
+            output='screen',
+        )
+        await self.node.do_launch(launch.LaunchDescription([tf_node]))
+        self._map_world_tfs.add(robot_name)
+
+    async def _publish_sensor_frame_tfs(self, robot_name: str, sensor_frame_transforms: list) -> None:
+        """Publish static TFs for sensor frames defined in model_params.yaml.
+
+        Each entry in sensor_frame_transforms should have:
+          parent, child, x, y, z, qx, qy, qz, qw
+        """
+        ns = Namespace(robot_name)
+        nodes = []
+        for i, tf in enumerate(sensor_frame_transforms):
+            parent = str(ns(tf.get('parent', 'base_footprint')))
+            child = str(ns(tf.get('child', 'sensor')))
+            x   = str(tf.get('x',  0.0))
+            y   = str(tf.get('y',  0.0))
+            z   = str(tf.get('z',  0.0))
+            qx  = str(tf.get('qx', 0.0))
+            qy  = str(tf.get('qy', 0.0))
+            qz  = str(tf.get('qz', 0.0))
+            qw  = str(tf.get('qw', 1.0))
+            safe_child = child.replace('/', '_')
+            nodes.append(launch_ros.actions.Node(
+                package='tf2_ros',
+                executable='static_transform_publisher',
+                name=f'{robot_name}_sensor_tf_{i}_{safe_child}',
+                arguments=[x, y, z, qx, qy, qz, qw, parent, child],
+                parameters=[{'use_sim_time': True}],
+                output='screen',
+            ))
+        if nodes:
+            await self.node.do_launch(launch.LaunchDescription(nodes))
 
     async def robot_spawn(self, robots):
         async def impl(robot: Robot) -> bool:
             try:
-                model = await (await robot.model.resolve()).model.get(
-                    (
+                resolved_robot_model = await robot.model.resolve()
+                try:
+                    model = await resolved_robot_model.model.get(
+                        ModelType.USD,
+                        loader_args=robot.asdict(),
+                    )
+                except FileNotFoundError:
+                    self._logger.debug(
+                        f"USD model for {robot.model.name} not found; falling back to URDF"
+                    )
+                    model = await resolved_robot_model.model.get(
                         ModelType.URDF,
-                        # ModelType.USD
-                    ),
-                    loader_args=robot.asdict()
-                )
+                        loader_args=robot.asdict(),
+                    )
+
+                robot_params = (await arena_robots.Robot.RobotIdentifier(robot.model.name).resolve()).model_params
+                fq_name = self._NS_ROBOT(robot.sim_path)
+
+                if model.type == ModelType.USD:
+                    assert model.path is not None, f"USD model {model.name} must have a valid file path"
+
+                    await self._clients.SpawnUsdRobot.call_timeout(
+                        SpawnUsdRobot.Request(
+                            name=fq_name,
+                            usd_path=str(model.path),
+                            robot_namespace=str(self.node.service_namespace(robot.name)).lstrip('/'),
+                            base_frame=robot_params.base_frame,
+                            pose=robot.pose.to_msg(),
+                        )
+                    )
+
+                    self._logger.info(f"Spawned USD robot '{robot.name}' via SpawnUsdRobot")
+                    await self._ensure_map_to_world_tf(robot.name)
+                    await self._publish_sensor_frame_tfs(robot.name, robot_params.sensor_frame_transforms)
+                    return True
 
                 if model.type == ModelType.URDF:
                     assert model.path is not None, f"URDF model {model.name} must have a valid file path"
-                    robot_params = (await arena_robots.Robot.RobotIdentifier(robot.model.name).resolve()).model_params
-
-                    fq_name = self._NS_ROBOT(robot.sim_path)
-                    
                     await self._clients.SpawnUrdf.call_timeout(
                         SpawnUrdf.Request(
                             name=fq_name,
@@ -154,7 +231,6 @@ class IsaacSimulator(BaseSim, NodeInterface):
 
                     return True
 
-                # TODO
                 raise NotImplementedError(
                     f"robot model of type {model.type} can't be spawned by {self.__class__.__name__}"
                 )
@@ -542,6 +618,11 @@ class IsaacSimulator(BaseSim, NodeInterface):
         self.node.create_publisher(std_msgs.msg.String, '/isaac/add_pedestrians_topic', 10).publish(
             std_msgs.msg.String(data=self.node.service_namespace('arena_peds'))
         )
+
+        # Delete any robot prims left over from a previous session so their
+        # OmniGraph TF/topic publishers do not bleed into this session.
+        self._logger.info("Cleaning up leftover robot prims from previous session...")
+        await self._delete_entity(str(self._NS_ROBOT))
 
         self._logger.info("All service clients initialized and available.")
     

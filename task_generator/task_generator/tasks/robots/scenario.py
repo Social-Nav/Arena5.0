@@ -21,19 +21,11 @@ class TM_Scenario(TM_Robots):
         return WorldIdentifier(self.node._world_manager.world_name).resolve_sync().scenario(scenario).resolve_sync().load().robots
 
     async def reset(self, **kwargs):
-        """
-        Resets the scenario.
-
-        Args:
-            kwargs: Additional keyword arguments.
-
-        Returns:
-            None
-        """
-
         await super().reset(**kwargs)
 
-        SCENARIO_ROBOTS = self._config.value
+        # Re-resolve against the current world_name at reset time to avoid
+        # stale cache from startup (file param fires before world param is set).
+        SCENARIO_ROBOTS = self._parse_scenario(self._config.param)
 
         # check robot manager length
         managed_robots = list(self._PROPS.robots.values())

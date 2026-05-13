@@ -60,7 +60,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
 
         Task.declare_parameters(self)
 
-        self._auto_reset = self.rosparam[bool].get('auto_reset', True)
+        self._auto_reset = self.rosparam[bool].get('auto_reset', False)
         self._train_mode = self.rosparam[bool].get('train_mode', False)
 
         self._reset_lock: asyncio.Lock = asyncio.Lock()
@@ -211,8 +211,15 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             return
 
         self.get_logger().info(
-            f"Shutting down. All {int(self.conf.General.DESIRED_EPISODES.value)} tasks completed")
-        rclpy.shutdown()
+            f"All {int(self.conf.General.DESIRED_EPISODES.value)} tasks completed. Publishing finished message.")
+        self._pub_finished.publish(Empty())
+
+        # Delay shutdown to allow data saving to complete
+        def delayed_shutdown():
+            self.get_logger().info("Shutting down after data save delay...")
+            rclpy.shutdown()
+
+        self.create_timer(10.0, delayed_shutdown)
 
     # SERVICES
     async def _cb_reset_task(

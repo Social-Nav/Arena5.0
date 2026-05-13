@@ -1,3 +1,13 @@
+robots:
+  # - start: [3.0, 7.0, 0.0]      # [x, y, yaw]
+  #   goal:  [18.0, 12.0, 0.0]
+ 
+  - start: [10.0, 2.0, 1.57]
+    goal:  [10.0, 18.0, 1.57]
+
+  # - start: [12.0, 12.0, 3.14]      # [x, y, yaw]
+  #   goal:  [4.0, 18.0, 3.14]
+
 dynamic:
 - behavior_tree: ./hunav_1_behavior_tree.xml
   model: female_adult_business_02

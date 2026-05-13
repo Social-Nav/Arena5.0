@@ -4,22 +4,35 @@ controller_plugins:
 controller_plugins_dict:
   FollowPath:
     plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
-    desired_linear_vel: 0.5
-    lookahead_dist: 0.6
-    min_lookahead_dist: 0.3
-    max_lookahead_dist: 0.9
-    lookahead_time: 1.5
-    rotate_to_heading_angular_vel: 1.8
-    transform_tolerance: 0.1
-    use_velocity_scaled_lookahead_dist: false
+
+    # --- 速度 ---
+    desired_linear_vel: 0.65
     min_approach_linear_velocity: 0.05
-    max_allowed_time_to_collision_up_to_carrot: 1.0
-    use_regulated_linear_velocity_scaling: true
-    use_cost_regulated_linear_velocity_scaling: false
-    regulated_linear_scaling_min_radius: 0.9
-    regulated_linear_scaling_min_speed: 0.25
+    max_angular_vel: 1.5
+    rotate_to_heading_angular_vel: 1.5
+
+    # --- Lookahead（速度自适应） ---
+    use_velocity_scaled_lookahead_dist: true
+    lookahead_time: 1.5        # lookahead_dist = vel * lookahead_time
+    min_lookahead_dist: 0.4
+    max_lookahead_dist: 1.2
+
+    # --- 先转再走（大角度原地旋转）---
     use_rotate_to_heading: true
+    rotate_to_heading_min_angle: 0.5   # ~28°，超过此偏差先原地转
+
+    # --- 曲率降速（防止高速转弯上墙）---
+    use_regulated_linear_velocity_scaling: true
+    regulated_linear_scaling_min_radius: 0.6  # 转弯半径<0.6m 开始限速
+    regulated_linear_scaling_min_speed: 0.20
+
+    # --- 障碍物降速 ---
+    use_cost_regulated_linear_velocity_scaling: true
+
+    # --- 碰撞检测 ---
+    max_allowed_time_to_collision_up_to_carrot: 1.5
+
+    # --- 其他 ---
+    transform_tolerance: 0.1
     allow_reversing: false
-    rotate_to_heading_min_angle: 0.785
-    max_angular_vel: 1.8
     max_robot_pose_search_dist: 10.0

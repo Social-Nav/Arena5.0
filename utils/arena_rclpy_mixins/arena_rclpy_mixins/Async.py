@@ -19,6 +19,7 @@ T = typing.TypeVar('T')
 class AsyncLaunchManager:
     def __init__(self):
         self.active_tasks = set()
+        self._services: list[launch.LaunchService] = []
 
     async def launch_description(self, description: launch.LaunchDescription):
         """ Launch a launch description asynchronously
@@ -28,6 +29,7 @@ class AsyncLaunchManager:
         """
         ls = launch.LaunchService()
         ls.include_launch_description(description)
+        self._services.append(ls)
         task = asyncio.create_task(ls.run_async())
         self.active_tasks.add(task)
         task.add_done_callback(self.active_tasks.discard)
@@ -36,6 +38,12 @@ class AsyncLaunchManager:
     async def kill_all(self):
         """ Kill all active launch description tasks asynchronously
         """
+        for ls in self._services:
+            try:
+                await ls.shutdown()
+            except Exception:
+                pass
+        self._services.clear()
         if not self.active_tasks:
             return
         for task in self.active_tasks:
@@ -88,6 +96,13 @@ class AsyncNode(TimeNode, rclpy.node.Node):
         async def _launcher():
             await self._launch_manager.launch_description(launch_description)
         asyncio.run_coroutine_threadsafe(_launcher(), self._loop)
+
+    def destroy_node(self) -> None:
+        """Shut down all child processes started via do_launch, then destroy the node."""
+        asyncio.run_coroutine_threadsafe(
+            self._launch_manager.kill_all(), self._loop
+        ).result()
+        super().destroy_node()
 
     def wait_for(self, future: typing.Awaitable[T]) -> T:
         """
