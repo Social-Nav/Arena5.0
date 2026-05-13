@@ -9,7 +9,11 @@ import builtin_interfaces.msg
 import rosgraph_msgs.msg
 import rclpy.node
 import rclpy.time
-from typing_extensions import Self
+
+try:
+    from typing import Self
+except ImportError:
+    Self = typing.TypeVar('Self')
 
 
 @functools.total_ordering

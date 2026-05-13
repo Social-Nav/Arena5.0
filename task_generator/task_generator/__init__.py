@@ -4,7 +4,11 @@ import rclpy
 import rclpy.callback_groups
 import rclpy.impl.rcutils_logger
 import rclpy.node
-from typing_extensions import Self
+
+try:
+    from typing import Self
+except ImportError:
+    Self = typing.TypeVar('Self')
 
 
 class SafeCallbackNode(rclpy.node.Node):

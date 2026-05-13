@@ -1,7 +1,7 @@
 import os
 from glob import glob
 
-from setuptools import setup
+from setuptools import find_packages, setup
 
 package_name = 'arena_bringup'
 
@@ -19,19 +19,21 @@ def recursive_walk(base_dir, *, destination=None, relative_to=None):
             [
                 os.path.join(base, file)
                 for file in files
+                if not file.endswith(('.pyc', '.pyo'))
             ]
         )
 
     return [
         process(base, files)
         for base, _, files in os.walk(base_dir)
+        if '__pycache__' not in base.split(os.sep)
     ]
 
 
 setup(
     name=package_name,
     version='0.0.0',
-    packages=[package_name],
+    packages=find_packages(include=[package_name, f'{package_name}.*']),
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
@@ -39,17 +41,17 @@ setup(
         *recursive_walk('launch'),
         *recursive_walk('configs'),
     ],
-    install_requires=['setuptools'],
+    install_requires=['setuptools', 'PyYAML', 'numpy', 'Pillow', 'imageio'],
     zip_safe=True,
     maintainer='voshch',
     maintainer_email='dev@voshch.dev',
     description='Arena bringup package',
     license='MIT',
-    tests_require=['pytest'],
     scripts=['scripts/test.py'],
     entry_points={
         'console_scripts': [
             'test = arena_bringup.test:main',
+            'dual_vln_eval = arena_bringup.dual_vln_eval:main',
         ],
         'launch_ros.node_action': [
             'NodeLogLevelExtension = arena_bringup.extensions.NodeLogLevelExtension:NodeLogLevelExtension',

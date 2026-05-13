@@ -14,8 +14,12 @@
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>arena_people_msgs</depend>
+  <depend>task_generator_msgs</depend>
 
   <exec_depend>arena_bringup</exec_depend>
+  <exec_depend>arena_rclpy_mixins</exec_depend>
   <exec_depend>arena_robots</exec_depend>
   <exec_depend>arena_simulation_setup</exec_depend>
 

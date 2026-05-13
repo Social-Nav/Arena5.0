@@ -79,6 +79,129 @@ def generate_launch_description():
         name='record_data_dir',
         default_value=''
     )
+    episodes = LaunchArgument(
+        name='episodes',
+        default_value='2',
+        description='Number of episodes to execute before task_generator publishes finished'
+    )
+    auto_reset = LaunchArgument(
+        name='auto_reset',
+        default_value='true',
+        choices=['true', 'false'],
+        description='Automatically reset tasks between episodes during evaluation'
+    )
+    timeout = LaunchArgument(
+        name='timeout',
+        default_value='120.0',
+        description='Task timeout in seconds'
+    )
+    vln_instruction = LaunchArgument(
+        name='vln_instruction',
+        default_value='navigate',
+        description='Default text instruction published for each episode'
+    )
+    vln_instruction_file = LaunchArgument(
+        name='vln_instruction_file',
+        default_value='',
+        description='Optional file containing the instruction text to publish'
+    )
+    dual_vln_mode = LaunchArgument(
+        name='dual_vln_mode',
+        default_value='heuristic',
+        description='dual_vln server mode: heuristic or model'
+    )
+    dual_vln_model_path = LaunchArgument(
+        name='dual_vln_model_path',
+        default_value=launch.substitutions.EnvironmentVariable(
+            'ARENA_INTERNNAV_MODEL_PATH',
+            default_value=launch.substitutions.EnvironmentVariable(
+                'INTERNNAV_MODEL_PATH',
+                default_value=launch.substitutions.EnvironmentVariable('ARENA_VLN_MODEL_PATH', default_value=''),
+            ),
+        ),
+        description='Path to a torchscript dual_vln model when dual_vln_mode=model'
+    )
+    dual_vln_device = LaunchArgument(
+        name='dual_vln_device',
+        default_value='cpu',
+        description='Inference device for dual_vln model mode'
+    )
+    dual_vln_inference_rate_hz = LaunchArgument(
+        name='dual_vln_inference_rate_hz',
+        default_value='10.0',
+        description='Maximum dual_vln inference rate in Hz'
+    )
+    dual_vln_inference_timeout_sec = LaunchArgument(
+        name='dual_vln_inference_timeout_sec',
+        default_value='0.2',
+        description='Discard model inference outputs slower than this timeout'
+    )
+    dual_vln_rgb_topic = LaunchArgument(
+        name='dual_vln_rgb_topic',
+        default_value='',
+        description='Optional RGB topic for dual_vln model input / debug visualization'
+    )
+    dual_vln_depth_topic = LaunchArgument(
+        name='dual_vln_depth_topic',
+        default_value='',
+        description='Optional depth topic for dual_vln model input'
+    )
+    dual_vln_camera_info_topic = LaunchArgument(
+        name='dual_vln_camera_info_topic',
+        default_value='',
+        description='Optional CameraInfo topic for dual_vln native vision backends'
+    )
+    dual_vln_python_executable = LaunchArgument(
+        name='dual_vln_python_executable',
+        default_value=launch.substitutions.EnvironmentVariable(
+            'ARENA_VLN_MODEL_PYTHON',
+            default_value=launch.substitutions.EnvironmentVariable(
+                'ARENA_INTERNNAV_PYTHON',
+                default_value=launch.substitutions.EnvironmentVariable('ARENA_PYTHON', default_value=''),
+            ),
+        ),
+        description='Optional Python interpreter used to launch dual_vln_server'
+    )
+    dual_vln_adapter_target = LaunchArgument(
+        name='dual_vln_adapter_target',
+        default_value='',
+        description='Optional Python adapter target (module:attr) for custom dual_vln model backends'
+    )
+    dual_vln_require_real_backend = LaunchArgument(
+        name='dual_vln_require_real_backend',
+        default_value='false',
+        description='Fail fast instead of using heuristic/mock fallback when the requested dual_vln backend cannot load'
+    )
+    dual_vln_strict_device = LaunchArgument(
+        name='dual_vln_strict_device',
+        default_value='false',
+        description='Fail fast instead of falling back to CPU when the requested dual_vln device is unavailable'
+    )
+    dual_vln_look_down = LaunchArgument(
+        name='dual_vln_look_down',
+        default_value='false',
+        description='Forward a look_down hint to native dual_vln backends'
+    )
+    dual_vln_enable_visualization = LaunchArgument(
+        name='dual_vln_enable_visualization',
+        default_value='false',
+        description='Publish annotated debug images for dual_vln when true'
+    )
+    dual_vln_visualization_topic = LaunchArgument(
+        name='dual_vln_visualization_topic',
+        default_value='dual_vln/debug_image',
+        description='Topic for annotated dual_vln debug images'
+    )
+    dual_vln_visualization_rate_hz = LaunchArgument(
+        name='dual_vln_visualization_rate_hz',
+        default_value='5.0',
+        description='Maximum debug image publish rate for dual_vln visualization'
+    )
+    enable_collision_monitor = LaunchArgument(
+        name='enable_collision_monitor',
+        default_value='true',
+        description='Enable Nav2 collision_monitor for robot navigation launch'
+    )
     tm_robots = LaunchArgument(
         name='tm_robots',
         default_value='explore'
@@ -239,6 +362,28 @@ def generate_launch_description():
                     **global_planner.dict,
                     **world.dict,
                     **record_data_dir.dict,
+                    **episodes.dict,
+                    **auto_reset.dict,
+                    **timeout.dict,
+                    **vln_instruction.dict,
+                    **vln_instruction_file.dict,
+                    **dual_vln_mode.dict,
+                    **dual_vln_model_path.dict,
+                    **dual_vln_device.dict,
+                    **dual_vln_inference_rate_hz.dict,
+                    **dual_vln_inference_timeout_sec.dict,
+                    **dual_vln_rgb_topic.dict,
+                    **dual_vln_depth_topic.dict,
+                    **dual_vln_camera_info_topic.dict,
+                    **dual_vln_python_executable.dict,
+                    **dual_vln_adapter_target.dict,
+                    **dual_vln_require_real_backend.dict,
+                    **dual_vln_strict_device.dict,
+                    **dual_vln_look_down.dict,
+                    **dual_vln_enable_visualization.dict,
+                    **dual_vln_visualization_topic.dict,
+                    **dual_vln_visualization_rate_hz.dict,
+                    **enable_collision_monitor.dict,
                     **debug.dict,
                     **save_data.dict,
                     'namespace': namespace,

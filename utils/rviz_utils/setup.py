@@ -1,6 +1,6 @@
 import os
 from glob import glob
-from setuptools import setup
+from setuptools import find_packages, setup
 
 package_name = 'rviz_utils'
 
@@ -8,7 +8,7 @@ setup(
     name=package_name,
     version='0.0.0',
     # Packages to export
-    packages=[package_name],
+    packages=find_packages(include=[package_name, f'{package_name}.*']),
     # Files we want to install, specifically launch files
     data_files=[
         # Install marker file in the package index

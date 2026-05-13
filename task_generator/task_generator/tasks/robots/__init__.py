@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 from task_generator.shared import Pose
 from task_generator.tasks import TaskMode
@@ -20,6 +21,7 @@ class TM_Robots(TaskMode):
 
     async def reset(self, **kwargs):
         self._last_reset = self._PROPS.clock.clock.sec
+        self._last_reset_wall = time.monotonic()
 
     async def set_position(self, pose: Pose):
         """
@@ -52,8 +54,11 @@ class TM_Robots(TaskMode):
             bool: True if all robots are done, False otherwise.
 
         """
-        if (self._PROPS.clock.clock.sec - self._last_reset) \
-                > self.node.conf.Robot.TIMEOUT.value:
+        timeout_sec = self.node.conf.Robot.TIMEOUT.value
+        sim_elapsed = self._PROPS.clock.clock.sec - self._last_reset
+        wall_elapsed = time.monotonic() - getattr(self, '_last_reset_wall', time.monotonic())
+
+        if sim_elapsed > timeout_sec or wall_elapsed > timeout_sec:
             return True
 
         if not self._PROPS.robots:

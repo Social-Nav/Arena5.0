@@ -36,12 +36,23 @@ async def main_async(args=None):
     app_task = asyncio.create_task(app_logic(node))
 
     try:
-        import aiomonitor
-        with aiomonitor.start_monitor(loop=loop, locals=locals()):
+        try:
+            import aiomonitor
+        except ImportError:
+            aiomonitor = None
+
+        if aiomonitor is None:
+            node.get_logger().warn('`aiomonitor` not installed; continuing without async monitor')
             done, _ = await asyncio.wait(
                 [spin_future, app_task],
                 return_when=asyncio.FIRST_COMPLETED
             )
+        else:
+            with aiomonitor.start_monitor(loop=loop, locals=locals()):
+                done, _ = await asyncio.wait(
+                    [spin_future, app_task],
+                    return_when=asyncio.FIRST_COMPLETED
+                )
 
         if spin_future in done:
             spin_future.result()

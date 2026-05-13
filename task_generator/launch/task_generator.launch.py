@@ -1,5 +1,6 @@
 import os
 import typing
+from pathlib import Path
 
 import launch.event_handlers
 import launch.launch_description_sources
@@ -9,6 +10,48 @@ from arena_bringup.future import PythonExpression
 from arena_bringup.substitutions import CurrentNamespaceSubstitution, LaunchArgument
 
 import launch
+
+
+def _default_map_yaml(world_name: str = 'map_empty') -> str:
+    candidates = []
+
+    host_ws_dir = os.environ.get('HOST_ARENA_WS_DIR', '').strip()
+    if host_ws_dir:
+        candidates.append(
+            Path(host_ws_dir) / 'src' / 'Arena' / 'arena_simulation_setup' / 'worlds' / world_name / 'map' / 'map.yaml'
+        )
+
+    candidates.append(
+        Path('/opt/arena_ws/src/Arena/arena_simulation_setup/worlds') / world_name / 'map' / 'map.yaml'
+    )
+
+    candidates.append(
+        Path(get_package_share_directory('arena_simulation_setup')) / 'worlds' / world_name / 'map' / 'map.yaml'
+    )
+
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+
+    fallback = Path(get_package_share_directory('arena_simulation_setup')) / 'worlds' / 'map_empty' / 'map' / 'map.yaml'
+    return str(fallback if fallback.exists() else candidates[0])
+
+
+def _map_yaml_for_world_substitution(world_substitution):
+    """Build a launch-time map.yaml path that follows the selected world.
+
+    map_server used to start with map_empty and rely on WorldManagerROS to
+    replace it.  On slow Isaac/ROS startup the latched map_empty publication can
+    arrive after the world parameter changes and be incorrectly treated as the
+    new world's map, leaving Nav2 planning on map_empty.  Starting map_server
+    with the requested world's map avoids that race.
+    """
+    host_ws_dir = os.environ.get('HOST_ARENA_WS_DIR', '').strip()
+    if host_ws_dir:
+        base = Path(host_ws_dir) / 'src' / 'Arena' / 'arena_simulation_setup' / 'worlds'
+    else:
+        base = Path(get_package_share_directory('arena_simulation_setup')) / 'worlds'
+    return [str(base) + '/', world_substitution, '/map/map.yaml']
 
 
 def generate_launch_description():
@@ -53,6 +96,106 @@ def generate_launch_description():
         name="record_data_dir",
         default_value="",
     )
+    episodes = LaunchArgument(
+        name="episodes",
+        default_value="2",
+    )
+    auto_reset = LaunchArgument(
+        name="auto_reset",
+        default_value="true",
+    )
+    timeout = LaunchArgument(
+        name="timeout",
+        default_value="120.0",
+    )
+    vln_instruction = LaunchArgument(
+        name="vln_instruction",
+        default_value="navigate",
+    )
+    vln_instruction_file = LaunchArgument(
+        name="vln_instruction_file",
+        default_value="",
+    )
+    dual_vln_mode = LaunchArgument(
+        name="dual_vln_mode",
+        default_value="heuristic",
+    )
+    dual_vln_model_path = LaunchArgument(
+        name="dual_vln_model_path",
+        default_value=launch.substitutions.EnvironmentVariable(
+            'ARENA_INTERNNAV_MODEL_PATH',
+            default_value=launch.substitutions.EnvironmentVariable(
+                'INTERNNAV_MODEL_PATH',
+                default_value=launch.substitutions.EnvironmentVariable('ARENA_VLN_MODEL_PATH', default_value=''),
+            ),
+        ),
+    )
+    dual_vln_device = LaunchArgument(
+        name="dual_vln_device",
+        default_value="cpu",
+    )
+    dual_vln_inference_rate_hz = LaunchArgument(
+        name="dual_vln_inference_rate_hz",
+        default_value="10.0",
+    )
+    dual_vln_inference_timeout_sec = LaunchArgument(
+        name="dual_vln_inference_timeout_sec",
+        default_value="0.2",
+    )
+    dual_vln_rgb_topic = LaunchArgument(
+        name="dual_vln_rgb_topic",
+        default_value="",
+    )
+    dual_vln_depth_topic = LaunchArgument(
+        name="dual_vln_depth_topic",
+        default_value="",
+    )
+    dual_vln_camera_info_topic = LaunchArgument(
+        name="dual_vln_camera_info_topic",
+        default_value="",
+    )
+    dual_vln_python_executable = LaunchArgument(
+        name="dual_vln_python_executable",
+        default_value=launch.substitutions.EnvironmentVariable(
+            'ARENA_VLN_MODEL_PYTHON',
+            default_value=launch.substitutions.EnvironmentVariable(
+                'ARENA_INTERNNAV_PYTHON',
+                default_value=launch.substitutions.EnvironmentVariable('ARENA_PYTHON', default_value=''),
+            ),
+        ),
+    )
+    dual_vln_adapter_target = LaunchArgument(
+        name="dual_vln_adapter_target",
+        default_value="",
+    )
+    dual_vln_require_real_backend = LaunchArgument(
+        name="dual_vln_require_real_backend",
+        default_value="false",
+    )
+    dual_vln_strict_device = LaunchArgument(
+        name="dual_vln_strict_device",
+        default_value="false",
+    )
+    dual_vln_look_down = LaunchArgument(
+        name="dual_vln_look_down",
+        default_value="false",
+    )
+    dual_vln_enable_visualization = LaunchArgument(
+        name="dual_vln_enable_visualization",
+        default_value="false",
+    )
+    dual_vln_visualization_topic = LaunchArgument(
+        name="dual_vln_visualization_topic",
+        default_value="dual_vln/debug_image",
+    )
+    dual_vln_visualization_rate_hz = LaunchArgument(
+        name="dual_vln_visualization_rate_hz",
+        default_value="5.0",
+    )
+    enable_collision_monitor = LaunchArgument(
+        name="enable_collision_monitor",
+        default_value="true",
+    )
 
     parameter_file = LaunchArgument(name="parameter_file")
 
@@ -80,7 +223,10 @@ def generate_launch_description():
     map_server_node = launch.actions.IncludeLaunchDescription(
         launch.launch_description_sources.PythonLaunchDescriptionSource(
             os.path.join(bringup_dir, "launch/utils/map_server.launch.py")
-        )
+        ),
+        launch_arguments={
+            'yaml_filename': _map_yaml_for_world_substitution(world.substitution),
+        }.items(),
     )
 
     # Hunavsim Pedestrians in rviz
@@ -146,6 +292,28 @@ def generate_launch_description():
                 **local_planner.str_param,
                 **global_planner.str_param,
                 **record_data_dir.str_param,
+                **episodes.param(int),
+                **auto_reset.param(bool),
+                **timeout.param(int),
+                **vln_instruction.str_param,
+                **vln_instruction_file.str_param,
+                **dual_vln_mode.str_param,
+                **dual_vln_model_path.str_param,
+                **dual_vln_device.str_param,
+                **dual_vln_inference_rate_hz.param(float),
+                **dual_vln_inference_timeout_sec.param(float),
+                **dual_vln_rgb_topic.str_param,
+                **dual_vln_depth_topic.str_param,
+                **dual_vln_camera_info_topic.str_param,
+                **dual_vln_python_executable.str_param,
+                **dual_vln_adapter_target.str_param,
+                **dual_vln_require_real_backend.param(bool),
+                **dual_vln_strict_device.param(bool),
+                **dual_vln_look_down.param(bool),
+                **dual_vln_enable_visualization.param(bool),
+                **dual_vln_visualization_topic.str_param,
+                **dual_vln_visualization_rate_hz.param(float),
+                **enable_collision_monitor.param(bool),
                 **reference.param(typing.List[float]),
                 **prefix.str_param,
                 **debug.param(bool),

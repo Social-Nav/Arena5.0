@@ -5,13 +5,20 @@ import yaml
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, SetEnvironmentVariable
+from launch.actions import IncludeLaunchDescription, SetEnvironmentVariable, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.actions import Node
 
 from arena_bringup.future import IfElseSubstitution, PythonExpression  # noqa
 from arena_bringup.substitutions import LaunchArgument
+
+
+def _gazebo_major_version() -> str:
+    ros_distro = os.environ.get('ROS_DISTRO', '').strip().lower()
+    if ros_distro == 'humble':
+        return '6'
+    return '8'
 
 
 def generate_launch_description():
@@ -73,7 +80,28 @@ def generate_launch_description():
     GZ_SIM_RESOURCE_PATHS = [os.path.normpath(path) for path in GZ_SIM_RESOURCE_PATHS]
 
     # GZ_CONFIG_PATH = ":".join(GZ_CONFIG_PATHS)
-    GZ_CONFIG_PATH = "/usr/share/gz"
+    ros_distro = os.environ.get('ROS_DISTRO', '')
+    gz_vendor_dirs = [
+        'gz_sim_vendor',
+        'sdformat_vendor',
+        'gz_gui_vendor',
+        'gz_transport_vendor',
+        'gz_rendering_vendor',
+        'gz_plugin_vendor',
+        'gz_fuel_tools_vendor',
+        'gz_msgs_vendor',
+        'gz_common_vendor',
+    ]
+    gz_config_candidates = [
+        os.environ.get('GZ_CONFIG_PATH', ''),
+        *([f'/opt/ros/{ros_distro}/opt/{vendor}/share/gz' for vendor in gz_vendor_dirs] if ros_distro else []),
+        f'/opt/ros/{ros_distro}/share/gz' if ros_distro else '',
+        '/usr/share/gz',
+    ]
+    GZ_CONFIG_PATH = ":".join(dict.fromkeys(
+        path for path in gz_config_candidates
+        if path and os.path.isdir(path)
+    ))
 
     for root, dirs, files in os.walk(os.path.join(ss_root, "gazebo_models")):
         for dir_name in dirs:
@@ -88,8 +116,7 @@ def generate_launch_description():
         GZ_SIM_RESOURCE_PATHS_COMBINED = f"{model_path}:{GZ_SIM_RESOURCE_PATHS_COMBINED}"
     os.environ["GZ_SIM_RESOURCE_PATH"] = GZ_SIM_RESOURCE_PATHS_COMBINED
     os.environ["GAZEBO_MODEL_PATH"] = GZ_SIM_RESOURCE_PATHS_COMBINED
-    # os.environ['GZ_CONFIG_PATH'] = GZ_CONFIG_PATH
-    # os.environ["GZ_CONFIG_PATH"] = GZ_CONFIG_PATH
+    os.environ["GZ_CONFIG_PATH"] = GZ_CONFIG_PATH
     # os.environ["GZ_SIM_PHYSICS_ENGINE_PATH"] = GZ_SIM_PHYSICS_ENGINE_PATH
 
     desired_world = PathJoinSubstitution(
@@ -123,7 +150,7 @@ def generate_launch_description():
     gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(gz_sim_launch_file),
         launch_arguments={
-            "gz_version": "8",
+            "gz_version": _gazebo_major_version(),
             "gz_args": [
                 world_path,
                 # " -v 4",
@@ -148,6 +175,10 @@ def generate_launch_description():
             **use_sim_time.dict
         }],
     )
+    delayed_clock_bridge = TimerAction(
+        period=2.0,
+        actions=[clock_bridge],
+    )
 
     # Return the LaunchDescription with all the nodes/actions
 
@@ -171,7 +202,7 @@ def generate_launch_description():
             #     PythonLaunchDescriptionSource(random_spawn_launch_file),
             #     condition=IfCondition(random_spawn_test),
             # ),
-            clock_bridge,
+            delayed_clock_bridge,
         ]
     )
 

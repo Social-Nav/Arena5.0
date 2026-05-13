@@ -8,11 +8,12 @@ import arena_simulation_setup.tree.configs.environment
 import arena_simulation_setup.tree.configs.parametrized
 import arena_simulation_setup.tree.World as World
 import rclpy
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 import std_srvs.srv as std_srvs
 import task_generator_msgs.srv
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.shared import Namespace
-from std_msgs.msg import Empty, Int16
+from std_msgs.msg import Empty, Int16, String
 from std_srvs.srv import Empty as EmptySrv
 
 from task_generator.constants import Constants
@@ -66,7 +67,23 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         self._reset_lock: asyncio.Lock = asyncio.Lock()
         self._start_time = self.time
         self._number_of_resets = 0
+        self._completed_episodes = 0
+        self._finished_published = False
+        self._world_geometry_spawned = False
         self._task: Task
+
+        # VLN instruction interface (published per-episode)
+        self._vln_instruction = self.rosparam[str].get('vln_instruction', 'navigate')
+        self._vln_instruction_file = self.rosparam[str].get('vln_instruction_file', '')
+        self._pub_vln_instruction = self.create_publisher(
+            String,
+            self.service_namespace('vln_instruction'),
+            QoSProfile(
+                depth=1,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            ),
+        )
 
         # Publishers
         self._pub_task_reset = self.create_publisher(
@@ -78,7 +95,11 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         self._pub_finished = self.create_publisher(
             Empty,
             self.service_namespace('finished'),
-            10,
+            QoSProfile(
+                depth=1,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            ),
         )
 
         self._check_status_task: asyncio.Task
@@ -103,7 +124,25 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             modules=list(tm_modules)
         )
 
-        await self._world_manager.sync()
+        try:
+            synced = await asyncio.wait_for(self._world_manager.sync(), timeout=30.0)
+        except asyncio.TimeoutError:
+            synced = False
+            self.get_logger().warn(
+                "Timed out waiting for world/map synchronization; continuing because the "
+                "world-change callback may already have spawned geometry in Isaac."
+            )
+        if not synced:
+            self.get_logger().warn(
+                "World/map synchronization did not report success before task reset; "
+                "continuing to avoid blocking robot/Nav2 bringup."
+            )
+        if not self._world_geometry_spawned:
+            self.get_logger().warn(
+                "World map synchronized before the world-change spawn callback completed; "
+                "spawning static world geometry explicitly."
+            )
+            await self._spawn_current_world_geometry()
         await self.reset_task(first_map=True)
 
         self._check_status_task = asyncio.create_task(self._check_task_status())
@@ -150,8 +189,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         )
 
         async def world_change_cb():
-            await self._environment_manager.reset(ObstacleLayer.WORLD)
-            await self._environment_manager.spawn_world_obstacles(self._world_manager.world)
+            await self._spawn_current_world_geometry()
 
         self._world_manager.on_world_change(world_change_cb)
         await self._world_manager.start()
@@ -164,26 +202,46 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
 
         self._logger.info("Managers set up")
 
+    async def _spawn_current_world_geometry(self):
+        self.get_logger().info("Spawning static world geometry into simulator")
+        await self._environment_manager.reset(ObstacleLayer.WORLD)
+        await self._environment_manager.spawn_world_obstacles(self._world_manager.world)
+        self._world_geometry_spawned = True
+
     # RUNTIME
+    async def _reset_task_unlocked(self, **kwargs):
+        self._start_time = self.sim_time
+
+        await self._simulator.before_reset_task()
+
+        self.get_logger().info("resetting")
+
+        await self._task.reset(**kwargs)
+
+        self._pub_task_reset.publish(Int16(data=self._number_of_resets))
+
+        # Publish instruction after reset so downstream consumers can latch it.
+        instruction = self._vln_instruction
+        if self._vln_instruction_file:
+            try:
+                with open(self._vln_instruction_file, 'r', encoding='utf-8') as f:
+                    instruction = f.read().strip() or instruction
+            except Exception as e:
+                self.get_logger().warn(f"Failed to read vln_instruction_file='{self._vln_instruction_file}': {e}")
+
+        self._pub_vln_instruction.publish(String(data=instruction))
+
+        self._number_of_resets += 1
+
+        await self._simulator.after_reset_task()
+
+        self.get_logger().warn("=============")
+        self.get_logger().warn("Task Reset!")
+        self.get_logger().warn("=============")
+
     async def reset_task(self, **kwargs):
         async with self._reset_lock:
-            self._start_time = self.sim_time
-
-            await self._simulator.before_reset_task()
-
-            self.get_logger().info("resetting")
-
-            await self._task.reset(**kwargs)
-
-            self._pub_task_reset.publish(Int16(data=self._number_of_resets))
-            self._number_of_resets += 1
-            self._send_end_message_on_end()
-
-            await self._simulator.after_reset_task()
-
-            self.get_logger().warn("=============")
-            self.get_logger().warn("Task Reset!")
-            self.get_logger().warn("=============")
+            await self._reset_task_unlocked(**kwargs)
 
     async def _check_task_status(self, *args, **kwargs):
         del args, kwargs
@@ -197,9 +255,19 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         try:
             while True:
                 await asyncio.sleep(0.5)
+                should_reset = False
                 async with self._reset_lock:
                     if await self._task.is_done:
-                        await self.reset_task()
+                        self._completed_episodes += 1
+                        self._send_end_message_on_end()
+
+                        if self.conf.General.DESIRED_EPISODES.value >= 0 and \
+                                self._completed_episodes >= self.conf.General.DESIRED_EPISODES.value:
+                            continue
+
+                        should_reset = True
+                    if should_reset:
+                        await self._reset_task_unlocked()
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -207,10 +275,14 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             raise
 
     def _send_end_message_on_end(self):
-        if self.conf.General.DESIRED_EPISODES.value < 0 or self._number_of_resets < self.conf.General.DESIRED_EPISODES.value:
+        if self.conf.General.DESIRED_EPISODES.value < 0 or self._completed_episodes < self.conf.General.DESIRED_EPISODES.value:
+            return
+        if self._finished_published:
             return
 
-        self.get_logger().info(
+        self._finished_published = True
+
+        self.get_logger().warn(
             f"All {int(self.conf.General.DESIRED_EPISODES.value)} tasks completed. Publishing finished message.")
         self._pub_finished.publish(Empty())
 

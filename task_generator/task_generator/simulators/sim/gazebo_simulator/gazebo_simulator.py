@@ -1,6 +1,7 @@
 import asyncio
 import itertools
 import math
+import tempfile
 import time
 import traceback
 from pathlib import Path
@@ -35,6 +36,8 @@ from .robot_bridge import BridgeConfiguration
 # sanitize frames, gazebo does not support slashes
 FrameNamespace.auto_sanitize()
 
+_GZ_BRIDGED_SERVICE_TIMEOUT_SEC = 3.0
+
 
 class GazeboSimulator(BaseSim):
 
@@ -42,6 +45,7 @@ class GazeboSimulator(BaseSim):
         super().__init__(*args, namespace=namespace, **kwargs)
 
         self._semaphore = asyncio.Semaphore(5)
+        self._control_world_available = False
 
         self._logger.info(f"Initializing GazeboSimulator with namespace: {namespace}")
 
@@ -50,6 +54,7 @@ class GazeboSimulator(BaseSim):
             self._namespace("goal"),
             10,
         )
+        self._spawn_model_files: dict[str, Path] = {}
         self.entities: dict[str, Entity] = {}
         self._walls_entities: list[str] = []
         self._wall_counter = itertools.count()
@@ -161,11 +166,16 @@ class GazeboSimulator(BaseSim):
 
             try:
                 await self._service_set_entity_pose.ensure()
-                result = await self._service_set_entity_pose.call_timeout(request)
+                result = await self._service_set_entity_pose.call_timeout(
+                    request,
+                    timeout_sec=_GZ_BRIDGED_SERVICE_TIMEOUT_SEC,
+                )
 
                 if result is None:
-                    self._logger.error(f"Move service call failed for {name}")
-                    return False
+                    self._logger.warning(
+                        f"Move service call timed out for {name}; retrying with `gz service`"
+                    )
+                    return await self._move_entity_via_gz(name, pose)
 
                 self._logger.info(f"Move result for {name}: {result.success}")
 
@@ -203,37 +213,10 @@ class GazeboSimulator(BaseSim):
 
                 if model.path and model.type not in (ModelType.URDF,):
                     # direct path available, use gz cli call
-                    world_name =  "default"
-                    sdf_path = model.path
-                    model_name = entity.sim_path
-                    service_name = f"/world/{world_name}/create"
-                    
-                    req_payload = (
-                        f'sdf_filename: "{sdf_path}", '
-                        f'name: "{model_name}", '
-                        f'pose: {{ '
-                        f'  position: {{ x: {entity.pose.position.x}, y: {entity.pose.position.y}, z: {entity.pose.position.z} }} '
-                        f'  orientation: {{ x: {entity.pose.orientation.x}, y: {entity.pose.orientation.y}, z: {entity.pose.orientation.z}, w: {entity.pose.orientation.w} }} '
-                        f'}}'
+                    return await self._spawn_entity_via_gz(
+                        entity=entity,
+                        model_file=str(model.path),
                     )
-
-                    process = await asyncio.create_subprocess_exec(
-                        'gz', 'service', '-s', service_name,
-                        '--reqtype', 'gz.msgs.EntityFactory',
-                        '--reptype', 'gz.msgs.Boolean',
-                        '--timeout', '2000',
-                        '--req', req_payload,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE
-                    )
-
-                    stdout, stderr = await process.communicate()
-
-                    if process.returncode == 0:
-                        return True
-                    else:
-                        self._logger.error(f"Failed to spawn {model_name}. Error: {stderr.decode().strip()}")
-                        return False
 
                 else:
                     # no direct path available, use ros_gz_bridge
@@ -253,11 +236,20 @@ class GazeboSimulator(BaseSim):
                     )
 
                     self._logger.debug(f"Sending spawn request for {entity.name}")
-                    result = await self._service_spawn_entity.call_timeout(request)
+                    result = await self._service_spawn_entity.call_timeout(
+                        request,
+                        timeout_sec=_GZ_BRIDGED_SERVICE_TIMEOUT_SEC,
+                    )
 
                     if result is None:
-                        self._logger.error(f"Spawn service call failed for {entity.name}")
-                        return False
+                        self._logger.warning(
+                            f"Spawn service call timed out for {entity.name}; retrying with `gz service`"
+                        )
+                        return await self._spawn_entity_via_gz(
+                            entity=entity,
+                            model_text=model.description,
+                            model_type=model.type,
+                        )
 
                     self._logger.info(f"Spawn result for {entity.name}: {result.success}")
 
@@ -308,6 +300,9 @@ class GazeboSimulator(BaseSim):
 
     async def pause_simulation(self):
         async with self._semaphore:
+            if not self._control_world_available:
+                self._logger.warning("Control world service unavailable; skipping pause request")
+                return True
             self._logger.debug("Attempting to pause simulation")
             request = ControlWorld.Request()
             request.world_control = WorldControl()
@@ -330,6 +325,9 @@ class GazeboSimulator(BaseSim):
 
     async def unpause_simulation(self):
         async with self._semaphore:
+            if not self._control_world_available:
+                self._logger.warning("Control world service unavailable; skipping unpause request")
+                return True
             self._logger.debug("Attempting to unpause simulation")
             request = ControlWorld.Request()
             request.world_control = WorldControl()
@@ -352,6 +350,9 @@ class GazeboSimulator(BaseSim):
 
     async def step_simulation(self, steps):
         async with self._semaphore:
+            if not self._control_world_available:
+                self._logger.warning("Control world service unavailable; skipping step request")
+                return True
             self._logger.debug(f"Stepping simulation by {steps} steps")
             request = ControlWorld.Request()
             request.world_control = WorldControl()
@@ -478,6 +479,9 @@ class GazeboSimulator(BaseSim):
                 executable="robot_state_publisher",
                 name="robot_state_publisher",
                 output="screen",
+                remappings=[
+                    ("/tf_static", "/tf_static"),
+                ],
                 parameters=[
                     {"use_sim_time": True},
                     {"robot_description": description},
@@ -668,7 +672,7 @@ class GazeboSimulator(BaseSim):
                     str(tf_qz),
                     str(tf_qw),
                     "map",
-                    robot.frame(odom_frame),
+                    f"{robot.frame}/{odom_frame}",
                 ],
                 parameters=[{"use_sim_time": True}],
             )
@@ -679,6 +683,160 @@ class GazeboSimulator(BaseSim):
         except Exception as e:
             self._logger.error(f"Error moving robot {name}: {str(e)}")
             return False
+
+    async def _call_gz_service(
+        self,
+        *,
+        service_name: str,
+        reqtype: str,
+        reptype: str,
+        request_payload: str,
+        timeout_ms: int = 5000,
+    ) -> bool:
+        process = await asyncio.create_subprocess_exec(
+            "gz",
+            "service",
+            "-s",
+            service_name,
+            "--reqtype",
+            reqtype,
+            "--reptype",
+            reptype,
+            "--timeout",
+            str(timeout_ms),
+            "--req",
+            request_payload,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        stdout, stderr = await process.communicate()
+        stdout_text = stdout.decode(errors="replace").strip()
+        stderr_text = stderr.decode(errors="replace").strip()
+
+        if process.returncode != 0:
+            self._logger.error(
+                f"`gz service` call failed for {service_name}: {stderr_text or stdout_text}"
+            )
+            return False
+
+        if stdout_text:
+            self._logger.info(f"`gz service` response for {service_name}: {stdout_text}")
+
+        return True
+
+    def _persist_spawn_model(
+        self,
+        *,
+        entity_name: str,
+        model_text: str,
+        model_type: ModelType | None,
+    ) -> str:
+        suffix = ".sdf"
+        if model_type is ModelType.URDF:
+            suffix = ".urdf"
+
+        cache_dir = Path(tempfile.gettempdir()) / "arena_gz_spawn_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        model_path = cache_dir / f"{entity_name}{suffix}"
+        model_path.write_text(model_text, encoding="utf-8")
+        self._spawn_model_files[entity_name] = model_path
+        return str(model_path)
+
+    async def _spawn_entity_via_gz(
+        self,
+        *,
+        entity: Entity,
+        model_file: str | None = None,
+        model_text: str | None = None,
+        model_type: ModelType | None = None,
+    ) -> bool:
+        if model_file is None:
+            model_file = self._persist_spawn_model(
+                entity_name=entity.sim_path,
+                model_text=model_text or "",
+                model_type=model_type,
+            )
+
+        request_payload = (
+            f'name: "{entity.sim_path}" '
+            f'sdf_filename: "{model_file}" '
+            f'pose: {{ '
+            f'position: {{ x: {entity.pose.position.x}, y: {entity.pose.position.y}, z: {entity.pose.position.z} }} '
+            f'orientation: {{ x: {entity.pose.orientation.x}, y: {entity.pose.orientation.y}, z: {entity.pose.orientation.z}, w: {entity.pose.orientation.w} }} '
+            f'}}'
+        )
+
+        success = await self._call_gz_service(
+            service_name="/world/default/create",
+            reqtype="gz.msgs.EntityFactory",
+            reptype="gz.msgs.Boolean",
+            request_payload=request_payload,
+        )
+        if success:
+            self.entities[entity.name] = entity
+        return success
+
+    async def _move_entity_via_gz(self, name: str, pose: Pose) -> bool:
+        request_payload = (
+            f'name: "{name}" '
+            f'position: {{ x: {pose.position.x}, y: {pose.position.y}, z: {pose.position.z} }} '
+            f'orientation: {{ x: {pose.orientation.x}, y: {pose.orientation.y}, z: {pose.orientation.z}, w: {pose.orientation.w} }}'
+        )
+
+        return await self._call_gz_service(
+            service_name="/world/default/set_pose",
+            reqtype="gz.msgs.Pose",
+            reptype="gz.msgs.Boolean",
+            request_payload=request_payload,
+        )
+
+    async def _gz_service_has_provider(self, service_name: str) -> bool:
+        """Check whether Gazebo transport currently advertises a service provider."""
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "gz",
+                "service",
+                "-s",
+                service_name,
+                "--info",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await process.communicate()
+        except FileNotFoundError:
+            self._logger.warning("`gz` CLI not found while probing Gazebo transport services")
+            return False
+
+        output = b"\n".join(part for part in (stdout, stderr) if part).decode(
+            errors="replace"
+        )
+
+        return process.returncode == 0 and "No service providers" not in output
+
+    async def _wait_for_gz_service_provider(
+        self,
+        service_name: str,
+        timeout_sec: float = 30.0,
+        interval_sec: float = 0.5,
+    ) -> bool:
+        """Wait until Gazebo transport exposes a provider for a service."""
+        start = time.monotonic()
+
+        while (time.monotonic() - start) < timeout_sec:
+            if await self._gz_service_has_provider(service_name):
+                self._logger.info(
+                    f"Gazebo transport service ready: {service_name}"
+                )
+                return True
+
+            await asyncio.sleep(interval_sec)
+
+        self._logger.warning(
+            f"Gazebo transport service not ready after {timeout_sec:.1f}s: {service_name}"
+        )
+        return False
 
     async def _set_up_services(self):
         futures: list[typing.Awaitable] = []
@@ -692,10 +850,10 @@ class GazeboSimulator(BaseSim):
                             name="gz_services_bridge",
                             output="screen",
                             arguments=[
-                                "/world/default/create@ros_gz_interfaces/srv/SpawnEntity",
-                                "/world/default/remove@ros_gz_interfaces/srv/DeleteEntity",
-                                "/world/default/set_pose@ros_gz_interfaces/srv/SetEntityPose",
-                                "/world/default/control@ros_gz_interfaces/srv/ControlWorld",
+                                "/world/default/create@ros_gz_interfaces/srv/SpawnEntity@gz.msgs.EntityFactory@gz.msgs.Boolean",
+                                "/world/default/remove@ros_gz_interfaces/srv/DeleteEntity@gz.msgs.Entity@gz.msgs.Boolean",
+                                "/world/default/set_pose@ros_gz_interfaces/srv/SetEntityPose@gz.msgs.Pose@gz.msgs.Boolean",
+                                "/world/default/control@ros_gz_interfaces/srv/ControlWorld@gz.msgs.WorldControl@gz.msgs.Boolean",
                             ],
                             parameters=[{"use_sim_time": True}],
                         )
@@ -723,19 +881,35 @@ class GazeboSimulator(BaseSim):
             "/world/default/control",
         )
 
+        self._logger.info("Waiting for Gazebo transport services...")
+        for service_name in (
+            "/world/default/create",
+            "/world/default/remove",
+            "/world/default/set_pose",
+            "/world/default/control",
+        ):
+            await self._wait_for_gz_service_provider(service_name)
+
         self._logger.info("Waiting for gazebo services...")
-        services = (
+        required_services = (
             (self._service_spawn_entity, "spawn entity"),
             (self._service_delete_entity, "delete entity"),
             (self._service_set_entity_pose, "set entity pose"),
-            (self._service_control_world, "control world"),
         )
 
-        for service, name in services:
+        for service, name in required_services:
             self._logger.info(f"Waiting for {name} service...")
             futures.append(service.ensure())
 
+        self._logger.info("Probing optional control world service...")
+
         await asyncio.gather(*futures)
+
+        self._control_world_available = await self._service_control_world.ensure(timeout_sec=2.0)
+        if self._control_world_available:
+            self._logger.info("Control world service is available.")
+        else:
+            self._logger.warning("Control world service is unavailable; continuing without pause/unpause support.")
         self._logger.info("All Gazebo services are available now.")
 
     @classmethod

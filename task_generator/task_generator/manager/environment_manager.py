@@ -286,6 +286,25 @@ class EnvironmentManager(NodeInterface, _Realizer):
         
         # Arena based Yaml world spawning
 
+        async def guarded_world_spawn(label: str, coro: typing.Awaitable, timeout_s: float = 45.0):
+            self._logger.info(f"[world-geometry] starting {label}")
+            try:
+                result = await asyncio.wait_for(coro, timeout=max(float(timeout_s), 0.0))
+                self._logger.info(f"[world-geometry] finished {label}")
+                return result
+            except asyncio.TimeoutError:
+                self._logger.warning(
+                    f"[world-geometry] timed out while spawning {label} after {timeout_s:.1f}s; "
+                    "continuing so robot/navigation bringup is not blocked"
+                )
+                return False
+            except Exception as exc:
+                self._logger.warning(
+                    f"[world-geometry] failed while spawning {label}: {exc!r}; "
+                    "continuing so robot/navigation bringup is not blocked"
+                )
+                return False
+
         futures: list[typing.Awaitable] = []
 
         walls = tuple(world.all_walls)
@@ -293,27 +312,38 @@ class EnvironmentManager(NodeInterface, _Realizer):
         floors = tuple(world.all_floors)
         elevators = tuple(world.all_elevators)
         if floors:
-            futures.append(self._simulator.spawn_floors(tuple(map(self.realize, floors))))
+            futures.append(guarded_world_spawn('floors', self._simulator.spawn_floors(tuple(map(self.realize, floors)))))
 
         if walls or doors:
             futures.append(
-                self._human_simulator.spawn_world(
-                    tuple(map(self.realize, walls)),
-                    tuple(map(self.realize, doors)),
+                guarded_world_spawn(
+                    'walls/doors',
+                    self._human_simulator.spawn_world(
+                        tuple(map(self.realize, walls)),
+                        tuple(map(self.realize, doors)),
+                    ),
+                    timeout_s=75.0,
                 )
             )
 
         futures.append(
-            self._human_simulator.spawn_obstacles(
-                tuple(map(self.realize, world.all_static_entities)),
-                layer=ObstacleLayer.WORLD,
+            guarded_world_spawn(
+                'static obstacles',
+                self._human_simulator.spawn_obstacles(
+                    tuple(map(self.realize, world.all_static_entities)),
+                    layer=ObstacleLayer.WORLD,
+                ),
+                timeout_s=30.0,
             )
         )
         if elevators:
             self._logger.debug(f"Realized elevators for world: {[e.name for e in elevators]}")
             futures.append(
-                self._simulator.spawn_elevators(
-                    tuple(map(self.realize, elevators))
+                guarded_world_spawn(
+                    'elevators',
+                    self._simulator.spawn_elevators(
+                        tuple(map(self.realize, elevators))
+                    ),
                 )
             )
 
