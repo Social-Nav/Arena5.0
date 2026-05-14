@@ -1,8 +1,10 @@
+import math
+
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from arena_simulation_setup.tree.World import WorldIdentifier
 from arena_simulation_setup.tree.World.Scenario import RobotGoal
 
-from task_generator.shared import PositionRadius
+from task_generator.shared import Orientation, Pose, PositionRadius
 from task_generator.tasks.robots import TM_Robots
 
 
@@ -32,6 +34,27 @@ class TM_Scenario(TM_Robots):
 
         scenario_robots_length = len(SCENARIO_ROBOTS)
         setup_robot_length = len(managed_robots)
+
+        if scenario_robots_length == 0 and setup_robot_length > 0:
+            self._logger.warn(
+                "Scenario file contains no robot start/goal entries; generating random robot tasks on the map.",
+                once=True,
+            )
+            biggest_robot = max((robot.safe_distance for robot in managed_robots), default=0)
+            orientations = 2 * math.pi * self.node.conf.General.RNG.value.random(2 * setup_robot_length)
+            positions = self._PROPS.world_manager.get_positions_on_map(
+                n=2 * setup_robot_length,
+                safe_dist=biggest_robot,
+            )
+            generated_positions = [
+                Pose(position, Orientation.from_yaw(orientation))
+                for orientation, position in zip(orientations, positions)
+            ]
+            SCENARIO_ROBOTS = [
+                RobotGoal(start=start, goal=goal)
+                for start, goal in zip(generated_positions[::2], generated_positions[1::2])
+            ]
+            scenario_robots_length = len(SCENARIO_ROBOTS)
 
         if setup_robot_length > scenario_robots_length:
             managed_robots = managed_robots[:scenario_robots_length]

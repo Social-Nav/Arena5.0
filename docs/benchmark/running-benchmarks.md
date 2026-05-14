@@ -80,6 +80,20 @@ That combination exercises:
 - Nav2 controller integration
 - video export and H.264 validation
 
+### Ai2_Bot2 Isaac-specific checks
+
+Ai2_Bot2 is a USD robot with embedded OmniGraph controllers.  Arena disables
+the embedded `ROS2SubscribeTwist` graph and installs a namespaced Arena
+diff-drive graph so `/task_generator_node/Ai2_Bot2/cmd_vel` drives the robot
+consistently.  During validation, check both of these conditions instead of only
+checking that an episode finished:
+
+- `odom.csv` should show motion after non-empty `cmd_vel.csv` commands, not just
+  a one-time slide/fall during initialization.
+- `videos/episode_0000/sim_top_down.mp4` should stay centered above the robot;
+  the camera prim is a standalone `/World/vln_top_down_camera_*` prim and must
+  be explicitly moved on every task reset.
+
 ## Running the documentation site locally
 
 ```bash

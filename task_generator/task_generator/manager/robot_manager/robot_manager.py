@@ -1,6 +1,8 @@
 import asyncio
+import json
 import math
 import os
+import time
 import typing
 
 import action_msgs.msg
@@ -16,6 +18,7 @@ import rclpy.logging
 import rclpy.publisher
 import rclpy.timer
 import sensor_msgs.msg as sensor_msgs
+from std_msgs.msg import String
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from arena_rclpy_mixins.shared import Namespace
 from arena_robots.Robot import RobotView
@@ -137,6 +140,9 @@ class RobotManager(NodeInterface):
         self._goal_republish_ticks = 0
         self._camera_ready_topics: dict[str, str] = {}
         self._camera_ready_seen: dict[str, bool] = {}
+        self._dual_vln_status_topic: str | None = None
+        self._dual_vln_status: str = 'startup'
+        self._dual_vln_status_wall_time: float = 0.0
 
         self._publish_goal_task: typing.Optional[asyncio.Task] = None
 
@@ -149,10 +155,23 @@ class RobotManager(NodeInterface):
 
         _gen_goal_topic = self.namespace("episode_goal_pose")
 
+        goal_qos = QoSProfile(depth=1)
+        goal_qos.reliability = ReliabilityPolicy.RELIABLE
+        goal_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        self._start_pub = self.node.create_publisher(
+            geometry_msgs.msg.PoseStamped,
+            self.namespace("episode_start_pose"),
+            goal_qos,
+        )
+        self._goal_metadata_pub = self.node.create_publisher(
+            geometry_msgs.msg.PoseStamped,
+            self.namespace("episode_goal_pose_metadata"),
+            goal_qos,
+        )
         self._goal_pub = self.node.create_publisher(
             geometry_msgs.msg.PoseStamped,
             _gen_goal_topic,
-            10,
+            goal_qos,
         )
 
         self._cmd_vel_pub = self.node.create_publisher(
@@ -368,6 +387,7 @@ class RobotManager(NodeInterface):
         if start_pos is not None:
             self._start_pos = self._environment_manager.realize(start_pos)
             await self.move_robot_to_pos(start_pos)
+            self._start_pub.publish(self._pose_stamped(self._start_pos))
 
             if self._robot.record_data_dir:
                 self.node.rosparam[list[float]].set(
@@ -378,6 +398,7 @@ class RobotManager(NodeInterface):
             self._goal_pos = self._environment_manager.realize(goal_pos)
             self._is_goal_reached = False
             self._nav_stop_ticks = 0  # new goal incoming, stop publishing stop-zeros
+            self._goal_metadata_pub.publish(self._pose_stamped(self._goal_pos))
 
             await self._cancel_navigation_goal()
 
@@ -396,6 +417,13 @@ class RobotManager(NodeInterface):
                 )
         return self._pose, self._goal_pos
 
+    def _pose_stamped(self, pose: Pose) -> geometry_msgs.msg.PoseStamped:
+        msg = geometry_msgs.msg.PoseStamped()
+        msg.header.frame_id = "map"
+        msg.header.stamp = self.node.sim_time.to_msg()
+        msg.pose = pose.to_msg()
+        return msg
+
     async def _publish_goal_loop(
         self,
         *,
@@ -403,6 +431,13 @@ class RobotManager(NodeInterface):
         start_target: typing.Optional[Pose] = None,
     ):
         """Publish the goal to the robot once reset state is synchronized."""
+        wait_for_world_geometry_ready = getattr(self.node, 'wait_for_world_geometry_ready', None)
+        if callable(wait_for_world_geometry_ready):
+            if not await wait_for_world_geometry_ready(timeout_s=90.0):
+                self._logger.warn(
+                    "World geometry did not report ready before goal publish; proceeding to avoid hanging the eval."
+                )
+
         if not await self._wait_for_sim_tick(timeout_s=1.5):
             self._logger.warn(
                 "Simulation time did not advance before goal publish; nav may use stale pose."
@@ -413,7 +448,9 @@ class RobotManager(NodeInterface):
                 "Odometry did not reach reset start pose before goal publish; proceeding anyway."
             )
 
+        self._reset_navigation_readiness_state()
         await self._wait_for_camera_ready_before_navigation(timeout_s=90.0)
+        await self._wait_for_dual_vln_status_before_navigation(timeout_s=120.0)
         await self._wait_for_dual_vln_command_service_before_navigation(timeout_s=180.0)
 
         self._logger.info(
@@ -424,10 +461,7 @@ class RobotManager(NodeInterface):
             self._goal_timer.cancel()
             self._goal_timer.destroy()
 
-        goal_msg = geometry_msgs.msg.PoseStamped()
-        goal_msg.header.frame_id = "map"
-        goal_msg.header.stamp = self.node.sim_time.to_msg()
-        goal_msg.pose = goal.to_msg()
+        goal_msg = self._pose_stamped(goal)
         self._goal_pub.publish(goal_msg)
         self._last_goal_msg = goal_msg
         self._goal_republish_ticks = 10
@@ -441,27 +475,60 @@ class RobotManager(NodeInterface):
         await self._send_navigation_goal(goal_msg)
         self._goal_start_time = self.node.sim_time
 
-    def _camera_topic_base_for_readiness(self) -> str | None:
+    def _default_camera_topics_for_readiness(self) -> dict[str, str] | None:
         if str(getattr(self._robot, 'local_planner', '')).strip().lower() != 'dual_vln':
             return None
 
         model_name = str(self.model_name or '').strip().lower()
         if model_name == 'turtlebot':
-            return 'rgbd_camera'
+            return {
+                'rgb': str(self.namespace('rgbd_camera', 'image')),
+                'depth': str(self.namespace('rgbd_camera', 'depth_image')),
+                'camera_info': str(self.namespace('rgbd_camera', 'camera_info')),
+            }
         if model_name in {'ai2_bot2', 'linkhou_s2'}:
-            return 'head_camera'
-        return 'head_camera'
+            return {
+                'rgb': str(self.namespace('head_camera', 'image')),
+                'depth': str(self.namespace('head_camera', 'depth')),
+                'camera_info': str(self.namespace('head_camera', 'camera_info')),
+            }
+        return {
+            'rgb': str(self.namespace('head_camera', 'image')),
+            'depth': str(self.namespace('head_camera', 'depth')),
+            'camera_info': str(self.namespace('head_camera', 'camera_info')),
+        }
+
+    def _configured_camera_topics_for_readiness(self) -> dict[str, str] | None:
+        if str(getattr(self._robot, 'local_planner', '')).strip().lower() != 'dual_vln':
+            return None
+
+        defaults = self._default_camera_topics_for_readiness() or {}
+        topics = {}
+        for key, primary_name, legacy_name in (
+            ('rgb', 'internnav_rgb_topic', 'dual_vln_rgb_topic'),
+            ('depth', 'internnav_depth_topic', 'dual_vln_depth_topic'),
+            ('camera_info', 'internnav_camera_info_topic', 'dual_vln_camera_info_topic'),
+        ):
+            configured = self._get_compat_rosparam(str, primary_name, legacy_name, '', empty_is_missing=True)
+            if configured:
+                configured = str(configured)
+                topics[key] = configured if configured.startswith('/') else str(self.namespace(configured))
+            else:
+                topics[key] = defaults.get(key, '')
+        return topics
+
+    def _reset_navigation_readiness_state(self) -> None:
+        if self._camera_ready_seen:
+            self._camera_ready_seen = {key: False for key in self._camera_ready_seen}
+        self._dual_vln_status = 'startup'
+        self._dual_vln_status_wall_time = 0.0
 
     def _setup_camera_readiness_subscriptions(self) -> None:
-        topic_base = self._camera_topic_base_for_readiness()
-        if not topic_base:
+        camera_topics = self._configured_camera_topics_for_readiness()
+        if not camera_topics:
             return
 
-        self._camera_ready_topics = {
-            'rgb': str(self.namespace(topic_base, 'image')),
-            'depth': str(self.namespace(topic_base, 'depth')),
-            'camera_info': str(self.namespace(topic_base, 'camera_info')),
-        }
+        self._camera_ready_topics = camera_topics
         self._camera_ready_seen = {key: False for key in self._camera_ready_topics}
 
         # Isaac Sim camera topics are sensor-data streams and are commonly offered
@@ -490,9 +557,28 @@ class RobotManager(NodeInterface):
             sensor_qos,
         )
 
+        self._dual_vln_status_topic = str(self.namespace('internnav', 'status'))
+        status_qos = QoSProfile(depth=1)
+        status_qos.reliability = ReliabilityPolicy.RELIABLE
+        status_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        self.node.create_subscription(
+            String,
+            self._dual_vln_status_topic,
+            self._on_dual_vln_status,
+            status_qos,
+        )
+
     def _mark_camera_ready(self, key: str) -> None:
         if key in self._camera_ready_seen:
             self._camera_ready_seen[key] = True
+
+    def _on_dual_vln_status(self, msg: String) -> None:
+        try:
+            payload = json.loads(msg.data)
+        except Exception:
+            return
+        self._dual_vln_status = str(payload.get('status', '') or 'unknown')
+        self._dual_vln_status_wall_time = time.monotonic()
 
     async def _wait_for_camera_ready_before_navigation(self, *, timeout_s: float) -> bool:
         if not self._camera_ready_seen:
@@ -518,6 +604,31 @@ class RobotManager(NodeInterface):
             'Timed out waiting for camera readiness before VLN navigation goal; missing '
             + ', '.join(last_missing)
             + '. Proceeding to avoid hanging the eval.'
+        )
+        return False
+
+    async def _wait_for_dual_vln_status_before_navigation(self, *, timeout_s: float) -> bool:
+        if str(getattr(self._robot, 'local_planner', '')).strip().lower() != 'dual_vln':
+            return True
+
+        status_topic = self._dual_vln_status_topic or str(self.namespace('internnav', 'status'))
+        accepted_statuses = {'backend_ready'}
+        self._logger.info(
+            'Waiting for InternNav status before publishing VLN navigation goal: '
+            f'{status_topic} (accepted={sorted(accepted_statuses)})'
+        )
+        deadline = asyncio.get_running_loop().time() + max(float(timeout_s), 0.0)
+        while asyncio.get_running_loop().time() < deadline:
+            if self._dual_vln_status in accepted_statuses and self._dual_vln_status_wall_time > 0.0:
+                self._logger.info(
+                    f'InternNav status barrier passed with status={self._dual_vln_status}; publishing VLN navigation goal.'
+                )
+                return True
+            await asyncio.sleep(0.1)
+
+        self._logger.warn(
+            'Timed out waiting for InternNav backend_ready status before VLN navigation goal; '
+            f'last_status={self._dual_vln_status!r}. Proceeding to avoid hanging the eval.'
         )
         return False
 
@@ -673,6 +784,12 @@ class RobotManager(NodeInterface):
             internnav_adapter_target = self._get_compat_rosparam(
                 str, 'internnav_adapter_target', 'dual_vln_adapter_target', '', empty_is_missing=True
             )
+            internnav_require_real_backend = self._get_compat_rosparam(
+                bool, 'internnav_require_real_backend', 'dual_vln_require_real_backend', False
+            )
+            internnav_strict_device = self._get_compat_rosparam(
+                bool, 'internnav_strict_device', 'dual_vln_strict_device', False
+            )
             internnav_look_down = self._get_compat_rosparam(
                 bool, 'internnav_look_down', 'dual_vln_look_down', False
             )
@@ -707,26 +824,46 @@ class RobotManager(NodeInterface):
                 'use_sim_time': 'True',
                 'amcl': 'true' if self.node.conf.Arena.SIM.value in (Constants.SimSimulator.GAZEBO,) else 'false',
                 'internnav_mode': internnav_mode,
+                'dual_vln_mode': internnav_mode,
                 'internnav_model_path': internnav_model_path,
+                'dual_vln_model_path': internnav_model_path,
                 'internnav_device': internnav_device,
+                'dual_vln_device': internnav_device,
                 'internnav_inference_rate_hz': str(internnav_inference_rate_hz),
+                'dual_vln_inference_rate_hz': str(internnav_inference_rate_hz),
                 'internnav_inference_timeout_sec': str(internnav_inference_timeout_sec),
+                'dual_vln_inference_timeout_sec': str(internnav_inference_timeout_sec),
                 'internnav_rgb_topic': internnav_rgb_topic,
+                'dual_vln_rgb_topic': internnav_rgb_topic,
                 'internnav_depth_topic': internnav_depth_topic,
+                'dual_vln_depth_topic': internnav_depth_topic,
                 'internnav_camera_info_topic': internnav_camera_info_topic,
+                'dual_vln_camera_info_topic': internnav_camera_info_topic,
                 'internnav_python_executable': internnav_python_executable,
+                'dual_vln_python_executable': internnav_python_executable,
                 'internnav_adapter_target': internnav_adapter_target,
+                'dual_vln_adapter_target': internnav_adapter_target,
+                'internnav_require_real_backend': str(internnav_require_real_backend).lower(),
+                'dual_vln_require_real_backend': str(internnav_require_real_backend).lower(),
+                'internnav_strict_device': str(internnav_strict_device).lower(),
+                'dual_vln_strict_device': str(internnav_strict_device).lower(),
                 'internnav_look_down': str(internnav_look_down).lower(),
+                'dual_vln_look_down': str(internnav_look_down).lower(),
                 'internnav_enable_visualization': str(internnav_enable_visualization).lower(),
+                'dual_vln_enable_visualization': str(internnav_enable_visualization).lower(),
                 'internnav_visualization_topic': internnav_visualization_topic,
+                'dual_vln_visualization_topic': internnav_visualization_topic,
                 'internnav_visualization_rate_hz': str(internnav_visualization_rate_hz),
-                # Nav2 Jazzy collision_monitor currently rejects the turtlebot
-                # dual_vln polygon parameters during lifecycle configure.
-                # Keep the monitor enabled for other robots/planners.
+                'dual_vln_visualization_rate_hz': str(internnav_visualization_rate_hz),
+                # Nav2 Jazzy collision_monitor currently rejects the model-wrapper
+                # polygon parameters during lifecycle configure on the dual_vln /
+                # InternNav path. Disable it for that local planner so eval bringup
+                # is gated by the actual controller/model readiness instead of an
+                # unrelated parameter typing issue inside collision_monitor.
                 'enable_collision_monitor': str(
                     self.node.rosparam[bool].get(
                         'enable_collision_monitor',
-                        not (self.model_name == 'turtlebot' and self._robot.local_planner == 'dual_vln'),
+                        self._robot.local_planner != 'dual_vln',
                     )
                 ).lower(),
             }

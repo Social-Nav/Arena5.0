@@ -12,6 +12,12 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 
 
+DEFAULT_INTERNNAV_ADAPTER_TARGET = 'arena_vln_models.internnav:load_internnav_adapter'
+LEGACY_INTERNNAV_ADAPTER_TARGETS = {
+    'internnav.agent.internvla_n1_agent_realworld.InternVLAN1AsyncAgent': DEFAULT_INTERNNAV_ADAPTER_TARGET,
+}
+
+
 def _write_yaml(path: str, data) -> None:
     with open(path, 'w', encoding='utf-8') as f:
         yaml.safe_dump(data, f, sort_keys=False)
@@ -94,6 +100,7 @@ def _start_finished_watcher(
     python_bin = _eval_python_executable(env)
     watcher_code = r'''
 import sys
+import time
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
@@ -108,14 +115,15 @@ node = Node('internnav_eval_finished_watcher')
 qos = QoSProfile(depth=1)
 qos.reliability = ReliabilityPolicy.RELIABLE
 qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
-done = {'seen': False, 'reset_seen': False}
+done = {'seen': False, 'reset_seen': False, 'last_reset_monotonic': 0.0}
 
 def _cb(_msg):
-    if done['reset_seen']:
+    if done['reset_seen'] and (time.monotonic() - done['last_reset_monotonic']) >= 2.0:
         done['seen'] = True
 
 def _on_reset(_msg):
     done['reset_seen'] = True
+    done['last_reset_monotonic'] = time.monotonic()
 
 node.create_subscription(Empty, topic, _cb, qos)
 node.create_subscription(Int16, task_reset_topic, _on_reset, 10)
@@ -217,6 +225,18 @@ def _is_internnav_run(args) -> bool:
     )
 
 
+def _normalize_internnav_adapter_target(adapter_target: str) -> tuple[str, str | None]:
+    normalized = str(adapter_target or '').strip()
+    if not normalized:
+        return DEFAULT_INTERNNAV_ADAPTER_TARGET, 'default'
+
+    mapped = LEGACY_INTERNNAV_ADAPTER_TARGETS.get(normalized)
+    if mapped is not None:
+        return mapped, f'legacy:{normalized}'
+
+    return normalized, None
+
+
 def _default_vision_topics(robot: str) -> tuple[str, str, str] | None:
     normalized = str(robot or '').strip().lower()
     if normalized == 'turtlebot':
@@ -259,7 +279,11 @@ def _robot_topic(task_reset_topic: str, robot: str, topic: str) -> str:
 
 
 def _scenario_reset_topic(task_reset_topic: str, robot: str) -> str:
-    return _robot_topic(task_reset_topic, robot, 'scenario_reset')
+    # The current Arena benchmark path publishes task resets on the task
+    # generator root topic and does not provide a reliable per-robot
+    # scenario_reset stream during eval.  Reuse task_reset as the canonical
+    # episode boundary so watchers/recorders do not wait on a dead topic.
+    return task_reset_topic
 
 
 def _world_map_yaml_path(sim_setup_share: str, world: str) -> str:
@@ -574,12 +598,19 @@ class EvalVideoRecorder(Node):
         self.debug_overlay_writer = None
         self.sim_top_down_writer = None
         self.last_frame_time = 0.0
+        self.reset_generation = 0
         self.latest_rgb = None
+        self.latest_rgb_generation = -1
         self.depth_ready = False
+        self.depth_ready_generation = -1
         self.camera_info_ready = False
+        self.camera_info_generation = -1
         self.latest_debug_overlay = None
+        self.latest_debug_overlay_generation = -1
         self.latest_sim_top_down = None
+        self.latest_sim_top_down_generation = -1
         self.latest_pose = None
+        self.latest_pose_generation = -1
         self.latest_goal = None
         self.latest_scan = []
         self.trajectory_world = []
@@ -637,7 +668,7 @@ class EvalVideoRecorder(Node):
         if sim_top_down_topic:
             self.create_subscription(Image, sim_top_down_topic, self._on_sim_top_down_image, sensor_qos)
         self.create_subscription(Odometry, odom_topic, self._on_odom, sensor_qos)
-        self.create_subscription(PoseStamped, goal_topic, self._on_goal, 10)
+        self.create_subscription(PoseStamped, goal_topic, self._on_goal, event_qos)
         self.create_subscription(LaserScan, scan_topic, self._on_scan, sensor_qos)
 
     def _load_map(self, map_yaml_path):
@@ -658,6 +689,21 @@ class EvalVideoRecorder(Node):
 
     def _record_error(self, message):
         self.error_path.write_text(str(message), encoding='utf-8')
+
+    def _clear_transient_error(self):
+        if not self.error_path.exists():
+            return
+        try:
+            message = self.error_path.read_text(encoding='utf-8')
+        except Exception:
+            return
+        if message.startswith('waiting for task_reset before opening video writers') or message.startswith(
+            'waiting for fresh post-reset camera+odom messages before recording episode '
+        ):
+            try:
+                self.error_path.unlink()
+            except Exception:
+                pass
 
     def _write_index(self):
         self.index_path.write_text(json.dumps(self.index, ensure_ascii=False, indent=2), encoding='utf-8')
@@ -712,9 +758,39 @@ class EvalVideoRecorder(Node):
         self.current_episode_info = None
         self.trajectory_world = []
 
+    def _reset_episode_stream_state(self):
+        self.last_frame_time = 0.0
+        self.latest_rgb = None
+        self.latest_rgb_generation = -1
+        self.depth_ready = False
+        self.depth_ready_generation = -1
+        self.camera_info_ready = False
+        self.camera_info_generation = -1
+        self.latest_debug_overlay = None
+        self.latest_debug_overlay_generation = -1
+        self.latest_sim_top_down = None
+        self.latest_sim_top_down_generation = -1
+        self.latest_pose = None
+        self.latest_pose_generation = -1
+        self.latest_goal = None
+        self.latest_scan = []
+        self.trajectory_world = []
+
+    def _has_fresh_rgb(self):
+        return self.latest_rgb is not None and self.latest_rgb_generation == self.reset_generation
+
+    def _has_fresh_pose(self):
+        return self.latest_pose is not None and self.latest_pose_generation == self.reset_generation
+
     def _ensure_episode(self):
+        if not self.reset_seen:
+            self._record_error(
+                'waiting for task_reset before opening video writers; '
+                f'camera streams may already exist but the episode has not started on {self.ego_topic}'
+            )
+            return False
         if self.current_episode is None:
-            if not self._camera_ready():
+            if not self._streams_ready_for_episode():
                 return False
             next_episode = 0
             if self.index['episodes']:
@@ -723,11 +799,11 @@ class EvalVideoRecorder(Node):
                 except Exception:
                     next_episode = 0
             self.current_episode = next_episode
-        if not self._camera_ready():
+        if not self._streams_ready_for_episode():
             self._record_error(
-                'waiting for first real camera messages before recording episode '
+                'waiting for fresh post-reset camera+odom messages before recording episode '
                 f'{self.current_episode}: ego={self.ego_topic}, depth={self.depth_topic or "<disabled>"}, '
-                f'camera_info={self.camera_info_topic or "<disabled>"}'
+                f'camera_info={self.camera_info_topic or "<disabled>"}, odom={self.odom_topic}'
             )
             return False
         if self.current_episode_info is not None:
@@ -763,10 +839,13 @@ class EvalVideoRecorder(Node):
 
     def _camera_ready(self):
         return (
-            self.latest_rgb is not None
-            and (not self.depth_topic or self.depth_ready)
-            and (not self.camera_info_topic or self.camera_info_ready)
+            self._has_fresh_rgb()
+            and (not self.depth_topic or (self.depth_ready and self.depth_ready_generation == self.reset_generation))
+            and (not self.camera_info_topic or (self.camera_info_ready and self.camera_info_generation == self.reset_generation))
         )
+
+    def _streams_ready_for_episode(self):
+        return self._camera_ready() and self._has_fresh_pose()
 
     def _map_world_to_pixel(self, x, y):
         if self.map_image is None:
@@ -879,17 +958,26 @@ class EvalVideoRecorder(Node):
         top_frame = self._render_top_down()
         self.ego_writer.write(ego_frame)
         self.top_writer.write(top_frame)
+        self._clear_transient_error()
         self.current_episode_info['ego_frames'] += 1
         self.current_episode_info['top_down_frames'] += 1
         self.current_episode_info['ego_video_codec'] = getattr(self.ego_writer, 'codec', None)
         self.current_episode_info['top_down_video_codec'] = getattr(self.top_writer, 'codec', None)
-        if self.debug_overlay_writer is not None and self.latest_debug_overlay is not None:
+        if (
+            self.debug_overlay_writer is not None
+            and self.latest_debug_overlay is not None
+            and self.latest_debug_overlay_generation == self.reset_generation
+        ):
             debug_overlay_frame = np.asarray(self.latest_debug_overlay, dtype=np.uint8)
             if not _is_static_fallback_gradient(debug_overlay_frame):
                 self.debug_overlay_writer.write(debug_overlay_frame)
                 self.current_episode_info['debug_overlay_frames'] += 1
                 self.current_episode_info['debug_overlay_video_codec'] = getattr(self.debug_overlay_writer, 'codec', None)
-        if self.sim_top_down_writer is not None and self.latest_sim_top_down is not None:
+        if (
+            self.sim_top_down_writer is not None
+            and self.latest_sim_top_down is not None
+            and self.latest_sim_top_down_generation == self.reset_generation
+        ):
             sim_top_down_frame = np.asarray(self.latest_sim_top_down, dtype=np.uint8)
             self.sim_top_down_writer.write(sim_top_down_frame)
             self.current_episode_info['sim_top_down_frames'] += 1
@@ -901,15 +989,15 @@ class EvalVideoRecorder(Node):
         episode = int(msg.data)
         self.reset_seen = True
         self.last_reset_wall_time = time.time()
-        if self.current_episode == episode and self.current_episode_info is not None:
+        if self.current_episode == episode:
             return
         if self.current_episode_info is not None:
             self._close_episode(reason='task_reset')
+        self.reset_generation += 1
         self.current_episode = episode
         self.current_episode_info = None
-        self.last_frame_time = 0.0
-        self.trajectory_world = []
-        if self._camera_ready():
+        self._reset_episode_stream_state()
+        if self._streams_ready_for_episode():
             self._ensure_episode()
 
     def _on_finished(self, _msg: Empty):
@@ -934,14 +1022,17 @@ class EvalVideoRecorder(Node):
         if image is None:
             return
         self.latest_rgb = image
+        self.latest_rgb_generation = self.reset_generation if self.reset_seen else -1
         self._maybe_write_frame()
 
     def _on_depth_image(self, _msg: Image):
         self.depth_ready = True
+        self.depth_ready_generation = self.reset_generation if self.reset_seen else -1
         self._maybe_write_frame()
 
     def _on_camera_info(self, _msg: CameraInfo):
         self.camera_info_ready = True
+        self.camera_info_generation = self.reset_generation if self.reset_seen else -1
         self._maybe_write_frame()
 
     def _on_debug_overlay_image(self, msg: Image):
@@ -949,12 +1040,14 @@ class EvalVideoRecorder(Node):
         if image is None:
             return
         self.latest_debug_overlay = image
+        self.latest_debug_overlay_generation = self.reset_generation if self.reset_seen else -1
 
     def _on_sim_top_down_image(self, msg: Image):
         image = image_msg_to_numpy(msg)
         if image is None:
             return
         self.latest_sim_top_down = image
+        self.latest_sim_top_down_generation = self.reset_generation if self.reset_seen else -1
 
     def _on_odom(self, msg: Odometry):
         pose = msg.pose.pose
@@ -964,6 +1057,7 @@ class EvalVideoRecorder(Node):
             'y': float(pose.position.y),
             'yaw': _yaw_from_quat(float(quat.x), float(quat.y), float(quat.z), float(quat.w)),
         }
+        self.latest_pose_generation = self.reset_generation if self.reset_seen else -1
         self.trajectory_world.append((self.latest_pose['x'], self.latest_pose['y']))
         if len(self.trajectory_world) > 512:
             self.trajectory_world = self.trajectory_world[-512:]
@@ -1106,6 +1200,18 @@ def _apply_runtime_defaults(args) -> dict:
         adjustments['dual_vln_status_topic'] = args.dual_vln_status_topic
 
     if _is_internnav_run(args):
+        normalized_adapter_target, adapter_target_source = _normalize_internnav_adapter_target(
+            getattr(args, 'dual_vln_adapter_target', '')
+        )
+        if (
+            not getattr(args, 'dual_vln_adapter_target', '')
+            or normalized_adapter_target != getattr(args, 'dual_vln_adapter_target', '')
+        ):
+            args.dual_vln_adapter_target = normalized_adapter_target
+            adjustments['dual_vln_adapter_target'] = (
+                normalized_adapter_target if adapter_target_source is None else f'{normalized_adapter_target} ({adapter_target_source})'
+            )
+
         env_model_path, env_model_path_name = _first_env_value(
             'ARENA_INTERNNAV_MODEL_PATH',
             'INTERNNAV_MODEL_PATH',
@@ -1159,13 +1265,19 @@ def _classify_end_reason(*, finished_observed: bool, launch_returncode: int | No
         degraded = bool(internnav_status.get('degraded', False))
         if status in {
             'adapter_exception',
+            'backend_unavailable',
+            'camera_timeout',
             'invalid_adapter_output',
+            'invalid_model_output',
             'model_unavailable',
             'internnav_missing_rgb',
             'internnav_missing_depth',
             'internnav_empty_output',
+            'empty_model_output',
         }:
             return 'adapter_failure'
+        if degraded and status in {'waiting_for_camera', 'stale_camera'}:
+            return 'camera_not_ready'
         if degraded and status in {'inference_timeout', 'exception'}:
             return 'infrastructure_exception'
         if internnav_status.get('debug', {}).get('safe_stop'):
@@ -1450,6 +1562,30 @@ def main() -> int:
     env = os.environ.copy()
     env.setdefault('RCUTILS_LOGGING_BUFFERED_STREAM', '1')
     env.setdefault('ARENA_EVAL_PYTHON', sys.executable)
+    env['ARENA_EVAL_INTERNNAV_MODE'] = str(args.dual_vln_mode)
+    env['ARENA_EVAL_INTERNNAV_MODEL_PATH'] = str(args.dual_vln_model_path or '')
+    env['ARENA_EVAL_INTERNNAV_DEVICE'] = str(args.dual_vln_device)
+    env['ARENA_EVAL_INTERNNAV_RGB_TOPIC'] = str(args.dual_vln_rgb_topic or '')
+    env['ARENA_EVAL_INTERNNAV_DEPTH_TOPIC'] = str(args.dual_vln_depth_topic or '')
+    env['ARENA_EVAL_INTERNNAV_CAMERA_INFO_TOPIC'] = str(args.dual_vln_camera_info_topic or '')
+    env['ARENA_EVAL_INTERNNAV_ADAPTER_TARGET'] = str(args.dual_vln_adapter_target or '')
+    env['ARENA_EVAL_INTERNNAV_REQUIRE_REAL_BACKEND'] = str(bool(args.dual_vln_require_real_backend)).lower()
+    env['ARENA_EVAL_INTERNNAV_STRICT_DEVICE'] = str(bool(args.dual_vln_strict_device)).lower()
+    env['ARENA_EVAL_INTERNNAV_LOOK_DOWN'] = str(bool(args.dual_vln_look_down)).lower()
+    env['ARENA_EVAL_INTERNNAV_ENABLE_VISUALIZATION'] = str(bool(args.dual_vln_enable_visualization)).lower()
+    env['ARENA_EVAL_INTERNNAV_VISUALIZATION_TOPIC'] = str(args.dual_vln_visualization_topic)
+    env['ARENA_EVAL_INTERNNAV_VISUALIZATION_RATE_HZ'] = str(args.dual_vln_visualization_rate_hz)
+    env['ARENA_EVAL_INTERNNAV_INFERENCE_RATE_HZ'] = str(args.dual_vln_inference_rate_hz)
+    env['ARENA_EVAL_INTERNNAV_INFERENCE_TIMEOUT_SEC'] = str(args.dual_vln_inference_timeout_sec)
+    if args.dual_vln_python_executable:
+        # The InternNav adapter itself looks for these variables when deciding
+        # whether to launch the heavy model in a separate Python environment.
+        # Set them in the ros2 launch process environment as a robust fallback
+        # to launch_ros Node.additional_env, which can be bypassed by legacy
+        # launch aliases in nested robot launch files.
+        env['ARENA_VLN_MODEL_PYTHON'] = str(args.dual_vln_python_executable)
+        env['ARENA_INTERNNAV_PYTHON'] = str(args.dual_vln_python_executable)
+        env['ARENA_PYTHON'] = str(args.dual_vln_python_executable)
     launch_timeout_sec = args.launch_timeout_sec
     if launch_timeout_sec <= 0.0:
         launch_timeout_sec = max(float(args.timeout) * max(args.episodes, 1) + 120.0, 180.0)
@@ -1475,12 +1611,6 @@ def main() -> int:
             top_down_size_px=args.eval_video_top_down_size_px,
             top_down_window_m=args.eval_video_top_down_window_m,
         )
-
-    launch_proc = subprocess.Popen(
-        launch_cmd,
-        env=env,
-        start_new_session=True,
-    )
     finished_proc = _start_finished_watcher(
         env,
         args.finished_topic,
@@ -1488,6 +1618,11 @@ def main() -> int:
         robot_scenario_reset_topic,
     )
     status_proc = _start_status_watcher(env, args.dual_vln_status_topic, dual_vln_status_path)
+    launch_proc = subprocess.Popen(
+        launch_cmd,
+        env=env,
+        start_new_session=True,
+    )
 
     deadline = time.monotonic() + launch_timeout_sec
     launch_returncode = None

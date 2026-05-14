@@ -70,6 +70,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         self._completed_episodes = 0
         self._finished_published = False
         self._world_geometry_spawned = False
+        self._world_geometry_ready: asyncio.Event = asyncio.Event()
         self._task: Task
 
         # VLN instruction interface (published per-episode)
@@ -204,9 +205,20 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
 
     async def _spawn_current_world_geometry(self):
         self.get_logger().info("Spawning static world geometry into simulator")
+        self._world_geometry_ready.clear()
         await self._environment_manager.reset(ObstacleLayer.WORLD)
         await self._environment_manager.spawn_world_obstacles(self._world_manager.world)
         self._world_geometry_spawned = True
+        self._world_geometry_ready.set()
+
+    async def wait_for_world_geometry_ready(self, timeout_s: float) -> bool:
+        if self._world_geometry_ready.is_set():
+            return True
+        try:
+            await asyncio.wait_for(self._world_geometry_ready.wait(), timeout=max(float(timeout_s), 0.0))
+            return True
+        except asyncio.TimeoutError:
+            return False
 
     # RUNTIME
     async def _reset_task_unlocked(self, **kwargs):
@@ -218,9 +230,13 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
 
         await self._task.reset(**kwargs)
 
+        await self._simulator.after_reset_task()
+
         self._pub_task_reset.publish(Int16(data=self._number_of_resets))
 
-        # Publish instruction after reset so downstream consumers can latch it.
+        # Publish instruction only after the simulator reports post-reset ready so
+        # eval/video/model consumers treat task_reset as the first moment the new
+        # episode is actually ready to observe and control.
         instruction = self._vln_instruction
         if self._vln_instruction_file:
             try:
@@ -232,8 +248,6 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         self._pub_vln_instruction.publish(String(data=instruction))
 
         self._number_of_resets += 1
-
-        await self._simulator.after_reset_task()
 
         self.get_logger().warn("=============")
         self.get_logger().warn("Task Reset!")

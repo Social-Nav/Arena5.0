@@ -156,7 +156,8 @@ def generate_launch_description():
                 # task_generator publishes task_reset under its fully-qualified name;
                 # recorders use this to attribute samples to episodes.
                 'scenario_reset_topic': PythonExpression(['"', task_generator_node.substitution, '/task_reset"']),
-                'goal_topic': 'episode_goal_pose',
+                'start_topic': 'episode_start_pose',
+                'goal_topic': 'episode_goal_pose_metadata',
             }
         ],
         condition=launch.conditions.IfCondition(PythonExpression(['bool("', record_data_dir.substitution, '")'])),
@@ -185,36 +186,36 @@ def generate_launch_description():
     internnav_server_parameters = [
         {
             'namespace': namespace.substitution,
-            'mode': dual_vln_mode.substitution,
-            'model_path': dual_vln_model_path.substitution,
-            'device': dual_vln_device.substitution,
+            'mode': internnav_mode.substitution,
+            'model_path': internnav_model_path.substitution,
+            'device': internnav_device.substitution,
             'goal_topic': 'episode_goal_pose',
             'instruction_topic': PythonExpression(['"', task_generator_node.substitution, '/vln_instruction"']),
-            'rgb_topic': dual_vln_rgb_topic.substitution,
-            'depth_topic': dual_vln_depth_topic.substitution,
-            'camera_info_topic': dual_vln_camera_info_topic.substitution,
-            'adapter_target': dual_vln_adapter_target.substitution,
+            'rgb_topic': internnav_rgb_topic.substitution,
+            'depth_topic': internnav_depth_topic.substitution,
+            'camera_info_topic': internnav_camera_info_topic.substitution,
+            'adapter_target': internnav_adapter_target.substitution,
             'require_real_backend': launch_ros.parameter_descriptions.ParameterValue(
-                dual_vln_require_real_backend.substitution, value_type=bool
+                internnav_require_real_backend.substitution, value_type=bool
             ),
             'strict_device': launch_ros.parameter_descriptions.ParameterValue(
-                dual_vln_strict_device.substitution, value_type=bool
+                internnav_strict_device.substitution, value_type=bool
             ),
             'look_down': launch_ros.parameter_descriptions.ParameterValue(
-                dual_vln_look_down.substitution, value_type=bool
+                internnav_look_down.substitution, value_type=bool
             ),
             'enable_visualization': launch_ros.parameter_descriptions.ParameterValue(
-                dual_vln_enable_visualization.substitution, value_type=bool
+                internnav_enable_visualization.substitution, value_type=bool
             ),
-            'visualization_topic': dual_vln_visualization_topic.substitution,
+            'visualization_topic': internnav_visualization_topic.substitution,
             'visualization_rate_hz': launch_ros.parameter_descriptions.ParameterValue(
-                dual_vln_visualization_rate_hz.substitution, value_type=float
+                internnav_visualization_rate_hz.substitution, value_type=float
             ),
             'inference_rate_hz': launch_ros.parameter_descriptions.ParameterValue(
-                dual_vln_inference_rate_hz.substitution, value_type=float
+                internnav_inference_rate_hz.substitution, value_type=float
             ),
             'inference_timeout_sec': launch_ros.parameter_descriptions.ParameterValue(
-                dual_vln_inference_timeout_sec.substitution, value_type=float
+                internnav_inference_timeout_sec.substitution, value_type=float
             ),
         }
     ]
@@ -223,11 +224,20 @@ def generate_launch_description():
     )
     internnav_server = launch_ros.actions.Node(
         package='arena_vln_models',
-        executable='internnav_server',
+        # The humble_eval install currently exports only the legacy
+        # dual_vln_server console-script wrapper, even though both wrappers map
+        # to arena_vln_models.internnav_server:main in source.  Launch the
+        # exported entry point so eval does not fail before the simulator even
+        # reaches reset/recording readiness.
+        executable='dual_vln_server',
         name='internnav_server',
         output='screen',
         parameters=internnav_server_parameters,
         additional_env={
+            # Eval still passes the legacy dual_vln_python_executable launch
+            # argument.  Use the alias here so the model subprocess environment
+            # is populated even when internnav_python_executable itself keeps
+            # its default value.
             'ARENA_PYTHON': dual_vln_python_executable.substitution,
         },
         condition=internnav_enabled,
