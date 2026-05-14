@@ -12,6 +12,7 @@ from arena_vln_models.core import (
 from arena_vln_models.backends import HeuristicBackend, Pose2D, PythonAdapterBackend, DualVLNObservation
 from arena_vln_models import internnav as internnav_module
 from arena_vln_models.internnav import InternNavAdapter, available_backends, load_internnav_adapter
+from arena_vln_models.internnav_server import _normalize_internnav_adapter_target
 from arena_vln_models.visualization import image_msg_to_numpy, numpy_to_image_msg
 
 
@@ -118,6 +119,21 @@ def test_python_adapter_backend_loads_canonical_target_only():
     assert decision.status == 'mock_internnav_command'
     assert decision.linear_x > 0.0
     assert decision.debug['adapter_target'] == 'arena_vln_models.internnav:load_internnav_adapter'
+
+
+def test_internnav_server_defaults_empty_adapter_target_for_internnav_mode():
+    adapter_target, source = _normalize_internnav_adapter_target('internnav', '')
+    assert adapter_target == 'arena_vln_models.internnav:load_internnav_adapter'
+    assert source == 'default'
+
+
+def test_internnav_server_normalizes_legacy_native_adapter_target():
+    adapter_target, source = _normalize_internnav_adapter_target(
+        'internnav',
+        'internnav.agent.internvla_n1_agent_realworld.InternVLAN1AsyncAgent',
+    )
+    assert adapter_target == 'arena_vln_models.internnav:load_internnav_adapter'
+    assert source == 'legacy:internnav.agent.internvla_n1_agent_realworld.InternVLAN1AsyncAgent'
 
 
 def test_heuristic_backend_produces_forward_command():

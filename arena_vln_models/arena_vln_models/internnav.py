@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import site
+import subprocess
 import sys
+import tempfile
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Optional
@@ -222,6 +227,306 @@ def _resolve_runtime_device(requested_device: str, *, strict_device: bool = Fals
         return 'cpu', f"Failed to validate requested device '{requested}': {exc}; falling back to cpu"
 
 
+class InternNavSubprocessAdapter:
+    """Run the heavy InternNav model in a separate Python environment.
+
+    ROS 2 Humble nodes must run in Python 3.10 for rclpy/type-support ABI
+    compatibility, while the InternNav checkpoint environment on this machine is
+    Python 3.12 with torch installed.  This adapter keeps ROS in the eval
+    interpreter and exchanges only JSON + temporary NumPy files with the model
+    interpreter selected by ARENA_VLN_MODEL_PYTHON / --internnav-python-executable.
+    """
+
+    def __init__(
+        self,
+        python_executable: str,
+        model_path: str,
+        requested_device: str,
+        params: dict[str, Any],
+        internnav_root: Path,
+        logger=None,
+    ) -> None:
+        self._python = python_executable
+        self._logger = logger
+        self._timeout = float(params.get('inference_timeout_sec', 120.0))
+        self._tmpdir = tempfile.TemporaryDirectory(prefix='arena_internnav_ipc_')
+        self._seq = 0
+        self._stderr_lines: list[str] = []
+        env = os.environ.copy()
+        env.setdefault('ARENA_INTERNNAV_MAX_NEW_TOKENS', str(int(params.get('internnav_max_new_tokens', 10))))
+        pythonpath_parts = [str(internnav_root), str(internnav_root / 'third_party' / 'diffusion-policy')]
+        if env.get('PYTHONPATH'):
+            pythonpath_parts.append(env['PYTHONPATH'])
+        env['PYTHONPATH'] = os.pathsep.join(pythonpath_parts)
+        worker_code = self._worker_code()
+        self._proc = subprocess.Popen(
+            [
+                python_executable,
+                '-u',
+                '-c',
+                worker_code,
+                '--model-path',
+                model_path,
+                '--device',
+                requested_device,
+                '--resize-w',
+                str(int(params.get('internnav_resize_w', os.environ.get('ARENA_INTERNNAV_RESIZE_W', 336)))),
+                '--resize-h',
+                str(int(params.get('internnav_resize_h', os.environ.get('ARENA_INTERNNAV_RESIZE_H', 336)))),
+                '--num-history',
+                str(int(params.get('internnav_num_history', os.environ.get('ARENA_INTERNNAV_NUM_HISTORY', 0)))),
+                '--plan-step-gap',
+                str(int(params.get('internnav_plan_step_gap', os.environ.get('ARENA_INTERNNAV_PLAN_STEP_GAP', 12)))),
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            env=env,
+        )
+        self._stderr_thread = threading.Thread(
+            target=self._drain_stderr,
+            name='arena_internnav_stderr_drain',
+            daemon=True,
+        )
+        self._stderr_thread.start()
+        ready = self._read_response(timeout_sec=max(self._timeout, 30.0))
+        if ready.get('status') != 'ready':
+            raise RuntimeError(f'InternNav subprocess did not become ready: {ready}')
+
+    def _log(self, level: str, message: str) -> None:
+        fn = getattr(self._logger, level, None) if self._logger is not None else None
+        if callable(fn):
+            fn(message)
+
+    def _drain_stderr(self) -> None:
+        stream = getattr(self._proc, 'stderr', None)
+        if stream is None:
+            return
+        try:
+            for line in stream:
+                line = line.rstrip('\n')
+                if not line:
+                    continue
+                self._stderr_lines.append(line)
+                if len(self._stderr_lines) > 40:
+                    del self._stderr_lines[: len(self._stderr_lines) - 40]
+        except Exception:
+            return
+
+    @staticmethod
+    def _worker_code() -> str:
+        return r'''
+import argparse, json, math, sys, traceback
+from types import SimpleNamespace
+import numpy as np
+
+def _jsonable(value):
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value]
+    if hasattr(value, 'tolist'):
+        return _jsonable(value.tolist())
+    return str(value)
+
+def _normalize_output(output):
+    if isinstance(output, dict):
+        result = dict(output)
+    elif isinstance(output, (int, np.integer)):
+        result = {'discrete_action': int(output)}
+    elif isinstance(output, (list, tuple, np.ndarray)):
+        data = output.tolist() if hasattr(output, 'tolist') else list(output)
+        if data and isinstance(data[0], (int, float, np.integer, np.floating)):
+            result = {'discrete_action': int(data[0])}
+        else:
+            result = {'output_trajectory': data}
+    else:
+        action = getattr(output, 'output_action', None)
+        trajectory = getattr(output, 'output_trajectory', None)
+        pixel = getattr(output, 'output_pixel', None)
+        result = {'debug': {'raw_output': str(output)}}
+        if action is not None:
+            action_list = np.asarray(action).reshape(-1).tolist()
+            if action_list:
+                result['discrete_action'] = int(action_list[0])
+                if len(action_list) > 1:
+                    result['debug']['action_sequence_tail'] = [int(item) for item in action_list[1:]]
+        if trajectory is not None:
+            result['output_trajectory'] = trajectory
+        if pixel is not None:
+            result['output_pixel'] = pixel
+        if 'discrete_action' not in result and 'output_trajectory' not in result:
+            result['status'] = 'internnav_unknown_output'
+    result.setdefault('status', 'internnav_command')
+    result.setdefault('debug', {})
+    return _jsonable(result)
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--model-path', required=True)
+parser.add_argument('--device', default='cpu')
+parser.add_argument('--resize-w', type=int, default=448)
+parser.add_argument('--resize-h', type=int, default=448)
+parser.add_argument('--num-history', type=int, default=4)
+parser.add_argument('--plan-step-gap', type=int, default=4)
+args = parser.parse_args()
+
+try:
+    import torch
+    runtime_device = args.device
+    if runtime_device.startswith('cuda') and not torch.cuda.is_available():
+        runtime_device = 'cpu'
+    torch.device(runtime_device)
+    from internnav.agent.internvla_n1_agent_realworld import InternVLAN1AsyncAgent
+    agent_args = SimpleNamespace(
+        device=runtime_device,
+        model_path=args.model_path,
+        resize_w=args.resize_w,
+        resize_h=args.resize_h,
+        num_history=args.num_history,
+        plan_step_gap=args.plan_step_gap,
+    )
+    agent = InternVLAN1AsyncAgent(agent_args)
+    print(json.dumps({
+        'status': 'ready',
+        'runtime_device': runtime_device,
+        'resize_w': args.resize_w,
+        'resize_h': args.resize_h,
+        'num_history': args.num_history,
+        'plan_step_gap': args.plan_step_gap,
+        'max_new_tokens': getattr(agent, 'max_new_tokens', None),
+    }), flush=True)
+except Exception as exc:
+    print(json.dumps({'status': 'error', 'error': str(exc), 'traceback': traceback.format_exc()}), flush=True)
+    sys.exit(1)
+
+for line in sys.stdin:
+    try:
+        req = json.loads(line)
+        if req.get('cmd') == 'reset':
+            if hasattr(agent, 'reset'):
+                try:
+                    agent.reset()
+                except TypeError:
+                    agent.reset(None)
+            print(json.dumps({'status': 'reset_ok'}), flush=True)
+            continue
+        rgb = np.load(req['rgb_path'])
+        depth = np.load(req['depth_path'])
+        import time
+        t0 = time.time()
+        output = agent.step(
+            rgb,
+            depth,
+            req.get('pose', [0.0, 0.0, 0.0]),
+            req.get('instruction', ''),
+            req.get('intrinsic'),
+            bool(req.get('look_down', False)),
+        )
+        elapsed = time.time() - t0
+        result = _normalize_output(output)
+        result.setdefault('debug', {})
+        result['debug']['subprocess_runtime_device'] = getattr(agent_args, 'device', '')
+        result['debug']['subprocess_compute_sec'] = elapsed
+        result['debug']['subprocess_episode_idx'] = getattr(agent, 'episode_idx', None)
+        print(json.dumps({'status': 'ok', 'result': result}), flush=True)
+    except Exception as exc:
+        print(json.dumps({'status': 'error', 'error': str(exc), 'traceback': traceback.format_exc()}), flush=True)
+'''
+
+    def _read_response(self, timeout_sec: float) -> dict[str, Any]:
+        import select
+        if self._proc.stdout is None:
+            return {'status': 'error', 'error': 'subprocess stdout is unavailable'}
+        fd = self._proc.stdout.fileno()
+        deadline = time.monotonic() + max(float(timeout_sec), 0.0)
+        skipped_stdout: list[str] = []
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0.0:
+                return {
+                    'status': 'error',
+                    'error': f'timed out after {timeout_sec:.1f}s waiting for model subprocess',
+                    'stdout_tail': skipped_stdout[-10:],
+                    'stderr_tail': list(getattr(self, '_stderr_lines', [])[-20:]),
+                }
+            ready, _, _ = select.select([fd], [], [], remaining)
+            if not ready:
+                continue
+            line = self._proc.stdout.readline()
+            if not line:
+                return {
+                    'status': 'error',
+                    'error': f'subprocess exited rc={self._proc.poll()}',
+                    'stdout_tail': skipped_stdout[-10:],
+                    'stderr_tail': list(getattr(self, '_stderr_lines', [])[-20:]),
+                }
+            try:
+                return json.loads(line)
+            except Exception:
+                skipped_stdout.append(line.strip()[:400])
+                if len(skipped_stdout) > 20:
+                    del skipped_stdout[: len(skipped_stdout) - 20]
+
+    def reset(self) -> None:
+        if self._proc.poll() is not None:
+            return
+        if self._proc.stdin is None:
+            return
+        self._proc.stdin.write(json.dumps({'cmd': 'reset'}) + '\n')
+        self._proc.stdin.flush()
+        self._read_response(timeout_sec=5.0)
+
+    def compute(self, observation: Any) -> dict[str, Any]:
+        if self._proc.poll() is not None:
+            raise RuntimeError(f'InternNav subprocess exited rc={self._proc.returncode}')
+        rgb = normalize_rgb(getattr(observation, 'rgb_image', None))
+        depth = normalize_depth(getattr(observation, 'depth_image', None), reference_shape=(rgb.shape[0], rgb.shape[1]) if rgb is not None else None)
+        if rgb is None or depth is None:
+            return safe_stop('internnav_missing_camera', 'rgb/depth image is required for subprocess InternNav')
+        self._seq += 1
+        rgb_path = os.path.join(self._tmpdir.name, f'rgb_{self._seq}.npy')
+        depth_path = os.path.join(self._tmpdir.name, f'depth_{self._seq}.npy')
+        np.save(rgb_path, rgb)
+        np.save(depth_path, depth)
+        payload = {
+            'cmd': 'compute',
+            'rgb_path': rgb_path,
+            'depth_path': depth_path,
+            'pose': to_jsonable(pose_vector(observation)),
+            'instruction': str(getattr(observation, 'instruction', '')),
+            'intrinsic': camera_intrinsic_matrix(observation, rgb).tolist(),
+            'look_down': bool(getattr(observation, 'look_down', False)),
+        }
+        try:
+            assert self._proc.stdin is not None
+            self._proc.stdin.write(json.dumps(payload) + '\n')
+            self._proc.stdin.flush()
+            response = self._read_response(timeout_sec=self._timeout)
+        finally:
+            for path in (rgb_path, depth_path):
+                try:
+                    os.unlink(path)
+                except FileNotFoundError:
+                    pass
+        if response.get('status') != 'ok':
+            raise RuntimeError(response.get('error') or str(response))
+        result = response.get('result')
+        if not isinstance(result, dict):
+            raise RuntimeError(f'Invalid subprocess result: {result!r}')
+        return result
+
+    def __del__(self):
+        try:
+            if getattr(self, '_proc', None) is not None and self._proc.poll() is None:
+                self._proc.terminate()
+        except Exception:
+            pass
+
+
 class InternNavAdapter:
     """Arena adapter_target wrapper for InternNav backends.
 
@@ -236,6 +541,7 @@ class InternNavAdapter:
         self._logger = logger
         self._params = params or {}
         self._adapter: Any = None
+        self._subprocess_adapter: Optional['InternNavSubprocessAdapter'] = None
         self._mode = 'mock'
         self._fallback_reason = ''
         self._load_error = ''
@@ -244,7 +550,27 @@ class InternNavAdapter:
         self._session_key: Optional[tuple[str, Optional[tuple[float, float, float]]]] = None
         self._require_real_backend = bool(self._params.get('require_real_backend', False))
         self._strict_device = bool(self._params.get('strict_device', False))
-        self._load_backend()
+        self._loading = False
+        self._load_thread: Optional[threading.Thread] = None
+
+        # Loading InternVLA-N1 can take longer than a short Arena episode on CPU.
+        # Keep ROS services/status responsive and allow the wrapper to use its
+        # deterministic InternNav-style command shim until the real subprocess is
+        # ready.  When a caller explicitly requires the real backend, keep the old
+        # synchronous fail-fast behavior.
+        if self._require_real_backend:
+            self._load_backend()
+        else:
+            self._mode = 'mock'
+            self._fallback_reason = 'InternNav real backend is loading asynchronously; using deterministic command shim'
+            self._load_debug['load_mode'] = 'loading_async'
+            self._loading = True
+            self._load_thread = threading.Thread(
+                target=self._load_backend_async,
+                name='arena_internnav_backend_loader',
+                daemon=True,
+            )
+            self._load_thread.start()
 
     def _log(self, level: str, message: str) -> None:
         logger = self._logger
@@ -253,6 +579,12 @@ class InternNavAdapter:
         fn = getattr(logger, level, None)
         if callable(fn):
             fn(message)
+
+    def _load_backend_async(self) -> None:
+        try:
+            self._load_backend()
+        finally:
+            self._loading = False
 
     def _load_backend(self) -> None:
         requested_model_path = str(self._params.get('model_path', '')).strip()
@@ -285,6 +617,40 @@ class InternNavAdapter:
                 raise RuntimeError(self._load_error)
             return
 
+        external_python = ''
+        for env_name in INTERNNAV_MODEL_PYTHON_ENV_VARS:
+            value = os.environ.get(env_name, '').strip()
+            if value:
+                external_python = value
+                self._load_debug['model_python'] = value
+                self._load_debug['model_python_source'] = env_name
+                break
+        if external_python and Path(external_python).resolve() != Path(sys.executable).resolve():
+            try:
+                self._subprocess_adapter = InternNavSubprocessAdapter(
+                    external_python,
+                    model_path,
+                    requested_device,
+                    self._params,
+                    root,
+                    logger=self._logger,
+                )
+                self._mode = 'internnav_subprocess_agent'
+                self._fallback_reason = ''
+                self._load_error = ''
+                self._load_debug.update({'load_mode': 'real_subprocess'})
+                self._log('info', f"InternNav wrapper loaded subprocess backend via '{external_python}'")
+                return
+            except Exception as exc:
+                self._subprocess_adapter = None
+                self._load_debug['subprocess_load_exception_type'] = type(exc).__name__
+                self._load_debug['subprocess_load_error'] = str(exc)
+                self._log('error', f"InternNav subprocess backend failed via '{external_python}': {exc}")
+                if self._require_real_backend:
+                    raise RuntimeError(
+                        f"InternNav required subprocess backend failed via '{external_python}': {exc}"
+                    ) from exc
+
         added_paths = _ensure_internnav_sys_paths()
         runtime_env_debug = _configure_internnav_runtime_env()
         added_aliases = _ensure_legacy_module_aliases()
@@ -304,10 +670,10 @@ class InternNavAdapter:
             args = SimpleNamespace(
                 device=runtime_device,
                 model_path=model_path,
-                resize_w=int(self._params.get('internnav_resize_w', 448)),
-                resize_h=int(self._params.get('internnav_resize_h', 448)),
-                num_history=int(self._params.get('internnav_num_history', 4)),
-                plan_step_gap=int(self._params.get('internnav_plan_step_gap', 4)),
+                resize_w=int(self._params.get('internnav_resize_w', os.environ.get('ARENA_INTERNNAV_RESIZE_W', 336))),
+                resize_h=int(self._params.get('internnav_resize_h', os.environ.get('ARENA_INTERNNAV_RESIZE_H', 336))),
+                num_history=int(self._params.get('internnav_num_history', os.environ.get('ARENA_INTERNNAV_NUM_HISTORY', 0))),
+                plan_step_gap=int(self._params.get('internnav_plan_step_gap', os.environ.get('ARENA_INTERNNAV_PLAN_STEP_GAP', 12))),
             )
             self._adapter = agent_cls(args)
             self._mode = 'internnav_async_agent'
@@ -321,6 +687,7 @@ class InternNavAdapter:
             self._log('info', f"InternNav wrapper loaded real backend from '{model_path}' on device='{runtime_device}'")
         except Exception as exc:
             self._adapter = None
+            self._subprocess_adapter = None
             self._mode = 'unavailable'
             self._load_error = str(exc)
             self._load_debug['load_mode'] = 'unavailable'
@@ -353,6 +720,11 @@ class InternNavAdapter:
 
         self._pending_actions.clear()
         self._session_key = session_key
+        if self._subprocess_adapter is not None:
+            try:
+                self._subprocess_adapter.reset()
+            except Exception as exc:
+                self._log('warn', f'InternNav subprocess reset failed: {exc}')
         if self._adapter is not None and hasattr(self._adapter, 'reset'):
             try:
                 self._adapter.reset()
@@ -411,6 +783,7 @@ class InternNavAdapter:
             'status': 'mock_internnav_command',
             'debug': {
                 'shim_mode': self._mode,
+                'real_backend_loading': bool(self._loading),
                 'shim_reason': self._fallback_reason or 'deterministic fallback',
                 'goal_local': [local_x, local_y, yaw],
                 'remaining_action_queue': 0,
@@ -454,6 +827,14 @@ class InternNavAdapter:
             response['debug']['remaining_action_queue'] = len(self._pending_actions)
         return response
 
+    def _subprocess_response(self, observation: Any) -> dict[str, Any]:
+        if self._subprocess_adapter is None:
+            return self._unavailable_response()
+        response = self._subprocess_adapter.compute(observation)
+        response.setdefault('debug', {})
+        response['debug'].update({'shim_mode': self._mode, **self._load_debug})
+        return response
+
     def compute(self, observation: Any) -> dict[str, Any]:
         self._reset_if_needed(observation)
 
@@ -461,6 +842,8 @@ class InternNavAdapter:
         if queued is not None:
             return queued
 
+        if self._subprocess_adapter is not None:
+            return self._subprocess_response(observation)
         if self._adapter is None:
             if self._mode == 'mock':
                 return self._mock_response(observation)

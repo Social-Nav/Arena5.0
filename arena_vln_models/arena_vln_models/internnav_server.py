@@ -34,6 +34,7 @@ import rclpy
 from geometry_msgs.msg import PoseStamped, Twist
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import CameraInfo, Image
 from rosnav_rl_msgs.srv import GetCommand
@@ -41,6 +42,57 @@ from std_msgs.msg import String
 
 from arena_vln_models.backends import ModelSimDecision, ModelSimObservation, Pose2D, create_model_backend
 from arena_vln_models.visualization import image_msg_to_numpy, numpy_to_image_msg, render_debug_overlay
+
+
+DEFAULT_INTERNNAV_ADAPTER_TARGET = 'arena_vln_models.internnav:load_internnav_adapter'
+LEGACY_INTERNNAV_ADAPTER_TARGETS = {
+    'internnav.agent.internvla_n1_agent_realworld.InternVLAN1AsyncAgent': DEFAULT_INTERNNAV_ADAPTER_TARGET,
+}
+
+
+def _env_override(*names: str) -> tuple[str, str | None]:
+    for name in names:
+        value = os.environ.get(name, '').strip()
+        if value:
+            return value, name
+    return '', None
+
+
+def _resolve_bool(raw_value, *, env_names: tuple[str, ...] = ()) -> tuple[bool, str | None]:
+    env_value, env_name = _env_override(*env_names)
+    if env_name is not None:
+        return env_value.lower() in {'1', 'true', 'yes', 'on'}, f'env:{env_name}'
+    return bool(raw_value), None
+
+
+def _resolve_float(raw_value, *, env_names: tuple[str, ...] = ()) -> tuple[float, str | None]:
+    env_value, env_name = _env_override(*env_names)
+    if env_name is not None:
+        return float(env_value), f'env:{env_name}'
+    return float(raw_value), None
+
+
+def _resolve_string(raw_value, *, env_names: tuple[str, ...] = (), allow_empty: bool = False) -> tuple[str, str | None]:
+    env_value, env_name = _env_override(*env_names)
+    if env_name is not None:
+        return env_value, f'env:{env_name}'
+    value = str(raw_value)
+    if not allow_empty:
+        value = value.strip()
+    return value, None
+
+
+def _normalize_internnav_adapter_target(mode: str, adapter_target: str) -> tuple[str, str | None]:
+    normalized_mode = str(mode or '').strip().lower()
+    normalized_target = str(adapter_target or '').strip()
+    if not normalized_target and normalized_mode == 'internnav':
+        return DEFAULT_INTERNNAV_ADAPTER_TARGET, 'default'
+
+    mapped_target = LEGACY_INTERNNAV_ADAPTER_TARGETS.get(normalized_target)
+    if mapped_target is not None:
+        return mapped_target, f'legacy:{normalized_target}'
+
+    return normalized_target, None
 
 def _yaw_from_quat(x: float, y: float, z: float, w: float) -> float:
     # yaw (Z) from quaternion
@@ -88,6 +140,7 @@ class BaseModelSimServer(Node):
         self.declare_parameter('inference_rate_hz', 10.0)
         self.declare_parameter('inference_timeout_sec', 0.2)
         self.declare_parameter('camera_ready_timeout_sec', 120.0)
+        self.declare_parameter('camera_stale_after_sec', 2.0)
         self.declare_parameter('model_path', '')
         self.declare_parameter('device', 'cpu')
         self.declare_parameter('adapter_target', '')
@@ -115,21 +168,120 @@ class BaseModelSimServer(Node):
         self._compute_in_progress = False
         self._latest_rgb: Optional[np.ndarray] = None
         self._latest_rgb_msg: Optional[Image] = None
+        self._latest_rgb_ts: float = 0.0
         self._latest_depth: Optional[np.ndarray] = None
         self._latest_depth_msg: Optional[Image] = None
+        self._latest_depth_ts: float = 0.0
         self._camera_intrinsics: Optional[tuple[float, ...]] = None
+        self._camera_info_ts: float = 0.0
+        self._camera_required: bool = False
+        self._required_camera_topics: dict[str, str] = {'rgb': '', 'depth': '', 'camera_info': ''}
+        self._initial_camera_timed_out: bool = False
 
+        mode, mode_source = _resolve_string(
+            self.get_parameter('mode').value,
+            env_names=('ARENA_EVAL_INTERNNAV_MODE',),
+        )
+        model_path, model_path_source = _resolve_string(
+            self.get_parameter('model_path').value,
+            env_names=('ARENA_EVAL_INTERNNAV_MODEL_PATH',),
+            allow_empty=True,
+        )
+        device, device_source = _resolve_string(
+            self.get_parameter('device').value,
+            env_names=('ARENA_EVAL_INTERNNAV_DEVICE',),
+        )
+        rgb_topic, rgb_topic_source = _resolve_string(
+            self.get_parameter('rgb_topic').value,
+            env_names=('ARENA_EVAL_INTERNNAV_RGB_TOPIC',),
+            allow_empty=True,
+        )
+        depth_topic, depth_topic_source = _resolve_string(
+            self.get_parameter('depth_topic').value,
+            env_names=('ARENA_EVAL_INTERNNAV_DEPTH_TOPIC',),
+            allow_empty=True,
+        )
+        camera_info_topic, camera_info_topic_source = _resolve_string(
+            self.get_parameter('camera_info_topic').value,
+            env_names=('ARENA_EVAL_INTERNNAV_CAMERA_INFO_TOPIC',),
+            allow_empty=True,
+        )
+        inference_rate_hz, inference_rate_hz_source = _resolve_float(
+            self.get_parameter('inference_rate_hz').value,
+            env_names=('ARENA_EVAL_INTERNNAV_INFERENCE_RATE_HZ',),
+        )
+        inference_timeout_sec, inference_timeout_sec_source = _resolve_float(
+            self.get_parameter('inference_timeout_sec').value,
+            env_names=('ARENA_EVAL_INTERNNAV_INFERENCE_TIMEOUT_SEC',),
+        )
+        require_real_backend, require_real_backend_source = _resolve_bool(
+            self.get_parameter('require_real_backend').value,
+            env_names=('ARENA_EVAL_INTERNNAV_REQUIRE_REAL_BACKEND',),
+        )
+        strict_device, strict_device_source = _resolve_bool(
+            self.get_parameter('strict_device').value,
+            env_names=('ARENA_EVAL_INTERNNAV_STRICT_DEVICE',),
+        )
+        look_down, look_down_source = _resolve_bool(
+            self.get_parameter('look_down').value,
+            env_names=('ARENA_EVAL_INTERNNAV_LOOK_DOWN',),
+        )
+        enable_visualization, enable_visualization_source = _resolve_bool(
+            self.get_parameter('enable_visualization').value,
+            env_names=('ARENA_EVAL_INTERNNAV_ENABLE_VISUALIZATION',),
+        )
+        visualization_topic, visualization_topic_source = _resolve_string(
+            self.get_parameter('visualization_topic').value,
+            env_names=('ARENA_EVAL_INTERNNAV_VISUALIZATION_TOPIC',),
+        )
+        visualization_rate_hz, visualization_rate_hz_source = _resolve_float(
+            self.get_parameter('visualization_rate_hz').value,
+            env_names=('ARENA_EVAL_INTERNNAV_VISUALIZATION_RATE_HZ',),
+        )
+        adapter_target_raw, adapter_target_env_source = _resolve_string(
+            self.get_parameter('adapter_target').value,
+            env_names=('ARENA_EVAL_INTERNNAV_ADAPTER_TARGET',),
+            allow_empty=True,
+        )
+        adapter_target, adapter_target_source = _normalize_internnav_adapter_target(
+            mode,
+            adapter_target_raw,
+        )
+        parameter_overrides = []
+        for name, value, source in (
+            ('mode', mode, mode_source),
+            ('model_path', model_path, model_path_source),
+            ('device', device, device_source),
+            ('rgb_topic', rgb_topic, rgb_topic_source),
+            ('depth_topic', depth_topic, depth_topic_source),
+            ('camera_info_topic', camera_info_topic, camera_info_topic_source),
+            ('inference_rate_hz', inference_rate_hz, inference_rate_hz_source),
+            ('inference_timeout_sec', inference_timeout_sec, inference_timeout_sec_source),
+            ('require_real_backend', require_real_backend, require_real_backend_source),
+            ('strict_device', strict_device, strict_device_source),
+            ('look_down', look_down, look_down_source),
+            ('enable_visualization', enable_visualization, enable_visualization_source),
+            ('visualization_topic', visualization_topic, visualization_topic_source),
+            ('visualization_rate_hz', visualization_rate_hz, visualization_rate_hz_source),
+        ):
+            if source is not None:
+                parameter_overrides.append(Parameter(name, value=value))
+        if adapter_target != str(self.get_parameter('adapter_target').value) or adapter_target_env_source is not None:
+            parameter_overrides.append(Parameter('adapter_target', value=adapter_target))
+        if parameter_overrides:
+            self.set_parameters(parameter_overrides)
         self._params = {
             'command_timeout_sec': float(self.get_parameter('command_timeout_sec').value),
-            'inference_rate_hz': float(self.get_parameter('inference_rate_hz').value),
-            'inference_timeout_sec': float(self.get_parameter('inference_timeout_sec').value),
+            'inference_rate_hz': inference_rate_hz,
+            'inference_timeout_sec': inference_timeout_sec,
             'camera_ready_timeout_sec': float(self.get_parameter('camera_ready_timeout_sec').value),
-            'model_path': str(self.get_parameter('model_path').value),
-            'device': str(self.get_parameter('device').value),
-            'adapter_target': str(self.get_parameter('adapter_target').value),
-            'require_real_backend': bool(self.get_parameter('require_real_backend').value),
-            'strict_device': bool(self.get_parameter('strict_device').value),
-            'look_down': bool(self.get_parameter('look_down').value),
+            'camera_stale_after_sec': float(self.get_parameter('camera_stale_after_sec').value),
+            'model_path': model_path,
+            'device': device,
+            'adapter_target': adapter_target,
+            'require_real_backend': require_real_backend,
+            'strict_device': strict_device,
+            'look_down': look_down,
             'max_linear': float(self.get_parameter('max_linear').value),
             'max_angular': float(self.get_parameter('max_angular').value),
             'k_lin': float(self.get_parameter('k_lin').value),
@@ -152,9 +304,9 @@ class BaseModelSimServer(Node):
         self.create_subscription(PoseStamped, self.get_parameter('subgoal_topic').value, self._on_subgoal, 10)
         self.create_subscription(String, self.get_parameter('instruction_topic').value, self._on_instruction, instr_qos)
 
-        rgb_topic = str(self.get_parameter('rgb_topic').value)
-        depth_topic = str(self.get_parameter('depth_topic').value)
-        camera_info_topic = str(self.get_parameter('camera_info_topic').value)
+        rgb_topic = rgb_topic
+        depth_topic = depth_topic
+        camera_info_topic = camera_info_topic
         # Isaac Sim camera writers publish sensor streams with BEST_EFFORT QoS.
         # A default RELIABLE subscription is incompatible with those publishers and
         # leaves InternNav stuck in the initial waiting_for_camera barrier even
@@ -170,6 +322,18 @@ class BaseModelSimServer(Node):
         if camera_info_topic:
             self.create_subscription(CameraInfo, camera_info_topic, self._on_camera_info, sensor_qos)
 
+        self._required_camera_topics = {
+            'rgb': rgb_topic,
+            'depth': depth_topic,
+            'camera_info': camera_info_topic,
+        }
+        self._camera_required = self._requires_initial_camera(
+            mode=mode,
+            rgb_topic=rgb_topic,
+            depth_topic=depth_topic,
+            camera_info_topic=camera_info_topic,
+        )
+
         status_qos = QoSProfile(
             depth=1,
             reliability=ReliabilityPolicy.RELIABLE,
@@ -181,7 +345,7 @@ class BaseModelSimServer(Node):
             status_qos,
         )
 
-        self._visualization_enabled = bool(self.get_parameter('enable_visualization').value)
+        self._visualization_enabled = enable_visualization
         self._visualization_publisher = None
         if self._visualization_enabled:
             self._visualization_publisher = self.create_publisher(
@@ -194,7 +358,34 @@ class BaseModelSimServer(Node):
                     f'{self.SERVER_LABEL} visualization enabled but rgb_topic is empty; debug image publishing will stay idle'
                 )
 
-        mode = str(self.get_parameter('mode').value)
+        if adapter_target_source == 'default':
+            self.get_logger().info(
+                'InternNav mode requested without adapter_target; defaulting to '
+                + DEFAULT_INTERNNAV_ADAPTER_TARGET
+            )
+        elif adapter_target_source is not None:
+            self.get_logger().warn(
+                f'Normalizing legacy InternNav adapter_target to {adapter_target}: {adapter_target_source}'
+            )
+        for label, source in (
+            ('mode', mode_source),
+            ('model_path', model_path_source),
+            ('device', device_source),
+            ('rgb_topic', rgb_topic_source),
+            ('depth_topic', depth_topic_source),
+            ('camera_info_topic', camera_info_topic_source),
+            ('inference_rate_hz', inference_rate_hz_source),
+            ('inference_timeout_sec', inference_timeout_sec_source),
+            ('require_real_backend', require_real_backend_source),
+            ('strict_device', strict_device_source),
+            ('look_down', look_down_source),
+            ('enable_visualization', enable_visualization_source),
+            ('visualization_topic', visualization_topic_source),
+            ('visualization_rate_hz', visualization_rate_hz_source),
+        ):
+            if source is not None:
+                self.get_logger().info(f'Using InternNav {label} override from {source}')
+
         self._wait_for_initial_camera_if_required(
             mode=mode,
             rgb_topic=rgb_topic,
@@ -237,9 +428,15 @@ class BaseModelSimServer(Node):
         )
         self.get_logger().info(f'{self.SERVER_LABEL} backend ready: {self._backend.describe()}')
         adapter_available = getattr(self._backend, '_adapter_callable', True) is not None
+        missing_inputs, stale_inputs = self._camera_input_issues(require_fresh=False)
+        startup_status = 'backend_ready' if adapter_available else 'backend_unavailable'
+        startup_degraded = not adapter_available
+        if missing_inputs or stale_inputs:
+            startup_status = 'camera_timeout' if self._initial_camera_timed_out else 'waiting_for_camera'
+            startup_degraded = True
         self._last_decision = ModelSimDecision(
-            status='backend_ready' if adapter_available else 'backend_unavailable',
-            degraded=not adapter_available,
+            status=startup_status,
+            degraded=startup_degraded,
             debug={
                 'backend_type': self._backend.backend_type,
                 'backend_description': self._backend.describe(),
@@ -249,9 +446,14 @@ class BaseModelSimServer(Node):
                 'adapter_target': self._params['adapter_target'],
                 'require_real_backend': self._params['require_real_backend'],
                 'strict_device': self._params['strict_device'],
+                'missing_inputs': missing_inputs,
+                'stale_inputs': stale_inputs,
+                'sensor_ages_sec': self._camera_sensor_ages(),
+                'stale_after_sec': self._params['camera_stale_after_sec'],
             },
         )
         self._publish_status(self._last_decision)
+        self.create_timer(0.5, self._publish_readiness_status_if_ready)
         self.get_logger().info(
             f'{self.SERVER_LABEL} wrapper active; current model instance={self.MODEL_INSTANCE}. '
             'InternNav inference notebook expects checkpoint clone from '
@@ -282,6 +484,116 @@ class BaseModelSimServer(Node):
         timeout_sec: float,
     ) -> None:
         del mode, rgb_topic, depth_topic, camera_info_topic, timeout_sec
+
+    def _camera_sensor_ages(self) -> dict[str, float | None]:
+        now = time.monotonic()
+        return {
+            'rgb': (now - self._latest_rgb_ts) if self._latest_rgb_ts > 0.0 else None,
+            'depth': (now - self._latest_depth_ts) if self._latest_depth_ts > 0.0 else None,
+            'camera_info': (now - self._camera_info_ts) if self._camera_info_ts > 0.0 else None,
+        }
+
+    def _camera_input_issues(self, *, require_fresh: bool) -> tuple[list[str], list[str]]:
+        if not self._camera_required:
+            return [], []
+
+        stale_after_sec = max(float(self._params.get('camera_stale_after_sec', 0.0)), 0.0)
+        now = time.monotonic()
+        missing: list[str] = []
+        stale: list[str] = []
+        for key, topic in self._required_camera_topics.items():
+            if not topic:
+                continue
+            # CameraInfo from Isaac Replicator is useful when available, but it
+            # is not required by the Arena InternNav adapter: core.py falls back
+            # to a deterministic pinhole intrinsic matrix from the RGB image
+            # shape.  Do not block the entire episode on this latched metadata
+            # stream; several Isaac USD/Replicator combinations publish RGB and
+            # depth correctly while CameraInfo is delayed or missing.
+            if key == 'camera_info':
+                continue
+            value_present = False
+            last_ts = 0.0
+            if key == 'rgb':
+                value_present = self._latest_rgb is not None
+                last_ts = self._latest_rgb_ts
+            elif key == 'depth':
+                value_present = self._latest_depth is not None
+                last_ts = self._latest_depth_ts
+            elif key == 'camera_info':
+                value_present = self._camera_intrinsics is not None
+                last_ts = self._camera_info_ts
+
+            if not value_present:
+                missing.append(key)
+                continue
+            if require_fresh and stale_after_sec > 0.0 and (now - last_ts) > stale_after_sec:
+                stale.append(key)
+        return missing, stale
+
+    def _camera_gate_decision(self) -> ModelSimDecision | None:
+        missing, stale = self._camera_input_issues(require_fresh=True)
+        if not missing and not stale:
+            return None
+
+        status = 'waiting_for_camera' if missing else 'stale_camera'
+        if self._initial_camera_timed_out and (missing or stale):
+            status = 'camera_timeout' if missing else 'stale_camera'
+        return ModelSimDecision(
+            status=status,
+            degraded=True,
+            debug={
+                'safe_stop': True,
+                'missing_inputs': missing,
+                'stale_inputs': stale,
+                'sensor_ages_sec': self._camera_sensor_ages(),
+                'stale_after_sec': float(self._params.get('camera_stale_after_sec', 0.0)),
+                'topics': self._required_camera_topics,
+            },
+        )
+
+    def _publish_readiness_status_if_ready(self) -> None:
+        """Recover from a startup camera race once Isaac frames arrive.
+
+        Isaac robot/camera graph creation can complete a few seconds after the
+        InternNav server starts.  If the short startup camera barrier times out,
+        the server used to keep the latched status at ``camera_timeout`` until a
+        Nav2 ``get_command`` call arrived.  The robot manager waits for
+        ``backend_ready`` before publishing that navigation goal, so this caused
+        a circular wait.  Publish ``backend_ready`` as soon as the subscribed
+        RGB/depth streams are actually present.
+        """
+        if not hasattr(self, '_backend'):
+            return
+        adapter_available = getattr(self._backend, '_adapter_callable', True) is not None
+        if not adapter_available:
+            return
+        missing, stale = self._camera_input_issues(require_fresh=False)
+        if missing or stale:
+            return
+        with self._state_lock:
+            current_status = self._last_decision.status
+        if current_status == 'backend_ready':
+            self._publish_status(self._last_decision)
+            return
+        if current_status not in {'startup', 'waiting_for_camera', 'camera_timeout', 'stale_camera'}:
+            return
+        decision = ModelSimDecision(
+            status='backend_ready',
+            degraded=False,
+            debug={
+                'backend_type': self._backend.backend_type,
+                'backend_description': self._backend.describe(),
+                'uses_model_inference': bool(self._backend.uses_model_inference),
+                'model_path': self._params['model_path'],
+                'device': self._params['device'],
+                'adapter_target': self._params['adapter_target'],
+                'startup_camera_timeout_recovered': bool(self._initial_camera_timed_out),
+                'sensor_ages_sec': self._camera_sensor_ages(),
+            },
+        )
+        self._set_last_decision(decision)
+        self._publish_status(decision)
 
     def _to_jsonable(self, value):
         if isinstance(value, (str, int, float, bool)) or value is None:
@@ -314,6 +626,7 @@ class BaseModelSimServer(Node):
                 'rgb_available': self._latest_rgb is not None,
                 'depth_available': self._latest_depth is not None,
                 'camera_info_available': self._camera_intrinsics is not None,
+                'sensor_ages_sec': self._camera_sensor_ages(),
             },
         )
 
@@ -482,6 +795,7 @@ class BaseModelSimServer(Node):
             return
         self._latest_rgb = rgb
         self._latest_rgb_msg = msg
+        self._latest_rgb_ts = time.monotonic()
 
     def _on_depth(self, msg: Image) -> None:
         depth = image_msg_to_numpy(msg)
@@ -489,15 +803,23 @@ class BaseModelSimServer(Node):
             return
         self._latest_depth = depth
         self._latest_depth_msg = msg
+        self._latest_depth_ts = time.monotonic()
 
     def _on_camera_info(self, msg: CameraInfo) -> None:
         self._camera_intrinsics = tuple(float(value) for value in msg.k)
+        self._camera_info_ts = time.monotonic()
 
     def _on_get_command(self, request: GetCommand.Request, response: GetCommand.Response) -> GetCommand.Response:
         del request
         now = time.monotonic()
 
         try:
+            camera_gate_decision = self._camera_gate_decision()
+            if camera_gate_decision is not None:
+                self._set_last_decision(camera_gate_decision)
+                self._publish_status(camera_gate_decision)
+                response.twist = self._get_last_cmd()
+                return response
             observation = self._build_observation()
             if self._should_compute(now):
                 if self._backend.uses_model_inference:
@@ -555,7 +877,7 @@ class InternNavServer(BaseModelSimServer):
         mode_lower = str(mode or '').strip().lower()
         model_path_lower = str(self._params.get('model_path', '')).lower()
         adapter_lower = str(self._params.get('adapter_target', '')).lower()
-        camera_topics_configured = bool(rgb_topic and depth_topic and camera_info_topic)
+        camera_topics_configured = bool(rgb_topic and depth_topic)
         internnav_like = (
             mode_lower in {'internnav', 'model'}
             or 'internnav' in adapter_lower
@@ -566,13 +888,7 @@ class InternNavServer(BaseModelSimServer):
         return camera_topics_configured and internnav_like
 
     def _camera_missing_inputs(self) -> list[str]:
-        missing: list[str] = []
-        if self._latest_rgb is None:
-            missing.append('rgb')
-        if self._latest_depth is None:
-            missing.append('depth')
-        if self._camera_intrinsics is None:
-            missing.append('camera_info')
+        missing, _stale = self._camera_input_issues(require_fresh=False)
         return missing
 
     def _wait_for_initial_camera_if_required(
@@ -592,7 +908,11 @@ class InternNavServer(BaseModelSimServer):
         ):
             return
 
-        timeout_sec = max(float(timeout_sec), 0.0)
+        # Do not let the startup camera barrier consume an entire short Arena
+        # episode.  The command path already gates on fresh RGB/depth before
+        # invoking InternNav, and the adapter can load without images, so use a
+        # short grace period and then continue loading the backend.
+        timeout_sec = min(max(float(timeout_sec), 0.0), 5.0)
         self.get_logger().info(
             'Waiting for first real camera messages before loading InternNav adapter: '
             f'rgb={rgb_topic}, depth={depth_topic}, camera_info={camera_info_topic}, timeout={timeout_sec:.1f}s'
@@ -616,13 +936,28 @@ class InternNavServer(BaseModelSimServer):
             missing = self._camera_missing_inputs()
 
         if not missing:
+            self._initial_camera_timed_out = False
             self.get_logger().info('Initial camera readiness barrier passed; loading InternNav adapter now.')
             return
 
+        self._initial_camera_timed_out = True
         self.get_logger().warn(
             'Timed out waiting for initial camera messages before InternNav adapter load; missing '
             + ', '.join(missing)
             + '. Continuing so the eval can surface the failure explicitly.'
+        )
+        self._publish_status(
+            ModelSimDecision(
+                status='camera_timeout',
+                degraded=True,
+                debug={
+                    'safe_stop': True,
+                    'missing_inputs': missing,
+                    'sensor_ages_sec': self._camera_sensor_ages(),
+                    'topics': self._required_camera_topics,
+                    'timeout_sec': timeout_sec,
+                },
+            )
         )
 
 def main() -> None:
