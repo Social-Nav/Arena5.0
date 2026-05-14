@@ -47,7 +47,6 @@ setup(
     maintainer_email='dev@voshch.dev',
     description='Arena bringup package',
     license='MIT',
-    scripts=['scripts/test.py'],
     entry_points={
         'console_scripts': [
             'test = arena_bringup.test:main',
