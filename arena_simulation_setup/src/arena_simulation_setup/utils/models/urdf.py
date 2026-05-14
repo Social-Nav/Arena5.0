@@ -82,8 +82,16 @@ class ModelProvider_URDF(ModelProvider.provides(ModelType.URDF)):
                         elem.attrib['filename'] = abs_path
                         print(f"Updated relative path to absolute: {original_path} -> {abs_path}")
 
-            # Write the updated XML tree to a temporary file
-            async with aiofiles.tempfile.NamedTemporaryFile(delete=False, suffix=".urdf", mode="wb") as tmp:
+            # Isaac runs inside Docker during eval and later re-opens the URDF by
+            # path from that container.  Files created under the host /tmp are not
+            # visible there, so keep the generated URDF in the shared robot model
+            # directory instead of the process-local temp directory.
+            async with aiofiles.tempfile.NamedTemporaryFile(
+                delete=False,
+                suffix=".urdf",
+                mode="wb",
+                dir=base_dir,
+            ) as tmp:
                 ser = ET.tostring(root, encoding="utf-8", method="xml", xml_declaration=True)
                 await tmp.write(ser)
                 print(f"Converted URDF saved to temporary file: {tmp.name}")

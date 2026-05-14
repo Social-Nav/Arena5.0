@@ -209,6 +209,10 @@ class IsaacSimulator(BaseSim, NodeInterface):
         # and make dual_vln alternate between unrelated goal distances/yaw errors.
         # Kill only this generated fallback process before starting a fresh one.
         subprocess.run(
+            ['pkill', '-f', f'{safe_name}_isaac_fallback_sensors'],
+            check=False,
+        )
+        subprocess.run(
             ['pkill', '-f', f"node = Node('{safe_name}_isaac_fallback_sensors')"],
             check=False,
         )
@@ -440,40 +444,42 @@ rclpy.spin(node)
             ),
                 )
 
-        nodes.extend([
-            launch_ros.actions.Node(
-                package='tf2_ros',
-                executable='static_transform_publisher',
-                name=f'{safe_name}_base_to_scan_tfpublisher',
-                arguments=['0', '0', '0', '0', '0', '0', fq_base_frame, fq_scan_frame],
-                parameters=[{'use_sim_time': True}],
-                output='screen',
-            ),
-            launch_ros.actions.Node(
-                package='tf2_ros',
-                executable='static_transform_publisher',
-                name=f'{safe_name}_base_to_head_camera_tfpublisher',
-                arguments=['0.35', '0', '0.75', '0', '0', '0', fq_base_frame, fq_camera_frame],
-                parameters=[{'use_sim_time': True}],
-                output='screen',
-            ),
-            launch.actions.ExecuteProcess(
-                cmd=[
-                    'bash', '-lc',
-                    'if [ -f /opt/ros/jazzy/setup.bash ]; then source /opt/ros/jazzy/setup.bash; else source /opt/ros/humble/setup.bash; fi; '
-                    'if [ -f /home/ubuntu/arena_jazzy_ws/install/setup.bash ]; then source /home/ubuntu/arena_jazzy_ws/install/setup.bash; '
-                    'elif [ -f /home/ubuntu/arena_jazzy_ws/install_humble_eval/setup.sh ]; then source /home/ubuntu/arena_jazzy_ws/install_humble_eval/setup.sh; fi; '
-                    'export ROS_DOMAIN_ID=0 ROS_LOCALHOST_ONLY=0 ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET RMW_IMPLEMENTATION=rmw_fastrtps_cpp; '
-                    f'/usr/bin/python3 -c {shlex.quote(fallback_sensor_code)}',
-                ],
-                output='log',
-            ),
-        ])
+        if publish_fallback_odom_tf:
+            nodes.extend([
+                launch_ros.actions.Node(
+                    package='tf2_ros',
+                    executable='static_transform_publisher',
+                    name=f'{safe_name}_base_to_scan_tfpublisher',
+                    arguments=['0', '0', '0', '0', '0', '0', fq_base_frame, fq_scan_frame],
+                    parameters=[{'use_sim_time': True}],
+                    output='screen',
+                ),
+                launch_ros.actions.Node(
+                    package='tf2_ros',
+                    executable='static_transform_publisher',
+                    name=f'{safe_name}_base_to_head_camera_tfpublisher',
+                    arguments=['0.35', '0', '0.75', '0', '0', '0', fq_base_frame, fq_camera_frame],
+                    parameters=[{'use_sim_time': True}],
+                    output='screen',
+                ),
+                launch.actions.ExecuteProcess(
+                    cmd=[
+                        'bash', '-lc',
+                        'if [ -f /opt/ros/jazzy/setup.bash ]; then source /opt/ros/jazzy/setup.bash; else source /opt/ros/humble/setup.bash; fi; '
+                        'if [ -f /home/ubuntu/arena_jazzy_ws/install/setup.bash ]; then source /home/ubuntu/arena_jazzy_ws/install/setup.bash; '
+                        'elif [ -f /home/ubuntu/arena_jazzy_ws/install_humble_eval/setup.sh ]; then source /home/ubuntu/arena_jazzy_ws/install_humble_eval/setup.sh; fi; '
+                        'export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0} ROS_LOCALHOST_ONLY=0 ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET RMW_IMPLEMENTATION=rmw_fastrtps_cpp; '
+                        f'/usr/bin/python3 -c {shlex.quote(fallback_sensor_code)}',
+                    ],
+                    output='log',
+                ),
+            ])
         await self.node.do_launch(launch.LaunchDescription(nodes))
         self._static_robot_state_publishers.add(robot_name)
-        self._fallback_pose_pubs[robot_name] = self.node.create_publisher(
-            geometry_msgs.msg.PoseStamped, pose_topic, 10
-        )
+        if publish_fallback_odom_tf:
+            self._fallback_pose_pubs[robot_name] = self.node.create_publisher(
+                geometry_msgs.msg.PoseStamped, pose_topic, 10
+            )
 
     async def robot_spawn(self, robots):
         async def impl(robot: Robot) -> bool:
@@ -505,7 +511,7 @@ rclpy.spin(node)
                         robot.name,
                         robot_params.base_frame,
                         robot_params.odom_frame,
-                        publish_fallback_odom_tf=True,
+                        publish_fallback_odom_tf=False,
                     )
                     spawn_usd_robot_timeout_sec = 75.0
                     response = await self._clients.SpawnUsdRobot.call_timeout(
@@ -538,6 +544,7 @@ rclpy.spin(node)
                         robot.name,
                         robot_params.base_frame,
                         robot_params.odom_frame,
+                        publish_fallback_odom_tf=False,
                     )
                     await self._clients.SpawnUrdf.call_timeout(
                         SpawnUrdf.Request(
@@ -882,9 +889,22 @@ rclpy.spin(node)
 
     async def after_reset_task(self):
         await self._unpause()
+        # Isaac eval runs keep the renderer stepping continuously, but robot
+        # teleports, camera render products, and PhysX articulation state still
+        # need a short settle window before task_reset is published.  Without
+        # this delay the eval recorder and InternNav can observe the new episode
+        # boundary before the robot pose/camera streams have converged.
+        await asyncio.sleep(0.35)
         return True
 
     async def _pause(self):
+        # Keep Isaac stepping continuously during eval resets.  On this Isaac 5.1
+        # Docker setup, toggling world.pause()/world.play() around a task reset
+        # can leave the next resume without an active physics scene and crash in
+        # world.play() with "Failed to create simulation view: no active physics
+        # scene found".  Reset safety comes from Xform-only robot relocation plus
+        # the post-reset settle delay, not from stopping the renderer/physics
+        # loop entirely.
         return True
 
     async def _unpause(self):

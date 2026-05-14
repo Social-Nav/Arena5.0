@@ -185,6 +185,85 @@ class PlaceWallSegmentAsset(SubWall):
 SubWallT = TilingAsset | FillAsset | PlaceObstacleAsset | PlaceWallSegmentAsset
 
 
+def _is_subwall_union(type_) -> bool:
+    if str(type_) == 'SubWallT':
+        return True
+    args = typing.get_args(type_)
+    return bool(args) and all(
+        isinstance(arg, type) and issubclass(arg, SubWall)
+        for arg in args
+    )
+
+
+def _is_subwall_list(type_) -> bool:
+    if str(type_) in {'list[SubWallT]', 'typing.List[SubWallT]'}:
+        return True
+    origin = typing.get_origin(type_)
+    args = typing.get_args(type_)
+    return origin is list and len(args) == 1 and _is_subwall_union(args[0])
+
+
+def _structure_subwall(value, _type):
+    if isinstance(value, SubWall):
+        return value
+    if not isinstance(value, dict):
+        raise ValueError(f'Cannot structure SubWall from {value!r}')
+
+    # The wall asset YAML schema is key-discriminated.  Older Ubuntu cattrs
+    # versions do not understand ``list[SubWallT]`` / PEP-604 unions, so decode
+    # the union explicitly instead of relying on cattrs' generic dispatch.
+    if 'tile' in value:
+        data = dict(value)
+        data['tile'] = [_structure_subwall(item, SubWallT) for item in data.get('tile') or []]
+        return TilingAsset(
+            tile=data['tile'],
+            every=float(data['every']),
+            width=float(data.get('width', 0.0)),
+            x=float(data.get('x', 0.0)),
+            y=float(data.get('y', 0.0)),
+            z=float(data.get('z', 0.0)),
+        )
+    if 'fill' in value:
+        data = dict(value)
+        data['fill'] = [_structure_subwall(item, SubWallT) for item in data.get('fill') or []]
+        return FillAsset(
+            fill=data['fill'],
+            start=PositionalNumber.parse(data.get('start', 0.0)),
+            end=PositionalNumber.parse(data.get('end', -0.0)),
+            x=float(data.get('x', 0.0)),
+            y=float(data.get('y', 0.0)),
+            z=float(data.get('z', 0.0)),
+        )
+    if 'model' in value:
+        data = dict(value)
+        return PlaceObstacleAsset(
+            model=ObjectIdentifier.converter(data['model']),
+            at=PositionalNumber.parse(data.get('at', '50%')),
+            orientation=(
+                data.get('orientation')
+                if isinstance(data.get('orientation'), Orientation)
+                else Orientation.parse(float(data.get('orientation', 0.0)))
+            ),
+            name=str(data.get('name', '')),
+            x=float(data.get('x', 0.0)),
+            y=float(data.get('y', 0.0)),
+            z=float(data.get('z', 0.0)),
+        )
+    return converter.structure_attrs_fromdict(value, PlaceWallSegmentAsset)
+
+
+def _structure_subwall_list(value, type_):
+    if value is None:
+        return []
+    args = typing.get_args(type_)
+    item_type = args[0] if args else SubWallT
+    return [_structure_subwall(item, item_type) for item in value]
+
+
+converter.register_structure_hook_func(_is_subwall_union, _structure_subwall)
+converter.register_structure_hook_func(_is_subwall_list, _structure_subwall_list)
+
+
 ###
 # Realization of a wall description
 ###
@@ -237,7 +316,10 @@ class WallIdentifier(DomainAssetIdentifier[WallDescription]):
     def load(self, path: Path, /, **kwargs) -> WallDescription:
         del kwargs  # unused
         with open(path / f'{path.name}.yaml') as f:
-            return converter.structure(yaml.safe_load(f), WallDescription)
+            data = yaml.safe_load(f) or {}
+        if not isinstance(data, dict):
+            raise ValueError(f'Invalid wall description in {path}: expected mapping')
+        return WallDescription(main=[_structure_subwall(item, SubWallT) for item in data.get('main') or []])
 
 
 WallIdentifier.use(*DynamicPaths.as_resolvers(WallIdentifier))
