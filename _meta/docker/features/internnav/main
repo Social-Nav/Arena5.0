@@ -1,0 +1,291 @@
+#!/bin/bash -i
+
+name="internnav"
+
+if ! declare -F arena_docker_compose >/dev/null 2>&1; then
+    arena_docker_compose(){
+        local ws_dir arena_dir project image host_uid host_gid
+        ws_dir="${HOST_ARENA_WS_DIR:-${ARENA_WS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../../../../.." && pwd)}}"
+        arena_dir="${ARENA_DIR:-$ws_dir/src/Arena}"
+        project="${ARENA_PROJECT_NAME:-arena-$(basename "$ws_dir")}"
+        image="${ARENA_IMAGE:-arena:dev}"
+        host_uid="${HOST_UID:-$(id -u)}"
+        host_gid="${HOST_GID:-$(id -g)}"
+        env \
+            ARENA_PROJECT_NAME="$project" \
+            ARENA_IMAGE="$image" \
+            ARENA_WS_DIR="$ws_dir" \
+            HOST_ARENA_WS_DIR="$ws_dir" \
+            HOST_UID="$host_uid" \
+            HOST_GID="$host_gid" \
+            ARENA_ROS_DISTRO="${ARENA_ROS_DISTRO:-jazzy}" \
+            docker compose \
+            -f "$arena_dir/_meta/docker/docker-compose.yaml" \
+            -f "$arena_dir/_meta/docker/features/internnav/docker-compose.yaml" \
+            --project-directory "$ws_dir" \
+            --project-name "$project" \
+            "$@"
+    }
+fi
+
+feature_dir(){
+    cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd
+}
+
+host_workspace_root(){
+    if [ -n "${HOST_ARENA_WS_DIR:-}" ] && [ -d "$HOST_ARENA_WS_DIR" ]; then
+        printf '%s\n' "$HOST_ARENA_WS_DIR"
+    elif [ -n "${ARENA_WS_DIR:-}" ] && [ -d "$ARENA_WS_DIR" ]; then
+        printf '%s\n' "$ARENA_WS_DIR"
+    else
+        pwd
+    fi
+}
+
+container_workspace_root(){
+    printf '%s\n' "${ARENA_WS:-${ARENA_WORKSPACE:-/opt/arena_ws}}"
+}
+
+venv_path(){
+    printf '%s\n' "${ARENA_INTERNNAV_VENV:-/opt/internnav_venv}"
+}
+
+torch_index_url(){
+    printf '%s\n' "${ARENA_INTERNNAV_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}"
+}
+
+torch_packages(){
+    printf '%s\n' "${ARENA_INTERNNAV_TORCH_PACKAGES:-torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0}"
+}
+
+ensure_installed_flag(){
+    if ! grep -qx "$name" "$INSTALLED" 2>/dev/null; then
+        echo "$name" >> "$INSTALLED"
+    fi
+}
+
+default_model_path(){
+    printf '%s\n' "${ARENA_INTERNNAV_MODEL_PATH:-/opt/arena_ws/deps/models/InternVLA-N1-DualVLN}"
+}
+
+default_depth_ckpt(){
+    printf '%s\n' "${INTERNNAV_DEPTH_ANYTHING_CKPT:-/opt/arena_ws/deps/models/depth-anything-v2-metric-hypersim-small/depth_anything_v2_metric_hypersim_vits.pth}"
+}
+
+install_runtime(){
+    set -e
+
+    local root repo_path build_repo_path venv py torch_url torch_specs
+    root="$(container_workspace_root)"
+    repo_path="${ARENA_INTERNNAV_REPO:-$root/deps/InternNav}"
+    venv="$(venv_path)"
+    torch_url="$(torch_index_url)"
+    torch_specs="$(torch_packages)"
+
+    if [ ! -d "$repo_path" ]; then
+        echo "InternNav repo not found at $repo_path" >&2
+        return 1
+    fi
+
+    build_repo_path="/tmp/arena_internnav_src"
+
+    if [ "${ARENA_INTERNNAV_RESET_VENV:-0}" = "1" ]; then
+        mkdir -p "$venv"
+        rm -rf "$venv"/* "$venv"/.[!.]* "$venv"/..?* 2>/dev/null || true
+    fi
+    if [ ! -x "$venv/bin/python" ]; then
+        python3 -m venv --copies "$venv"
+    fi
+    py="$venv/bin/python"
+
+    "$py" -m pip install --upgrade pip setuptools wheel
+    if [ -n "$torch_specs" ]; then
+        if [ -n "$torch_url" ]; then
+            "$py" -m pip install --index-url "$torch_url" --upgrade $torch_specs
+        else
+            "$py" -m pip install --upgrade $torch_specs
+        fi
+    fi
+
+    uv pip install --python "$py" -r "$repo_path/requirements/core_requirements.txt"
+    rm -rf "$build_repo_path"
+    cp -a "$repo_path" "$build_repo_path"
+    rm -rf "$build_repo_path"/internnav.egg-info "$build_repo_path"/*.egg-info
+    uv pip install --python "$py" "$build_repo_path"
+
+    local extra_specs=()
+    local flash_attn_spec=""
+    local requirement
+    while IFS= read -r requirement; do
+        requirement="${requirement%%#*}"
+        requirement="$(printf '%s' "$requirement" | xargs)"
+        [ -n "$requirement" ] || continue
+        if [[ "$requirement" == flash_attn* || "$requirement" == flash-attn* ]]; then
+            flash_attn_spec="$requirement"
+        else
+            extra_specs+=("$requirement")
+        fi
+    done < "$repo_path/requirements/internvla_n1.txt"
+
+    if [ ${#extra_specs[@]} -gt 0 ]; then
+        uv pip install --python "$py" "${extra_specs[@]}"
+    fi
+
+    # Re-apply the requested torch stack last because upstream dependencies may
+    # otherwise upgrade it to an incompatible CUDA wheel.
+    if [ -n "$torch_specs" ]; then
+        if [ -n "$torch_url" ]; then
+            "$py" -m pip install --index-url "$torch_url" --upgrade $torch_specs
+        else
+            "$py" -m pip install --upgrade $torch_specs
+        fi
+    fi
+
+    if [ -n "$flash_attn_spec" ] && [ "${ARENA_INTERNNAV_INSTALL_FLASH_ATTN:-0}" = "1" ]; then
+        "$py" -m pip install "$flash_attn_spec" || echo "Warning: flash-attn install failed; InternNav will use SDPA/eager fallbacks where supported."
+    fi
+
+    "$py" - <<'PY'
+import json
+import sys
+summary = {'python': sys.version}
+try:
+    import torch
+    summary.update({
+        'torch': torch.__version__,
+        'torch_cuda': torch.version.cuda,
+        'cuda_available': torch.cuda.is_available(),
+        'device_count': torch.cuda.device_count(),
+    })
+    if torch.cuda.device_count():
+        try:
+            summary['device0'] = torch.cuda.get_device_name(0)
+        except Exception as exc:
+            summary['device0_error'] = repr(exc)
+except Exception as exc:
+    summary['torch_error'] = repr(exc)
+    print(json.dumps(summary, ensure_ascii=False))
+PY
+
+    if [ "$(id -u)" = "0" ] && id arena >/dev/null 2>&1; then
+        chown -R "$(id -u arena):$(id -g arena)" "$venv" /home/arena/.cache 2>/dev/null || true
+    fi
+}
+
+update(){
+    echo "Building $name docker image..."
+    arena_docker_compose build internnav
+    arena_docker_compose up -d --remove-orphans --no-start internnav
+}
+
+install(){
+    set -e
+    ensure_installed_flag
+    update
+    echo "Installing InternNav runtime into the internnav service volume..."
+    arena_docker_compose run --rm --no-deps --user root --entrypoint bash internnav -lc \
+        "bash /opt/arena_ws/src/Arena/_meta/docker/features/internnav/main install-runtime"
+    echo "Installed $name successfully."
+}
+
+uninstall(){
+    sed -i "/^$name$/d" "$INSTALLED" 2>/dev/null || true
+    arena_docker_compose rm -sf internnav 2>/dev/null || true
+    echo "Removed $name feature flag. Named volumes are kept intentionally; remove them with docker volume rm if needed."
+}
+
+source_fn(){
+    local root
+    root="$(host_workspace_root)"
+    export ARENA_INTERNNAV_MODEL_PATH="${ARENA_INTERNNAV_MODEL_PATH:-$root/deps/models/InternVLA-N1-DualVLN}"
+    export ARENA_VLN_MODEL_PATH="${ARENA_VLN_MODEL_PATH:-$ARENA_INTERNNAV_MODEL_PATH}"
+    export INTERNNAV_DEPTH_ANYTHING_CKPT="${INTERNNAV_DEPTH_ANYTHING_CKPT:-$root/deps/models/depth-anything-v2-metric-hypersim-small/depth_anything_v2_metric_hypersim_vits.pth}"
+}
+
+launch(){
+    local robot namespace mode model_path device rgb_topic depth_topic camera_info_topic instruction_topic trace_path extra_ros_args
+    robot="${ARENA_INTERNNAV_ROBOT:-Ai2_Bot2}"
+    namespace="${ARENA_INTERNNAV_NAMESPACE:-/task_generator_node/$robot}"
+    mode="${ARENA_INTERNNAV_MODE:-internnav}"
+    model_path="${ARENA_INTERNNAV_MODEL_PATH:-$(default_model_path)}"
+    device="${ARENA_INTERNNAV_DEVICE:-cuda:0}"
+    rgb_topic="${ARENA_INTERNNAV_RGB_TOPIC:-head_camera/image}"
+    depth_topic="${ARENA_INTERNNAV_DEPTH_TOPIC:-head_camera/depth}"
+    camera_info_topic="${ARENA_INTERNNAV_CAMERA_INFO_TOPIC:-head_camera/camera_info}"
+    instruction_topic="${ARENA_INTERNNAV_INSTRUCTION_TOPIC:-/task_generator_node/vln_instruction}"
+    trace_path="${ARENA_INTERNNAV_TRACE_PATH:-}"
+    extra_ros_args="${ARENA_INTERNNAV_EXTRA_ROS_ARGS:-}"
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --robot) robot="$2"; namespace="/task_generator_node/$2"; shift 2 ;;
+            --namespace) namespace="$2"; shift 2 ;;
+            --mode) mode="$2"; shift 2 ;;
+            --model-path) model_path="$2"; shift 2 ;;
+            --device) device="$2"; shift 2 ;;
+            --rgb-topic) rgb_topic="$2"; shift 2 ;;
+            --depth-topic) depth_topic="$2"; shift 2 ;;
+            --camera-info-topic) camera_info_topic="$2"; shift 2 ;;
+            --instruction-topic) instruction_topic="$2"; shift 2 ;;
+            --trace-path) trace_path="$2"; shift 2 ;;
+            --) shift; extra_ros_args="$*"; break ;;
+            *) echo "Unknown launch option: $1" >&2; return 1 ;;
+        esac
+    done
+
+    arena_docker_compose up -d --remove-orphans --no-recreate internnav
+    trap 'arena_docker_compose stop internnav || true' EXIT INT TERM
+
+    local cmd
+    cmd="export ARENA_INTERNNAV_MODEL_PATH='$model_path'; export ARENA_VLN_MODEL_PATH='$model_path'; export INTERNNAV_DEPTH_ANYTHING_CKPT='$(default_depth_ckpt)'; export ARENA_VLN_MODEL_PYTHON='$(venv_path)/bin/python'; export ARENA_INTERNNAV_PYTHON='$(venv_path)/bin/python';"
+    if [ -n "$trace_path" ]; then
+        cmd="$cmd export ARENA_EVAL_INTERNNAV_TRACE_PATH='$trace_path';"
+    fi
+    cmd="$cmd ros2 run arena_vln_models dual_vln_server --ros-args -r __ns:='$namespace' -r __node:=internnav_server -p namespace:='$namespace' -p mode:='$mode' -p model_path:='$model_path' -p device:='$device' -p goal_topic:=episode_goal_pose -p instruction_topic:='$instruction_topic' -p rgb_topic:='$rgb_topic' -p depth_topic:='$depth_topic' -p camera_info_topic:='$camera_info_topic' -p adapter_target:=arena_vln_models.internnav:load_internnav_adapter -p require_real_backend:=true -p strict_device:=false $extra_ros_args"
+
+    arena_docker_compose exec -T internnav /entrypoint.sh bash -lc "$cmd"
+}
+
+exec_cmd(){
+    shift
+    arena_docker_compose exec internnav "$@"
+}
+
+stop(){
+    arena_docker_compose stop internnav
+}
+
+help(){
+    cat <<EOF
+Usage: $name <install|update|uninstall|source|launch|exec|stop|install-runtime>
+
+Launch options:
+  --robot NAME                  Default: Ai2_Bot2
+  --namespace NS                Default: /task_generator_node/<robot>
+  --mode MODE                   Default: internnav
+  --model-path PATH             Default: /opt/arena_ws/deps/models/InternVLA-N1-DualVLN
+  --device DEVICE               Default: cuda:0
+  --rgb-topic TOPIC             Default: head_camera/image
+  --depth-topic TOPIC           Default: head_camera/depth
+  --camera-info-topic TOPIC     Default: head_camera/camera_info
+  --instruction-topic TOPIC     Default: /task_generator_node/vln_instruction
+  --trace-path PATH             Optional JSONL trace path
+EOF
+}
+
+if [ $# -lt 1 ]; then
+    help
+    exit 1
+fi
+
+case "$1" in
+    install) install; exit $? ;;
+    update) update; exit $? ;;
+    uninstall) uninstall; exit $? ;;
+    source) source_fn; return $? ;;
+    launch) shift; launch "$@"; exit $? ;;
+    exec) exec_cmd "$@"; exit $? ;;
+    stop) stop; exit $? ;;
+    install-runtime) install_runtime; exit $? ;;
+    *) help; exit 1 ;;
+esac

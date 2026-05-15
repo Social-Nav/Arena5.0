@@ -21,10 +21,37 @@ export HOST_UID
 HOST_GID=$(id -g)
 export HOST_GID
 
+arena_docker_compose_files(){
+    local compose_files=("$ARENA_DIR/_meta/docker/docker-compose.yaml")
+    local installed_file="$ARENA_DIR/.installed"
+    local feature
+    local feature_compose
+
+    if [ -f "$installed_file" ]; then
+        while read -r feature; do
+            [ -n "$feature" ] || continue
+            feature_compose="$ARENA_DIR/_meta/docker/features/$feature/docker-compose.yaml"
+            if [ -f "$feature_compose" ]; then
+                compose_files+=("$feature_compose")
+            fi
+        done < "$installed_file"
+    fi
+
+    printf '%s\n' "${compose_files[@]}"
+}
+export -f arena_docker_compose_files
+
 arena_docker_compose(){
+    local compose_files=()
+    local file
+    while IFS= read -r file; do
+        [ -n "$file" ] || continue
+        compose_files+=(-f "$file")
+    done < <(arena_docker_compose_files)
+
     sudo env ${docker_env} \
         docker compose \
-        -f "$ARENA_DIR/_meta/docker/docker-compose.yaml" \
+        "${compose_files[@]}" \
         --project-directory "$ARENA_WS_DIR" \
         --project-name "$ARENA_PROJECT_NAME" \
         "$@"

@@ -1,0 +1,56 @@
+services:
+  internnav:
+    image: "arena_internnav"
+    build:
+      context: .
+      dockerfile: src/Arena/_meta/docker/features/internnav/Dockerfile
+      args:
+        - ROS_DISTRO=${ARENA_ROS_DISTRO:-jazzy}
+        - uid=${HOST_UID}
+        - gid=${HOST_GID}
+        - HTTP_PROXY=${HTTP_PROXY}
+        - HTTPS_PROXY=${HTTPS_PROXY}
+        - NO_PROXY=${NO_PROXY}
+        - http_proxy=${http_proxy}
+        - https_proxy=${https_proxy}
+        - no_proxy=${no_proxy}
+    gpus: all
+    network_mode: host
+    stdin_open: true
+    tty: true
+    volumes:
+      - "shared:/tmp/shared"
+      - "$HOST_ARENA_WS_DIR:$HOST_ARENA_WS_DIR:ro"
+      - "$HOST_ARENA_WS_DIR/src:/opt/arena_ws/src:ro"
+      - "$HOST_ARENA_WS_DIR/install:/opt/arena_ws/install:ro"
+      - "$HOST_ARENA_WS_DIR/build:/opt/arena_ws/build:ro"
+      - "$HOST_ARENA_WS_DIR/deps:/opt/arena_ws/deps:ro"
+      - "$HOST_ARENA_WS_DIR/outputs:/opt/arena_ws/outputs"
+      - "$HOST_ARENA_WS_DIR/.env:/opt/arena_ws/.env:ro"
+      - "internnav_venv:/opt/internnav_venv"
+      - "internnav_hf_cache:/home/arena/.cache/huggingface"
+      - "internnav_uv_cache:/home/arena/.cache/uv"
+    environment:
+      - ROS_DOMAIN_ID=1
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      - ARENA_WS=/opt/arena_ws
+      - ARENA_WORKSPACE=/opt/arena_ws
+      - ARENA_INTERNNAV_VENV=/opt/internnav_venv
+      - ARENA_VLN_MODEL_PYTHON=/opt/internnav_venv/bin/python
+      - ARENA_INTERNNAV_PYTHON=/opt/internnav_venv/bin/python
+      - ARENA_INTERNNAV_MODEL_PATH=/opt/arena_ws/deps/models/InternVLA-N1-DualVLN
+      - ARENA_VLN_MODEL_PATH=/opt/arena_ws/deps/models/InternVLA-N1-DualVLN
+      - INTERNNAV_DEPTH_ANYTHING_CKPT=/opt/arena_ws/deps/models/depth-anything-v2-metric-hypersim-small/depth_anything_v2_metric_hypersim_vits.pth
+      - HF_HOME=/home/arena/.cache/huggingface
+      - TOKENIZERS_PARALLELISM=false
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - ARENA_INTERNNAV_TORCH_INDEX_URL=${ARENA_INTERNNAV_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}
+      - ARENA_INTERNNAV_TORCH_PACKAGES=${ARENA_INTERNNAV_TORCH_PACKAGES:-torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0}
+    command: ["bash"]
+
+volumes:
+  internnav_venv:
+  internnav_hf_cache:
+  internnav_uv_cache:

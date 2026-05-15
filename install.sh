@@ -5,6 +5,49 @@ export ARENA_REPO=${ARENA_REPO:-https://github.com/voshch/Arena.git}
 export ARENA_BRANCH=${ARENA_BRANCH:-jazzy}
 export ARENA_ROS_DISTRO=${ARENA_ROS_DISTRO:-jazzy}
 
+declare -a ARENA_OPTIONAL_FEATURES=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --install-isaac)
+            ARENA_OPTIONAL_FEATURES+=("isaac")
+            shift
+        ;;
+        --install-internnav)
+            ARENA_OPTIONAL_FEATURES+=("internnav")
+            shift
+        ;;
+        --install-training)
+            ARENA_OPTIONAL_FEATURES+=("training")
+            shift
+        ;;
+        --install-feature)
+            if [[ $# -lt 2 ]]; then
+                echo "Missing feature name after --install-feature" >&2
+                exit 1
+            fi
+            ARENA_OPTIONAL_FEATURES+=("$2")
+            shift 2
+        ;;
+        --help|-h)
+            cat <<'EOF'
+Usage: install.sh [options]
+
+Options:
+  --install-isaac         Install the Isaac Docker feature after bootstrap.
+  --install-internnav     Install the InternNav model runtime feature after bootstrap.
+  --install-training      Install the training feature after bootstrap.
+  --install-feature NAME  Install an arbitrary Arena feature after bootstrap.
+EOF
+            exit 0
+        ;;
+        *)
+            echo "Unknown option: $1" >&2
+            exit 1
+        ;;
+    esac
+done
+
 read_default(){
     local prompt=$1
     local default=$2
@@ -41,6 +84,14 @@ ln -rsf "$ARENA_WS_DIR/src/Arena/_meta/tools/Arena.code-workspace" ./ws-arena.co
 echo 'Building Arena...'
 cd $ARENA_WS_DIR
 printf 'exit\n' | source arena
+
+if [ ${#ARENA_OPTIONAL_FEATURES[@]} -gt 0 ]; then
+    echo 'Installing optional Arena features...'
+    for feature in "${ARENA_OPTIONAL_FEATURES[@]}"; do
+        echo "  - $feature"
+        "$ARENA_WS_DIR/arena" -c "arena feature $feature install"
+    done
+fi
 
 echo 'Installed Arena'
 echo 'run the following to get started:'
