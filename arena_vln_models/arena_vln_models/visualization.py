@@ -158,11 +158,41 @@ def render_debug_overlay(
         f'look_down: {bool(decision.debug.get("look_down", observation.look_down))}',
     ]
 
+    selected_action = decision.debug.get('selected_action')
+    action_label = decision.debug.get('action_label')
+    native_action_label = decision.debug.get('native_action_label', action_label)
+    effective_action_label = decision.debug.get('effective_action_label', action_label)
+    if selected_action is not None:
+        action_text = f'action: {selected_action} native={native_action_label or "n/a"}'
+        if effective_action_label != native_action_label:
+            action_text += f' effective={effective_action_label}'
+        if decision.debug.get('invert_discrete_turns'):
+            action_text += ' invert=true'
+        text_lines.append(action_text)
+    history_tail = decision.debug.get('action_history_tail')
+    if history_tail not in (None, ''):
+        text_lines.extend(_wrap_line('action_history: ', str(history_tail), max(width // 12, 24)))
+    sensor_ages = decision.debug.get('sensor_ages_sec')
+    if isinstance(sensor_ages, dict):
+        age_parts = []
+        stale_after = decision.debug.get('stale_after_sec') or availability.get('stale_after_sec') or 0.0
+        try:
+            stale_after = float(stale_after)
+        except (TypeError, ValueError):
+            stale_after = 0.0
+        for key in ('rgb', 'depth', 'camera_info'):
+            age = sensor_ages.get(key)
+            if isinstance(age, (float, int)):
+                marker = ' stale' if stale_after > 0.0 and float(age) > stale_after else ''
+                age_parts.append(f'{key}={float(age):.2f}s{marker}')
+            else:
+                age_parts.append(f'{key}=n/a')
+        text_lines.extend(_wrap_line('freshness: ', ' '.join(age_parts), max(width // 12, 24)))
+
     for key in (
         'adapter_target',
         'shim_mode',
         'camera_frame_id',
-        'selected_action',
         'remaining_action_queue',
         'failure_reason',
         'shim_reason',
@@ -215,6 +245,27 @@ def render_debug_overlay(
 
     center = (width // 2, height - 36)
     draw.ellipse((center[0] - 7, center[1] - 7, center[0] + 7, center[1] + 7), fill=(255, 255, 255))
+
+    glyph_color = (80, 255, 80) if not decision.degraded else (255, 160, 80)
+    glyph_center = (width - 76, height - 70)
+    draw.rectangle((glyph_center[0] - 48, glyph_center[1] - 34, glyph_center[0] + 48, glyph_center[1] + 34), fill=(0, 0, 0), outline=glyph_color, width=2)
+    glyph = '?'
+    if selected_action in (0, '0'):
+        glyph = 'STOP'
+    elif selected_action in (1, '1'):
+        glyph = 'FWD'
+    elif selected_action in (2, '2', 3, '3'):
+        if decision.angular_z < -1e-6:
+            glyph = 'RIGHT'
+        elif decision.angular_z > 1e-6:
+            glyph = 'LEFT'
+        else:
+            glyph = 'TURN'
+    elif selected_action in (5, '5'):
+        glyph = 'LOOK'
+    draw.text((glyph_center[0] - 22, glyph_center[1] - 11), glyph, fill=glyph_color)
+    if effective_action_label not in (None, ''):
+        draw.text((glyph_center[0] - 42, glyph_center[1] + 12), str(effective_action_label)[:12], fill=glyph_color)
 
     heading = 0.0
     if isinstance(yaw_error, (float, int)):

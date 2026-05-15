@@ -154,6 +154,8 @@ class BaseModelSimServer(Node):
         self.declare_parameter('goal_tolerance', 0.45)
         self.declare_parameter('angle_tolerance', 0.25)
         self.declare_parameter('min_lin_when_aligned', 0.05)
+        self.declare_parameter('trace_path', '')
+        self.declare_parameter('invert_discrete_turns', False)
 
         self._pose: Optional[Pose2D] = None
         self._last_odom_pose_ts: float = 0.0
@@ -177,6 +179,9 @@ class BaseModelSimServer(Node):
         self._camera_required: bool = False
         self._required_camera_topics: dict[str, str] = {'rgb': '', 'depth': '', 'camera_info': ''}
         self._initial_camera_timed_out: bool = False
+        self._trace_path: str = ''
+        self._trace_seq: int = 0
+        self._action_history: list[int] = []
 
         mode, mode_source = _resolve_string(
             self.get_parameter('mode').value,
@@ -230,6 +235,15 @@ class BaseModelSimServer(Node):
             self.get_parameter('enable_visualization').value,
             env_names=('ARENA_EVAL_INTERNNAV_ENABLE_VISUALIZATION',),
         )
+        trace_path, trace_path_source = _resolve_string(
+            self.get_parameter('trace_path').value,
+            env_names=('ARENA_EVAL_INTERNNAV_TRACE_PATH', 'ARENA_INTERNNAV_TRACE_PATH'),
+            allow_empty=True,
+        )
+        invert_discrete_turns, invert_discrete_turns_source = _resolve_bool(
+            self.get_parameter('invert_discrete_turns').value,
+            env_names=('ARENA_EVAL_INTERNNAV_INVERT_DISCRETE_TURNS', 'ARENA_INTERNNAV_INVERT_DISCRETE_TURNS'),
+        )
         visualization_topic, visualization_topic_source = _resolve_string(
             self.get_parameter('visualization_topic').value,
             env_names=('ARENA_EVAL_INTERNNAV_VISUALIZATION_TOPIC',),
@@ -261,6 +275,8 @@ class BaseModelSimServer(Node):
             ('strict_device', strict_device, strict_device_source),
             ('look_down', look_down, look_down_source),
             ('enable_visualization', enable_visualization, enable_visualization_source),
+            ('trace_path', trace_path, trace_path_source),
+            ('invert_discrete_turns', invert_discrete_turns, invert_discrete_turns_source),
             ('visualization_topic', visualization_topic, visualization_topic_source),
             ('visualization_rate_hz', visualization_rate_hz, visualization_rate_hz_source),
         ):
@@ -289,7 +305,9 @@ class BaseModelSimServer(Node):
             'goal_tolerance': float(self.get_parameter('goal_tolerance').value),
             'angle_tolerance': float(self.get_parameter('angle_tolerance').value),
             'min_lin_when_aligned': float(self.get_parameter('min_lin_when_aligned').value),
+            'invert_discrete_turns': bool(invert_discrete_turns),
         }
+        self._trace_path = trace_path
 
         # Latching instruction subscriber (matches publisher durability)
         instr_qos = QoSProfile(
@@ -380,6 +398,8 @@ class BaseModelSimServer(Node):
             ('strict_device', strict_device_source),
             ('look_down', look_down_source),
             ('enable_visualization', enable_visualization_source),
+            ('trace_path', trace_path_source),
+            ('invert_discrete_turns', invert_discrete_turns_source),
             ('visualization_topic', visualization_topic_source),
             ('visualization_rate_hz', visualization_rate_hz_source),
         ):
@@ -423,7 +443,8 @@ class BaseModelSimServer(Node):
                 f'instruction={self.get_parameter("instruction_topic").value} '
                 f'rgb={rgb_topic or "<disabled>"} depth={depth_topic or "<disabled>"} '
                 f'camera_info={camera_info_topic or "<disabled>"} look_down={self._params["look_down"]} '
-                f'visualization={self._visualization_enabled}'
+                f'visualization={self._visualization_enabled} trace={self._trace_path or "<disabled>"} '
+                f'invert_discrete_turns={self._params["invert_discrete_turns"]}'
             )
         )
         self.get_logger().info(f'{self.SERVER_LABEL} backend ready: {self._backend.describe()}')
@@ -627,8 +648,123 @@ class BaseModelSimServer(Node):
                 'depth_available': self._latest_depth is not None,
                 'camera_info_available': self._camera_intrinsics is not None,
                 'sensor_ages_sec': self._camera_sensor_ages(),
+                'stale_after_sec': float(self._params.get('camera_stale_after_sec', 0.0)),
             },
         )
+
+    def _goal_geometry(self, observation: ModelSimObservation) -> dict[str, float | list[float] | None]:
+        pose = observation.pose
+        goal = observation.goal or observation.subgoal
+        if pose is None or goal is None:
+            return {
+                'pose': None,
+                'goal': None,
+                'goal_distance': None,
+                'yaw_error': None,
+            }
+        dx = float(goal.x) - float(pose.x)
+        dy = float(goal.y) - float(pose.y)
+        target_yaw = math.atan2(dy, dx)
+        yaw_error = math.atan2(math.sin(target_yaw - float(pose.yaw)), math.cos(target_yaw - float(pose.yaw)))
+        return {
+            'pose': [float(pose.x), float(pose.y), float(pose.yaw)],
+            'goal': [float(goal.x), float(goal.y), float(goal.yaw)],
+            'goal_distance': math.hypot(dx, dy),
+            'yaw_error': yaw_error,
+        }
+
+    def _write_trace_record(
+        self,
+        observation: ModelSimObservation,
+        decision: ModelSimDecision,
+        *,
+        event_type: str = 'model_result',
+    ) -> None:
+        if not self._trace_path:
+            return
+        selected_action = decision.debug.get('selected_action')
+        try:
+            selected_action_int = int(selected_action) if selected_action is not None else None
+        except (TypeError, ValueError):
+            selected_action_int = None
+        self._trace_seq += 1
+        geometry = self._goal_geometry(observation)
+        debug = self._to_jsonable(decision.debug)
+        sensor_ages = self._camera_sensor_ages()
+        record = {
+            'seq': self._trace_seq,
+            'stamp_wall_time': time.time(),
+            'stamp_monotonic': time.monotonic(),
+            'namespace': self.get_namespace(),
+            'wrapper': self.SERVER_LABEL,
+            'model_instance': self.MODEL_INSTANCE,
+            'backend_type': getattr(self._backend, 'backend_type', ''),
+            'event_type': event_type,
+            'status': decision.status,
+            'degraded': bool(decision.degraded),
+            'command': {
+                'linear_x': float(decision.linear_x),
+                'angular_z': float(decision.angular_z),
+            },
+            'action': {
+                'selected': selected_action_int,
+                'label': debug.get('action_label'),
+                'native_label': debug.get('native_action_label', debug.get('action_label')),
+                'effective_label': debug.get('effective_action_label', debug.get('action_label')),
+                'converted_status': debug.get('converted_status'),
+                'arc_turn': bool(debug.get('arc_turn', False)),
+                'invert_discrete_turns': bool(debug.get('invert_discrete_turns', self._params.get('invert_discrete_turns', False))),
+                'history_tail': list(self._action_history[-24:]),
+                'remaining_action_queue': debug.get('remaining_action_queue'),
+            },
+            'goal': geometry,
+            'observation': {
+                'rgb_available': observation.rgb_image is not None,
+                'depth_available': observation.depth_image is not None,
+                'camera_info_available': observation.camera_intrinsics is not None,
+                'rgb_shape': debug.get('rgb_shape'),
+                'depth_shape': debug.get('depth_shape'),
+                'camera_frame_id': observation.camera_frame_id,
+                'sensor_ages_sec': self._to_jsonable(sensor_ages),
+                'stale_after_sec': float(self._params.get('camera_stale_after_sec', 0.0)),
+                'look_down': bool(observation.look_down),
+            },
+            'instruction': {
+                'length': len(observation.instruction),
+                'preview': observation.instruction[:220],
+            },
+            'timing': {
+                'infer_time_sec': debug.get('infer_time_sec'),
+                'subprocess_compute_sec': debug.get('subprocess_compute_sec'),
+            },
+            'debug': debug,
+        }
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(self._trace_path)), exist_ok=True)
+            with open(self._trace_path, 'a', encoding='utf-8') as trace_file:
+                trace_file.write(json.dumps(self._to_jsonable(record), ensure_ascii=False, sort_keys=True) + '\n')
+        except Exception as exc:
+            self.get_logger().warn(f'Failed to append {self.SERVER_LABEL} trace record: {exc}')
+
+    def _annotate_decision_for_diagnostics(self, observation: ModelSimObservation, decision: ModelSimDecision) -> None:
+        selected_action = decision.debug.get('selected_action')
+        try:
+            selected_action_int = int(selected_action) if selected_action is not None else None
+        except (TypeError, ValueError):
+            selected_action_int = None
+        if selected_action_int is not None:
+            self._action_history.append(selected_action_int)
+            if len(self._action_history) > 256:
+                self._action_history = self._action_history[-256:]
+        geometry = self._goal_geometry(observation)
+        if geometry.get('goal_distance') is not None:
+            decision.debug.setdefault('goal_distance', geometry.get('goal_distance'))
+        if geometry.get('yaw_error') is not None:
+            decision.debug.setdefault('yaw_error', geometry.get('yaw_error'))
+        decision.debug.setdefault('sensor_ages_sec', self._camera_sensor_ages())
+        decision.debug.setdefault('stale_after_sec', float(self._params.get('camera_stale_after_sec', 0.0)))
+        decision.debug['action_history_tail'] = list(self._action_history[-12:])
+        decision.debug.setdefault('invert_discrete_turns', bool(self._params.get('invert_discrete_turns', False)))
 
     def _decision_to_twist(self, decision: ModelSimDecision) -> Twist:
         cmd = Twist()
@@ -697,6 +833,9 @@ class BaseModelSimServer(Node):
                 debug={'failure_reason': str(exc), 'safe_stop': True},
             )
 
+        self._annotate_decision_for_diagnostics(observation, decision)
+        self._write_trace_record(observation, decision, event_type='model_result')
+
         with self._state_lock:
             self._last_decision = decision
             self._last_cmd = self._decision_to_twist(decision)
@@ -711,6 +850,8 @@ class BaseModelSimServer(Node):
             decision.status = 'inference_in_progress_cached_' + decision.status
             decision.degraded = True
             decision.debug['background_compute_in_progress'] = True
+            self._annotate_decision_for_diagnostics(observation, decision)
+            self._write_trace_record(observation, decision, event_type='fallback_command')
             self._set_last_decision(decision)
             self._publish_status(decision)
         except Exception as exc:
@@ -816,6 +957,9 @@ class BaseModelSimServer(Node):
         try:
             camera_gate_decision = self._camera_gate_decision()
             if camera_gate_decision is not None:
+                observation = self._build_observation()
+                self._annotate_decision_for_diagnostics(observation, camera_gate_decision)
+                self._write_trace_record(observation, camera_gate_decision, event_type='camera_gate')
                 self._set_last_decision(camera_gate_decision)
                 self._publish_status(camera_gate_decision)
                 response.twist = self._get_last_cmd()
@@ -838,6 +982,8 @@ class BaseModelSimServer(Node):
                         self._publish_fallback_while_computing(observation)
                 else:
                     decision = self._backend.compute(observation)
+                    self._annotate_decision_for_diagnostics(observation, decision)
+                    self._write_trace_record(observation, decision, event_type='model_result')
                     self._set_last_decision(decision)
                     self._last_compute_ts = now
                     self._publish_status(decision)

@@ -214,6 +214,142 @@ def _read_text_if_exists(path: str) -> str | None:
         return None
 
 
+def _read_jsonl(path: str) -> list[dict]:
+    if not path or not os.path.exists(path):
+        return []
+    records = []
+    with open(path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                value = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(value, dict):
+                records.append(value)
+    return records
+
+
+def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> dict | None:
+    records = _read_jsonl(trace_path)
+    if not records:
+        return None
+
+    action_counts: dict[str, int] = {}
+    statuses: dict[str, int] = {}
+    rotate_count = 0
+    forward_count = 0
+    stop_count = 0
+    yaw_sign_mismatch = 0
+    yaw_sign_check_count = 0
+    stale_records = 0
+    missing_rgb = 0
+    missing_depth = 0
+    goal_distances = []
+    yaw_errors = []
+    commands = []
+    event_counts: dict[str, int] = {}
+    invert_discrete_turns_values = set()
+    for rec in records:
+        event_type = str(rec.get('event_type', 'model_result'))
+        event_counts[event_type] = event_counts.get(event_type, 0) + 1
+        status = str(rec.get('status', ''))
+        statuses[status] = statuses.get(status, 0) + 1
+        action_info = rec.get('action') if isinstance(rec.get('action'), dict) else {}
+        action = action_info.get('selected')
+        if 'invert_discrete_turns' in action_info:
+            invert_discrete_turns_values.add(bool(action_info.get('invert_discrete_turns')))
+        key = 'none' if action is None else str(action)
+        action_counts[key] = action_counts.get(key, 0) + 1
+        cmd = rec.get('command') if isinstance(rec.get('command'), dict) else {}
+        vx = float(cmd.get('linear_x', 0.0) or 0.0)
+        wz = float(cmd.get('angular_z', 0.0) or 0.0)
+        commands.append({'linear_x': vx, 'angular_z': wz})
+        if abs(wz) > 0.05 and abs(vx) < 0.45:
+            rotate_count += 1
+        if vx > 0.05:
+            forward_count += 1
+        if abs(vx) <= 0.01 and abs(wz) <= 0.01:
+            stop_count += 1
+        goal = rec.get('goal') if isinstance(rec.get('goal'), dict) else {}
+        dist = goal.get('goal_distance')
+        yaw = goal.get('yaw_error')
+        if isinstance(dist, (float, int)):
+            goal_distances.append(float(dist))
+        if isinstance(yaw, (float, int)):
+            yaw_errors.append(float(yaw))
+            if abs(float(yaw)) > 0.25 and abs(wz) > 0.05:
+                yaw_sign_check_count += 1
+                if (float(yaw) * wz) < 0.0:
+                    yaw_sign_mismatch += 1
+        obs = rec.get('observation') if isinstance(rec.get('observation'), dict) else {}
+        if not obs.get('rgb_available', False):
+            missing_rgb += 1
+        if not obs.get('depth_available', False):
+            missing_depth += 1
+        ages = obs.get('sensor_ages_sec') if isinstance(obs.get('sensor_ages_sec'), dict) else {}
+        stale_after = float(obs.get('stale_after_sec', 0.0) or 0.0)
+        if stale_after > 0.0:
+            for value in ages.values():
+                if isinstance(value, (float, int)) and float(value) > stale_after:
+                    stale_records += 1
+                    break
+
+    total = len(records)
+    first_distance = goal_distances[0] if goal_distances else None
+    last_distance = goal_distances[-1] if goal_distances else None
+    min_distance = min(goal_distances) if goal_distances else None
+    progress = (first_distance - last_distance) if first_distance is not None and last_distance is not None else None
+    rotate_ratio = rotate_count / total if total else 0.0
+    forward_ratio = forward_count / total if total else 0.0
+    yaw_sign_mismatch_ratio = yaw_sign_mismatch / yaw_sign_check_count if yaw_sign_check_count else 0.0
+    flags = []
+    if rotate_ratio >= 0.65 and (progress is None or progress < 0.5):
+        flags.append('rotate_heavy_low_progress')
+    if yaw_sign_mismatch_ratio >= 0.45:
+        flags.append('possible_action_or_yaw_sign_mismatch')
+    if stale_records / total >= 0.2:
+        flags.append('possible_stale_observations')
+    if missing_rgb or missing_depth:
+        flags.append('missing_camera_inputs')
+
+    summary = {
+        'trace_path': trace_path,
+        'record_count': total,
+        'event_counts': event_counts,
+        'action_counts': action_counts,
+        'status_counts': statuses,
+        'invert_discrete_turns_values': sorted(invert_discrete_turns_values),
+        'command_stats': {
+            'rotate_count': rotate_count,
+            'rotate_ratio': rotate_ratio,
+            'forward_count': forward_count,
+            'forward_ratio': forward_ratio,
+            'stop_count': stop_count,
+        },
+        'goal_distance': {
+            'first': first_distance,
+            'last': last_distance,
+            'min': min_distance,
+            'progress_first_minus_last': progress,
+        },
+        'fault_candidates': {
+            'flags': flags,
+            'yaw_sign_check_count': yaw_sign_check_count,
+            'yaw_sign_mismatch_count': yaw_sign_mismatch,
+            'yaw_sign_mismatch_ratio': yaw_sign_mismatch_ratio,
+            'stale_record_count': stale_records,
+            'missing_rgb_count': missing_rgb,
+            'missing_depth_count': missing_depth,
+        },
+    }
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(summary, f, ensure_ascii=False, indent=2, sort_keys=True)
+    return summary
+
+
 def _is_internnav_run(args) -> bool:
     adapter_target = str(args.dual_vln_adapter_target or '').lower()
     mode = str(args.dual_vln_mode or '').lower()
@@ -1355,8 +1491,18 @@ def main() -> int:
     parser.add_argument('--internnav-strict-device', '--dual-vln-strict-device', dest='dual_vln_strict_device', action='store_true')
     parser.add_argument('--internnav-look-down', '--dual-vln-look-down', dest='dual_vln_look_down', action='store_true')
     parser.add_argument('--internnav-enable-visualization', '--dual-vln-enable-visualization', dest='dual_vln_enable_visualization', action='store_true')
+    parser.add_argument('--internnav-external-server', '--dual-vln-external-server', dest='internnav_external_server', action='store_true')
     parser.add_argument('--internnav-visualization-topic', '--dual-vln-visualization-topic', dest='dual_vln_visualization_topic', default='internnav/debug_image')
     parser.add_argument('--internnav-visualization-rate-hz', '--dual-vln-visualization-rate-hz', dest='dual_vln_visualization_rate_hz', type=float, default=5.0)
+    parser.add_argument(
+        '--internnav-invert-discrete-turns',
+        choices=('auto', 'true', 'false'),
+        default='auto',
+        help=(
+            'Control discrete turn sign correction. auto uses the latest validated runtime default; '
+            'true/false force the behavior for reproducible diagnostics.'
+        ),
+    )
     parser.add_argument('--save-eval-video', action='store_true')
     parser.add_argument('--eval-video-fps', type=float, default=10.0)
     parser.add_argument('--eval-video-top-down-size-px', type=int, default=640)
@@ -1381,6 +1527,17 @@ def main() -> int:
     parser.add_argument('extra_launch_args', nargs='*', help='Additional KEY:=VALUE launch arguments')
     args = parser.parse_args()
     runtime_adjustments = _apply_runtime_defaults(args)
+    if args.internnav_invert_discrete_turns == 'auto':
+        # After Ai2_Bot2's Isaac diff-drive / odom chain was fixed to execute
+        # commanded motion again, the earlier temporary Isaac+Ai2_Bot2 turn-sign
+        # inversion no longer matches observed motion.  Keep ``auto`` aligned
+        # with the latest validated A/B run: for this pair the native InternNav
+        # discrete turn directions should pass through unchanged.
+        resolved_invert_discrete_turns = False
+        invert_discrete_turns_source = 'auto_isaac_ai2_bot2_noinvert'
+    else:
+        resolved_invert_discrete_turns = args.internnav_invert_discrete_turns == 'true'
+        invert_discrete_turns_source = 'cli'
 
     arena_eval_share = get_package_share_directory('arena_evaluation')
     bringup_share = get_package_share_directory('arena_bringup')
@@ -1394,6 +1551,8 @@ def main() -> int:
     snapshots_dir = os.path.join(output_dir, 'snapshots')
     os.makedirs(snapshots_dir, exist_ok=True)
     dual_vln_status_path = os.path.join(output_dir, 'internnav_status.json')
+    internnav_trace_path = os.path.join(output_dir, 'internnav_trace.jsonl')
+    internnav_diagnostic_summary_path = os.path.join(output_dir, 'internnav_diagnostic_summary.json')
     postprocess_commands_path = os.path.join(output_dir, 'postprocess_commands.txt')
     videos_dir = os.path.join(output_dir, 'videos')
     video_index_path = os.path.join(output_dir, 'video_index.json')
@@ -1447,11 +1606,15 @@ def main() -> int:
         f'dual_vln_inference_rate_hz:={args.dual_vln_inference_rate_hz}',
         f'dual_vln_inference_timeout_sec:={args.dual_vln_inference_timeout_sec}',
         f'dual_vln_enable_visualization:={str(args.dual_vln_enable_visualization).lower()}',
+        f'internnav_external_server:={str(args.internnav_external_server).lower()}',
+        f'dual_vln_external_server:={str(args.internnav_external_server).lower()}',
         f'dual_vln_require_real_backend:={str(args.dual_vln_require_real_backend).lower()}',
         f'dual_vln_strict_device:={str(args.dual_vln_strict_device).lower()}',
         f'dual_vln_visualization_topic:={args.dual_vln_visualization_topic}',
         f'dual_vln_visualization_rate_hz:={args.dual_vln_visualization_rate_hz}',
     ]
+    if args.local_planner == 'dual_vln':
+        launch_cmd.append('enable_collision_monitor:=false')
     if args.dual_vln_rgb_topic:
         launch_cmd.append(f'dual_vln_rgb_topic:={args.dual_vln_rgb_topic}')
     if args.dual_vln_depth_topic:
@@ -1513,8 +1676,12 @@ def main() -> int:
             'dual_vln_strict_device': args.dual_vln_strict_device,
             'dual_vln_look_down': args.dual_vln_look_down,
             'dual_vln_enable_visualization': args.dual_vln_enable_visualization,
+            'internnav_external_server': args.internnav_external_server,
             'dual_vln_visualization_topic': args.dual_vln_visualization_topic,
             'dual_vln_visualization_rate_hz': args.dual_vln_visualization_rate_hz,
+            'internnav_invert_discrete_turns': args.internnav_invert_discrete_turns,
+            'internnav_invert_discrete_turns_resolved': resolved_invert_discrete_turns,
+            'internnav_invert_discrete_turns_source': invert_discrete_turns_source,
             'save_eval_video': args.save_eval_video,
             'eval_video_fps': args.eval_video_fps,
             'eval_video_top_down_size_px': args.eval_video_top_down_size_px,
@@ -1542,6 +1709,8 @@ def main() -> int:
         'artifacts': {
             'snapshots_dir': snapshots_dir,
             'dual_vln_status_path': dual_vln_status_path,
+            'internnav_trace_path': internnav_trace_path,
+            'internnav_diagnostic_summary_path': internnav_diagnostic_summary_path,
             'postprocess_commands_file': postprocess_commands_path,
             'videos_dir': videos_dir if args.save_eval_video else None,
             'video_index_path': video_index_path if args.save_eval_video else None,
@@ -1577,6 +1746,20 @@ def main() -> int:
     env['ARENA_EVAL_INTERNNAV_VISUALIZATION_RATE_HZ'] = str(args.dual_vln_visualization_rate_hz)
     env['ARENA_EVAL_INTERNNAV_INFERENCE_RATE_HZ'] = str(args.dual_vln_inference_rate_hz)
     env['ARENA_EVAL_INTERNNAV_INFERENCE_TIMEOUT_SEC'] = str(args.dual_vln_inference_timeout_sec)
+    env['ARENA_EVAL_INTERNNAV_TRACE_PATH'] = internnav_trace_path
+    env['ARENA_INTERNNAV_EXTERNAL_SERVER'] = '1' if args.internnav_external_server else '0'
+    # The current Isaac Ai2_Bot2 differential-drive graph reports ROS odom in the
+    # expected ENU convention, but the InternNav discrete turn stream observed in
+    # hospital_1 consistently chooses action=2 while the goal yaw error is
+    # negative.  Keep the correction scoped to this eval integration by default;
+    # explicit env/CLI settings take precedence for reproducible experiments.
+    if args.internnav_invert_discrete_turns != 'auto':
+        env['ARENA_EVAL_INTERNNAV_INVERT_DISCRETE_TURNS'] = str(resolved_invert_discrete_turns).lower()
+    elif (
+        'ARENA_EVAL_INTERNNAV_INVERT_DISCRETE_TURNS' not in env
+        and 'ARENA_INTERNNAV_INVERT_DISCRETE_TURNS' not in env
+    ):
+        env['ARENA_EVAL_INTERNNAV_INVERT_DISCRETE_TURNS'] = str(resolved_invert_discrete_turns).lower()
     if args.dual_vln_python_executable:
         # The InternNav adapter itself looks for these variables when deciding
         # whether to launch the heavy model in a separate Python environment.
@@ -1663,6 +1846,10 @@ def main() -> int:
             _terminate_process_tree(video_proc, grace_period_sec=5.0)
 
     dual_vln_status = _read_json_if_exists(dual_vln_status_path)
+    internnav_diagnostic_summary = _write_internnav_diagnostic_summary(
+        internnav_trace_path,
+        internnav_diagnostic_summary_path,
+    )
     video_index = _read_json_if_exists(video_index_path) if args.save_eval_video else None
     video_error = _read_text_if_exists(video_error_path) if args.save_eval_video else None
     video_returncode = video_proc.returncode if video_proc is not None else None
@@ -1674,6 +1861,8 @@ def main() -> int:
     )
 
     manifest['artifacts']['internnav_status_present'] = dual_vln_status is not None
+    manifest['artifacts']['internnav_trace_present'] = os.path.exists(internnav_trace_path)
+    manifest['artifacts']['internnav_diagnostic_summary_present'] = internnav_diagnostic_summary is not None
     manifest['artifacts']['snapshot_files'] = sorted(snapshot_files.values())
     manifest['artifacts']['video_index_present'] = video_index is not None
     manifest['artifacts']['video_index'] = video_index
@@ -1686,6 +1875,7 @@ def main() -> int:
             'timed_out': timed_out,
             'end_reason': end_reason,
             'dual_vln_status': dual_vln_status,
+            'internnav_diagnostic_summary': internnav_diagnostic_summary,
             'video_recorder_returncode': video_returncode,
         }
     )

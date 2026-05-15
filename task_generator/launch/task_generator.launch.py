@@ -214,6 +214,11 @@ def generate_launch_description():
         default_value="5.0",
     )
     dual_vln_visualization_rate_hz = declare_legacy_alias("dual_vln_visualization_rate_hz", internnav_visualization_rate_hz)
+    internnav_external_server = LaunchArgument(
+        name="internnav_external_server",
+        default_value="false",
+    )
+    dual_vln_external_server = declare_legacy_alias("dual_vln_external_server", internnav_external_server)
     enable_collision_monitor = LaunchArgument(
         name="enable_collision_monitor",
         default_value="true",
@@ -335,6 +340,7 @@ def generate_launch_description():
                 'internnav_enable_visualization': dual_vln_enable_visualization.param_value(bool),
                 'internnav_visualization_topic': dual_vln_visualization_topic.param_value(str),
                 'internnav_visualization_rate_hz': dual_vln_visualization_rate_hz.param_value(float),
+                'internnav_external_server': internnav_external_server.param_value(bool),
                 **dual_vln_mode.str_param,
                 **dual_vln_model_path.str_param,
                 **dual_vln_device.str_param,
@@ -351,6 +357,8 @@ def generate_launch_description():
                 **dual_vln_enable_visualization.param(bool),
                 **dual_vln_visualization_topic.str_param,
                 **dual_vln_visualization_rate_hz.param(float),
+                **internnav_external_server.param(bool),
+                **dual_vln_external_server.param(bool),
                 **enable_collision_monitor.param(bool),
                 **reference.param(typing.List[float]),
                 **prefix.str_param,
@@ -359,6 +367,13 @@ def generate_launch_description():
             },
             {"use_sim_time": False},
             parameter_file.substitution,
+            {
+                # Keep CLI/launch-time external-server selection authoritative
+                # even when the task_generator YAML contains older defaults.
+                'internnav_external_server': internnav_external_server.param_value(bool),
+                'dual_vln_external_server': dual_vln_external_server.param_value(bool),
+                **enable_collision_monitor.param(bool),
+            },
         ],
     )
 

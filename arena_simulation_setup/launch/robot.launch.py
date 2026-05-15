@@ -89,6 +89,8 @@ def generate_launch_description():
     dual_vln_visualization_topic = declare_legacy_alias('dual_vln_visualization_topic', internnav_visualization_topic)
     internnav_visualization_rate_hz = LaunchArgument('internnav_visualization_rate_hz', default_value='5.0')
     dual_vln_visualization_rate_hz = declare_legacy_alias('dual_vln_visualization_rate_hz', internnav_visualization_rate_hz)
+    internnav_external_server = LaunchArgument('internnav_external_server', default_value='false')
+    dual_vln_external_server = declare_legacy_alias('dual_vln_external_server', internnav_external_server)
     enable_collision_monitor = LaunchArgument('enable_collision_monitor', default_value='true')
     agents_dir = LaunchArgument(
         'agents_dir',
@@ -220,7 +222,12 @@ def generate_launch_description():
         }
     ]
     internnav_enabled = IfCondition(
-        PythonExpression(["'", local_planner.substitution, "' == 'dual_vln' and '", train_mode.substitution, "' == 'false'"])
+        PythonExpression([
+            "'", local_planner.substitution, "' == 'dual_vln' and '",
+            train_mode.substitution, "' == 'false' and '",
+            internnav_external_server.substitution, "'.lower() != 'true' and '",
+            dual_vln_external_server.substitution, "'.lower() != 'true'",
+        ])
     )
     internnav_server = launch_ros.actions.Node(
         package='arena_vln_models',

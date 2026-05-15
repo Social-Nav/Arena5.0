@@ -220,6 +220,13 @@ def generate_launch_description():
         description='Maximum debug image publish rate for InternNav visualization'
     )
     dual_vln_visualization_rate_hz = declare_legacy_alias('dual_vln_visualization_rate_hz', internnav_visualization_rate_hz)
+    internnav_external_server = LaunchArgument(
+        name='internnav_external_server',
+        default_value='false',
+        choices=['true', 'false'],
+        description='Use an externally launched InternNav/dual_vln_server instead of starting one in the Arena container'
+    )
+    dual_vln_external_server = declare_legacy_alias('dual_vln_external_server', internnav_external_server)
     enable_collision_monitor = LaunchArgument(
         name='enable_collision_monitor',
         default_value='true',
@@ -406,6 +413,8 @@ def generate_launch_description():
                     **dual_vln_enable_visualization.dict,
                     **dual_vln_visualization_topic.dict,
                     **dual_vln_visualization_rate_hz.dict,
+                    **internnav_external_server.dict,
+                    **dual_vln_external_server.dict,
                     **enable_collision_monitor.dict,
                     **debug.dict,
                     **save_data.dict,

@@ -98,7 +98,25 @@ def _action_to_command(action: Any, params: dict[str, Any]) -> Optional[tuple[fl
 
     max_linear = float(params['max_linear'])
     max_angular = float(params['max_angular'])
-    debug = {'selected_action': selected_int}
+    invert_turns = bool(params.get('invert_discrete_turns', False))
+    left_sign = -1.0 if invert_turns else 1.0
+    right_sign = 1.0 if invert_turns else -1.0
+    native_label = {0: 'stop', 1: 'forward', 2: 'turn_left', 3: 'turn_right', 5: 'look_down'}.get(
+        selected_int,
+        'unsupported',
+    )
+    effective_label = native_label
+    if selected_int == 2 and invert_turns:
+        effective_label = 'turn_right'
+    elif selected_int == 3 and invert_turns:
+        effective_label = 'turn_left'
+    debug = {
+        'selected_action': selected_int,
+        'action_label': native_label,
+        'native_action_label': native_label,
+        'effective_action_label': effective_label,
+        'invert_discrete_turns': invert_turns,
+    }
     if selected_int == 0:
         return 0.0, 0.0, 'discrete_stop', debug
     if selected_int == 1:
@@ -109,10 +127,10 @@ def _action_to_command(action: Any, params: dict[str, Any]) -> Optional[tuple[fl
         # inference cycles, so execute turns as gentle forward arcs while keeping
         # the angular command dominant.
         debug['arc_turn'] = True
-        return max(max_linear * 0.6, 0.12), max_angular * 0.25, 'discrete_turn_left', debug
+        return max(max_linear * 0.6, 0.12), left_sign * max_angular * 0.25, 'discrete_turn_left', debug
     if selected_int == 3:
         debug['arc_turn'] = True
-        return max(max_linear * 0.6, 0.12), -max_angular * 0.25, 'discrete_turn_right', debug
+        return max(max_linear * 0.6, 0.12), right_sign * max_angular * 0.25, 'discrete_turn_right', debug
     if selected_int == 5:
         debug['look_down_requested'] = True
         return 0.0, 0.0, 'look_down_requested', debug

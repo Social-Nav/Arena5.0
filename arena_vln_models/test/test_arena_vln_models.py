@@ -9,11 +9,11 @@ from arena_vln_models.core import (
     normalize_rgb,
     pose_vector,
 )
-from arena_vln_models.backends import HeuristicBackend, Pose2D, PythonAdapterBackend, DualVLNObservation
+from arena_vln_models.backends import HeuristicBackend, ModelSimDecision, Pose2D, PythonAdapterBackend, DualVLNObservation, _action_to_command
 from arena_vln_models import internnav as internnav_module
 from arena_vln_models.internnav import InternNavAdapter, available_backends, load_internnav_adapter
 from arena_vln_models.internnav_server import _normalize_internnav_adapter_target
-from arena_vln_models.visualization import image_msg_to_numpy, numpy_to_image_msg
+from arena_vln_models.visualization import image_msg_to_numpy, numpy_to_image_msg, render_debug_overlay
 
 
 def _observation(**overrides):
@@ -121,6 +121,17 @@ def test_python_adapter_backend_loads_canonical_target_only():
     assert decision.debug['adapter_target'] == 'arena_vln_models.internnav:load_internnav_adapter'
 
 
+def test_discrete_turn_mapping_supports_inverted_effective_labels():
+    params = {'max_linear': 1.0, 'max_angular': 2.0, 'invert_discrete_turns': True}
+    linear_x, angular_z, status, debug = _action_to_command(2, params)
+    assert status == 'discrete_turn_left'
+    assert linear_x > 0.0
+    assert angular_z < 0.0
+    assert debug['native_action_label'] == 'turn_left'
+    assert debug['effective_action_label'] == 'turn_right'
+    assert debug['invert_discrete_turns'] is True
+
+
 def test_internnav_server_defaults_empty_adapter_target_for_internnav_mode():
     adapter_target, source = _normalize_internnav_adapter_target('internnav', '')
     assert adapter_target == 'arena_vln_models.internnav:load_internnav_adapter'
@@ -165,3 +176,41 @@ def test_visualization_image_round_trip_helpers():
     recovered = image_msg_to_numpy(msg)
     assert recovered.shape == (2, 3, 3)
     assert int(recovered[0, 0, 1]) == 128
+
+
+def test_debug_overlay_renders_action_and_freshness_diagnostics():
+    image = np.zeros((180, 240, 3), dtype=np.uint8)
+    observation = DualVLNObservation(
+        pose=Pose2D(0.0, 0.0, 0.0),
+        goal=Pose2D(1.0, 0.0, 0.0),
+        instruction='go forward',
+        rgb_image=image,
+        depth_image=np.ones((180, 240), dtype=np.float32),
+        camera_frame_id='head_camera',
+        metadata={
+            'rgb_available': True,
+            'depth_available': True,
+            'camera_info_available': False,
+            'stale_after_sec': 2.0,
+        },
+    )
+    decision = ModelSimDecision(
+        linear_x=0.36,
+        angular_z=-0.375,
+        status='internnav_command',
+        debug={
+            'selected_action': 2,
+            'native_action_label': 'turn_left',
+            'effective_action_label': 'turn_right',
+            'invert_discrete_turns': True,
+            'goal_distance': 1.0,
+            'yaw_error': -0.5,
+            'action_history_tail': [2, 2, 1],
+            'sensor_ages_sec': {'rgb': 0.1, 'depth': 0.2, 'camera_info': None},
+            'stale_after_sec': 2.0,
+        },
+    )
+    overlay = render_debug_overlay(image, observation, decision, backend_name='python_adapter')
+    assert overlay.shape == image.shape
+    assert overlay.dtype == np.uint8
+    assert int(overlay.sum()) > 0

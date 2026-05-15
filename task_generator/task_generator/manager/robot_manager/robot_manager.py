@@ -806,6 +806,11 @@ class RobotManager(NodeInterface):
             internnav_visualization_rate_hz = self._get_compat_rosparam(
                 float, 'internnav_visualization_rate_hz', 'dual_vln_visualization_rate_hz', 5.0
             )
+            internnav_external_server = self._get_compat_rosparam(
+                bool, 'internnav_external_server', 'dual_vln_external_server', False
+            )
+            if os.environ.get('ARENA_INTERNNAV_EXTERNAL_SERVER', '').strip().lower() in {'1', 'true', 'yes', 'on'}:
+                internnav_external_server = True
 
             launch_arguments = {
                 'robot': self.model_name,
@@ -855,6 +860,8 @@ class RobotManager(NodeInterface):
                 'dual_vln_visualization_topic': internnav_visualization_topic,
                 'internnav_visualization_rate_hz': str(internnav_visualization_rate_hz),
                 'dual_vln_visualization_rate_hz': str(internnav_visualization_rate_hz),
+                'internnav_external_server': str(internnav_external_server).lower(),
+                'dual_vln_external_server': str(internnav_external_server).lower(),
                 # Nav2 Jazzy collision_monitor currently rejects the model-wrapper
                 # polygon parameters during lifecycle configure on the dual_vln /
                 # InternNav path. Disable it for that local planner so eval bringup

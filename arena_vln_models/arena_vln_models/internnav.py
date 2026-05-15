@@ -214,9 +214,20 @@ def _resolve_runtime_device(requested_device: str, *, strict_device: bool = Fals
         import torch  # type: ignore
 
         if requested.startswith('cuda') and not torch.cuda.is_available():
+            reasons: list[str] = []
+            torch_cuda_version = getattr(getattr(torch, 'version', None), 'cuda', None)
+            if not torch_cuda_version:
+                reasons.append('installed torch build has no CUDA support (torch.version.cuda is None)')
+            visible_gpu_nodes = sorted(str(path) for path in Path('/dev').glob('nvidia*'))
+            if not visible_gpu_nodes:
+                reasons.append('no /dev/nvidia* devices are visible in the current process environment')
+            nvidia_visible_devices = os.environ.get('NVIDIA_VISIBLE_DEVICES', '').strip()
+            if nvidia_visible_devices.lower() in {'void', 'none'}:
+                reasons.append(f'NVIDIA_VISIBLE_DEVICES={nvidia_visible_devices}')
+            detail = '; '.join(reasons) or 'CUDA is unavailable'
             if strict_device:
-                raise RuntimeError(f"Requested device '{requested}' but CUDA is unavailable")
-            return 'cpu', f"Requested device '{requested}' but CUDA is unavailable; falling back to cpu"
+                raise RuntimeError(f"Requested device '{requested}' but CUDA is unavailable: {detail}")
+            return 'cpu', f"Requested device '{requested}' but CUDA is unavailable: {detail}; falling back to cpu"
         torch.device(requested)
         return requested, ''
     except Exception as exc:
@@ -230,9 +241,9 @@ def _resolve_runtime_device(requested_device: str, *, strict_device: bool = Fals
 class InternNavSubprocessAdapter:
     """Run the heavy InternNav model in a separate Python environment.
 
-    ROS 2 Humble nodes must run in Python 3.10 for rclpy/type-support ABI
-    compatibility, while the InternNav checkpoint environment on this machine is
-    Python 3.12 with torch installed.  This adapter keeps ROS in the eval
+    ROS 2 nodes must run in the Python interpreter that matches the installed
+    rclpy/type-support ABI, while the InternNav checkpoint often needs a separate
+    torch/transformers/flash-attn environment.  This adapter keeps ROS in the eval
     interpreter and exchanges only JSON + temporary NumPy files with the model
     interpreter selected by ARENA_VLN_MODEL_PYTHON / --internnav-python-executable.
     """
@@ -254,6 +265,8 @@ class InternNavSubprocessAdapter:
         self._stderr_lines: list[str] = []
         env = os.environ.copy()
         env.setdefault('ARENA_INTERNNAV_MAX_NEW_TOKENS', str(int(params.get('internnav_max_new_tokens', 10))))
+        work_dir = Path(env.get('ARENA_INTERNNAV_WORK_DIR', '/tmp/arena_internnav_work'))
+        work_dir.mkdir(parents=True, exist_ok=True)
         pythonpath_parts = [str(internnav_root), str(internnav_root / 'third_party' / 'diffusion-policy')]
         if env.get('PYTHONPATH'):
             pythonpath_parts.append(env['PYTHONPATH'])
@@ -284,6 +297,7 @@ class InternNavSubprocessAdapter:
             text=True,
             bufsize=1,
             env=env,
+            cwd=str(work_dir),
         )
         self._stderr_thread = threading.Thread(
             target=self._drain_stderr,
