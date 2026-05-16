@@ -132,6 +132,13 @@ def _check_videos(run_dir: Path, video_index: dict[str, Any] | None) -> dict[str
             "codec": codec,
             "pass": bool(path and path.exists() and frames > 0),
         }
+        if not results[label]["pass"]:
+            if label == 'ego_debug_overlay':
+                results[label]["diagnostic"] = "debug_overlay_missing_or_empty"
+            elif not results[label]["exists"]:
+                results[label]["diagnostic"] = "video_missing"
+            else:
+                results[label]["diagnostic"] = "video_empty"
     return {
         "pass": all(item["pass"] for item in results.values()),
         "video_index_present": isinstance(video_index, dict),
@@ -172,12 +179,15 @@ def _odom_teleports(run_dir: Path, threshold_m: float = 5.0) -> list[dict[str, A
 
 def _check_model_control(run_dir: Path, manifest: dict[str, Any]) -> dict[str, Any]:
     artifacts = manifest.get('artifacts', {}) if isinstance(manifest, dict) else {}
+    result = manifest.get('result', {}) if isinstance(manifest, dict) else {}
+    params = manifest.get('parameters', {}) if isinstance(manifest, dict) else {}
     trace_path = Path(str(artifacts.get('internnav_trace_path') or run_dir / 'internnav_trace.jsonl'))
     status_path = Path(str(artifacts.get('dual_vln_status_path') or run_dir / 'internnav_status.json'))
     total, event_counts = _trace_events(trace_path)
     teleports = _odom_teleports(run_dir)
     status = _read_json(status_path)
     model_results = event_counts.get('model_result', 0)
+    missing_model_control_loop = not trace_path.exists() or model_results <= 0 or status is None
     return {
         "pass": trace_path.exists() and model_results > 0 and status is not None and not teleports,
         "trace_present": trace_path.exists(),
@@ -188,6 +198,9 @@ def _check_model_control(run_dir: Path, manifest: dict[str, Any]) -> dict[str, A
         "status": status,
         "odom_present": bool(_read_csv(run_dir / 'odom.csv')),
         "large_teleports": teleports,
+        "missing_model_control_loop": missing_model_control_loop,
+        "external_server": bool(params.get('internnav_external_server')),
+        "external_server_preflight": result.get('external_server_preflight'),
     }
 
 
@@ -236,6 +249,28 @@ def _frame_analysis(run_dir: Path) -> dict[str, Any]:
     return {"present": True, "videos": analysis}
 
 
+def _diagnostic_warnings(checks: dict[str, Any], manifest: dict[str, Any], social_metrics: dict[str, Any] | None) -> list[str]:
+    warnings: list[str] = []
+    params = manifest.get('parameters', {}) if isinstance(manifest, dict) else {}
+    if isinstance(social_metrics, dict):
+        try:
+            path_length_m = float(social_metrics.get('path_length_m') or 0.0)
+        except Exception:
+            path_length_m = 0.0
+        if str(params.get('local_planner', '')).lower() == 'dual_vln' and path_length_m < 0.1:
+            warnings.append(f'robot appears stationary: path_length_m={path_length_m:.3f}')
+
+    model_control = checks.get('model_control') if isinstance(checks.get('model_control'), dict) else {}
+    if model_control.get('missing_model_control_loop'):
+        warnings.append('model-control loop missing: InternNav trace/status artifacts are incomplete')
+
+    videos = checks.get('videos') if isinstance(checks.get('videos'), dict) else {}
+    overlay = (videos.get('videos') or {}).get('ego_debug_overlay') if isinstance(videos.get('videos'), dict) else {}
+    if isinstance(overlay, dict) and overlay.get('diagnostic') == 'debug_overlay_missing_or_empty':
+        warnings.append('debug overlay video missing or empty')
+    return warnings
+
+
 def generate_artifact_validation(run_dir: str | os.PathLike[str]) -> dict[str, Any]:
     run_path = Path(run_dir)
     manifest = _read_yaml(run_path / 'run_manifest.yaml') or {}
@@ -253,6 +288,7 @@ def generate_artifact_validation(run_dir: str | os.PathLike[str]) -> dict[str, A
     frame_analysis = _frame_analysis(run_path)
     if not frame_analysis.get('present'):
         warnings.append(frame_analysis.get('warning'))
+    warnings.extend(_diagnostic_warnings(checks, manifest, social_metrics))
 
     failed = [name for name, result in checks.items() if not result.get('pass')]
     report = {

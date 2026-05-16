@@ -229,6 +229,107 @@ def _read_text_if_exists(path: str) -> str | None:
         return None
 
 
+def _normalize_external_ros_env(env: dict[str, str]) -> dict[str, dict[str, str]]:
+    """Resolve ROS discovery defaults used by the three-container eval path."""
+    defaults = {
+        'ROS_DOMAIN_ID': '1',
+        'RMW_IMPLEMENTATION': 'rmw_fastrtps_cpp',
+        'ROS_LOCALHOST_ONLY': '0',
+    }
+    resolved: dict[str, dict[str, str]] = {}
+    for key, default in defaults.items():
+        current = str(env.get(key, '')).strip()
+        if current:
+            resolved[key] = {'value': current, 'source': 'environment'}
+            continue
+        env[key] = default
+        resolved[key] = {'value': default, 'source': 'default'}
+    return resolved
+
+
+def _truncate_preflight_output(text: str, limit: int = 20000) -> str:
+    if len(text) <= limit:
+        return text
+    omitted = len(text) - limit
+    return text[:limit] + f'\n... <truncated {omitted} chars>'
+
+
+def _run_ros_list_command(env: dict[str, str], args: list[str], timeout_sec: float) -> dict:
+    started = time.monotonic()
+    try:
+        result = subprocess.run(
+            args,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=max(float(timeout_sec), 0.1),
+        )
+        return {
+            'command': args,
+            'returncode': result.returncode,
+            'stdout': _truncate_preflight_output(result.stdout),
+            'stderr': _truncate_preflight_output(result.stderr),
+            'duration_sec': time.monotonic() - started,
+            'timed_out': False,
+        }
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout.decode(errors='replace') if isinstance(exc.stdout, bytes) else (exc.stdout or '')
+        stderr = exc.stderr.decode(errors='replace') if isinstance(exc.stderr, bytes) else (exc.stderr or '')
+        return {
+            'command': args,
+            'returncode': None,
+            'stdout': _truncate_preflight_output(stdout),
+            'stderr': _truncate_preflight_output(stderr),
+            'duration_sec': time.monotonic() - started,
+            'timed_out': True,
+        }
+    except Exception as exc:
+        return {
+            'command': args,
+            'returncode': None,
+            'stdout': '',
+            'stderr': repr(exc),
+            'duration_sec': time.monotonic() - started,
+            'timed_out': False,
+        }
+
+
+def _listed_names(command_result: dict) -> set[str]:
+    return {
+        line.strip()
+        for line in str(command_result.get('stdout') or '').splitlines()
+        if line.strip()
+    }
+
+
+def _run_external_internnav_preflight(
+    env: dict[str, str],
+    *,
+    expected_service: str,
+    expected_status_topic: str,
+    timeout_sec: float,
+) -> dict:
+    service_result = _run_ros_list_command(env, ['ros2', 'service', 'list'], timeout_sec)
+    topic_result = _run_ros_list_command(env, ['ros2', 'topic', 'list'], timeout_sec)
+    services = _listed_names(service_result)
+    topics = _listed_names(topic_result)
+    checks = {
+        'service_visible': expected_service in services,
+        'status_topic_visible': expected_status_topic in topics,
+    }
+    missing = [name for name, passed in checks.items() if not passed]
+    return {
+        'pass': not missing,
+        'timeout_sec': timeout_sec,
+        'expected_service': expected_service,
+        'expected_status_topic': expected_status_topic,
+        'checks': checks,
+        'missing_checks': missing,
+        'service_list': service_result,
+        'topic_list': topic_result,
+    }
+
+
 def _read_jsonl(path: str) -> list[dict]:
     if not path or not os.path.exists(path):
         return []
@@ -1578,6 +1679,17 @@ def main() -> int:
     parser.add_argument('--eval-video-sim-top-down-topic', default='')
     parser.add_argument('--eval-video-debug-overlay-topic', default='')
     parser.add_argument('--internnav-status-topic', '--dual-vln-status-topic', dest='dual_vln_status_topic', default='/task_generator_node/internnav/status')
+    parser.add_argument(
+        '--external-server-preflight-timeout-sec',
+        type=float,
+        default=15.0,
+        help='Bounded discovery timeout for external InternNav get_command/status preflight checks.',
+    )
+    parser.add_argument(
+        '--skip-external-server-preflight',
+        action='store_true',
+        help='Skip fail-fast external InternNav discovery preflight. Intended only for diagnostics.',
+    )
     parser.add_argument('--finished-topic', default='/task_generator_node/finished')
     parser.add_argument('--task-reset-topic', default='/task_generator_node/task_reset')
     parser.add_argument('--launch-timeout-sec', type=float, default=0.0)
@@ -1633,6 +1745,12 @@ def main() -> int:
     video_index_path = os.path.join(output_dir, 'video_index.json')
     video_error_path = os.path.join(output_dir, 'video_recording_error.txt')
 
+    env = os.environ.copy()
+    resolved_ros_env = _normalize_external_ros_env(env) if args.internnav_external_server else {
+        key: {'value': str(env.get(key, '')).strip(), 'source': 'environment' if str(env.get(key, '')).strip() else 'unset'}
+        for key in ('ROS_DOMAIN_ID', 'RMW_IMPLEMENTATION', 'ROS_LOCALHOST_ONLY')
+    }
+
     if args.save_eval_video and not args.dual_vln_rgb_topic:
         raise SystemExit(
             'save_eval_video requires a resolvable RGB topic. '
@@ -1647,6 +1765,7 @@ def main() -> int:
     robot_odom_topic = _robot_topic(args.task_reset_topic, args.robot, 'odom')
     robot_goal_topic = _robot_topic(args.task_reset_topic, args.robot, 'episode_goal_pose')
     robot_scan_topic = _robot_topic(args.task_reset_topic, args.robot, 'scan')
+    robot_command_service = _robot_topic(args.task_reset_topic, args.robot, 'get_command')
     robot_scenario_reset_topic = _scenario_reset_topic(args.task_reset_topic, args.robot)
     map_yaml_path = _world_map_yaml_path(sim_setup_share, args.world)
 
@@ -1786,6 +1905,8 @@ def main() -> int:
             'dual_vln_look_down': args.dual_vln_look_down,
             'dual_vln_enable_visualization': args.dual_vln_enable_visualization,
             'internnav_external_server': args.internnav_external_server,
+            'external_server_preflight_timeout_sec': args.external_server_preflight_timeout_sec,
+            'skip_external_server_preflight': args.skip_external_server_preflight,
             'dual_vln_visualization_topic': args.dual_vln_visualization_topic,
             'dual_vln_visualization_rate_hz': args.dual_vln_visualization_rate_hz,
             'internnav_invert_discrete_turns': args.internnav_invert_discrete_turns,
@@ -1806,6 +1927,7 @@ def main() -> int:
             'eval_video_scenario_reset_topic': robot_scenario_reset_topic if args.save_eval_video else None,
             'eval_video_map_yaml_path': map_yaml_path if args.save_eval_video else None,
             'dual_vln_status_topic': args.dual_vln_status_topic,
+            'dual_vln_command_service': robot_command_service,
             'finished_topic': args.finished_topic,
             'task_reset_topic': args.task_reset_topic,
             'launch_timeout_sec': args.launch_timeout_sec,
@@ -1814,6 +1936,9 @@ def main() -> int:
             'output_root': output_root,
         },
         'runtime_adjustments': runtime_adjustments,
+        'runtime_environment': {
+            'ros_discovery': resolved_ros_env,
+        },
         'snapshots': snapshot_files,
         'artifacts': {
             'snapshots_dir': snapshots_dir,
@@ -1835,13 +1960,13 @@ def main() -> int:
             'artifact_validation_returncode': None,
             'end_reason': 'running',
             'video_recorder_returncode': None,
+            'external_server_preflight': None,
         },
     }
 
     manifest_path = os.path.join(output_dir, 'run_manifest.yaml')
     _write_yaml(manifest_path, manifest)
 
-    env = os.environ.copy()
     env.setdefault('RCUTILS_LOGGING_BUFFERED_STREAM', '1')
     env.setdefault('ARENA_EVAL_PYTHON', sys.executable)
     env['ARENA_EVAL_INTERNNAV_MODE'] = str(args.dual_vln_mode)
@@ -1880,6 +2005,40 @@ def main() -> int:
         env['ARENA_VLN_MODEL_PYTHON'] = str(args.dual_vln_python_executable)
         env['ARENA_INTERNNAV_PYTHON'] = str(args.dual_vln_python_executable)
         env['ARENA_PYTHON'] = str(args.dual_vln_python_executable)
+
+    if args.internnav_external_server and not args.skip_external_server_preflight:
+        external_preflight = _run_external_internnav_preflight(
+            env,
+            expected_service=robot_command_service,
+            expected_status_topic=args.dual_vln_status_topic,
+            timeout_sec=args.external_server_preflight_timeout_sec,
+        )
+        manifest['result']['external_server_preflight'] = external_preflight
+        _write_yaml(manifest_path, manifest)
+        if not external_preflight.get('pass'):
+            manifest['result'].update(
+                {
+                    'launch_returncode': None,
+                    'metrics_returncode': None,
+                    'social_metrics_returncode': None,
+                    'artifact_validation_returncode': None,
+                    'timed_out': False,
+                    'end_reason': 'external_preflight_failed',
+                }
+            )
+            _write_yaml(manifest_path, manifest)
+            return 2
+    elif args.internnav_external_server:
+        manifest['result']['external_server_preflight'] = {
+            'pass': None,
+            'skipped': True,
+            'reason': 'skip_external_server_preflight',
+            'expected_service': robot_command_service,
+            'expected_status_topic': args.dual_vln_status_topic,
+            'timeout_sec': args.external_server_preflight_timeout_sec,
+        }
+        _write_yaml(manifest_path, manifest)
+
     launch_timeout_sec = args.launch_timeout_sec
     if launch_timeout_sec <= 0.0:
         launch_timeout_sec = max(float(args.timeout) * max(args.episodes, 1) + 120.0, 180.0)
