@@ -32,4 +32,5 @@
 ## 5. Finalization
 
 - [x] 5.1 Update task checklist with completed verification notes.
-- [ ] 5.2 Commit implementation and OpenSpec artifacts.
+- [x] 5.2 Commit implementation and OpenSpec artifacts.
+  - 2026-05-17: committed as `42f710e fix(internnav): preflight external eval server`.
