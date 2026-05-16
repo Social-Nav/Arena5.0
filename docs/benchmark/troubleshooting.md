@@ -119,6 +119,47 @@ The run produces metadata files but no valid `.mp4`, or the videos are encoded w
 - inspect `video_recording_error.txt`
 - inspect `video_index.json`
 - confirm the input RGB topic really receives robot camera frames
+- for social-navigation acceptance, extract first/middle/last frames from `ego_observation`, `ego_debug_overlay`, `sim_top_down`, and `map_top_down_follow`; write the review to `frame_analysis/video_frame_analysis.json` and rerun `social_nav_validation`
+
+## Social-navigation validation fails with empty humans or odom
+
+### Symptom
+
+`artifact_validation.json` fails `humans`, `metrics`, or `model_control`, and CSV files such as `human_states.csv`, `odom.csv`, or `cmd_vel.csv` contain only headers.
+
+### Most likely causes
+
+- the data recorder subscribed to a robot-local `human_states` topic instead of the task-generator-level HuNav stream
+- the recorder missed the `task_reset` signal because reset was not received with reliable/transient-local QoS
+- `/clock` did not advance long enough during a short Isaac episode, so no samples crossed the configured record period
+- fallback odom/TF continued publishing after real Isaac odom appeared, causing large teleports or mixed odom streams
+
+### Action
+
+- set `human_states_topic` to `/task_generator_node/human_states`
+- set `scenario_reset_topic` to `/task_generator_node/task_reset`
+- use reliable/transient-local QoS for reset-style event subscriptions
+- enable wall-clock fallback recording when `/clock` is present but not advancing
+- disable fallback odom/TF automatically once another publisher is detected on `/task_generator_node/Ai2_Bot2/odom`
+
+## External InternNav trace is missing or adapter reports missing `.npy`
+
+### Symptom
+
+The external server publishes status, but `artifact_validation.json` reports `model_control.trace_present=false`, or `internnav_status.json` contains an `adapter_exception` like `No such file or directory: rgb_*.npy`.
+
+### Most likely causes
+
+- the external server was started without a trace path inside the shared output mount
+- real InternNav inference used the default `0.2s` timeout and the parent process deleted temporary IPC arrays before the worker opened them
+- the arena and internnav containers do not share ROS discovery settings
+
+### Action
+
+- start the external server with `ARENA_EVAL_INTERNNAV_TRACE_PATH` pointing at the run directory, for example `outputs/<prefix>/<timestamp>_hospital_1_Ai2_Bot2_internnav/internnav_trace.jsonl`
+- use `--inference-timeout-sec 120.0` for the real InternNav subprocess backend
+- do not delete IPC `.npy` arrays immediately after an inference timeout; the worker may still be reading them
+- keep `ROS_DOMAIN_ID`, `RMW_IMPLEMENTATION`, `ROS_AUTOMATIC_DISCOVERY_RANGE`, `ROS_LOCALHOST_ONLY`, and `FASTDDS_BUILTIN_TRANSPORTS` identical across arena, Isaac, and internnav containers
 
 ## InternNav rotates in place or makes little progress
 

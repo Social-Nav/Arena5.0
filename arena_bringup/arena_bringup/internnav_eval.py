@@ -147,7 +147,7 @@ raise SystemExit(0 if done['seen'] else 1)
     )
 
 
-def _start_status_watcher(env: dict[str, str], topic: str, output_path: str) -> subprocess.Popen:
+def _start_status_watcher(env: dict[str, str], topic: str, output_path: str, history_path: str | None = None) -> subprocess.Popen:
     python_bin = _eval_python_executable(env)
     watcher_code = r'''
 import json
@@ -160,6 +160,7 @@ from std_msgs.msg import String
 
 topic = sys.argv[1]
 output_path = Path(sys.argv[2])
+history_path = Path(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3] else None
 rclpy.init()
 node = Node('internnav_eval_status_watcher')
 qos = QoSProfile(depth=1)
@@ -171,6 +172,19 @@ def _cb(msg):
     state['last'] = msg.data
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(msg.data, encoding='utf-8')
+    if history_path is not None:
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            'wall_time': node.get_clock().now().nanoseconds / 1e9,
+            'topic': topic,
+            'raw': msg.data,
+        }
+        try:
+            record['parsed'] = json.loads(msg.data)
+        except Exception:
+            record['parsed'] = None
+        with history_path.open('a', encoding='utf-8') as f:
+            f.write(json.dumps(record) + '\n')
 
 node.create_subscription(String, topic, _cb, qos)
 try:
@@ -186,7 +200,7 @@ raise SystemExit(0)
 '''
 
     return subprocess.Popen(
-        [python_bin, '-c', watcher_code, topic, output_path],
+        [python_bin, '-c', watcher_code, topic, output_path, history_path or ''],
         env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -790,9 +804,9 @@ class EvalVideoRecorder(Node):
         event_qos.reliability = ReliabilityPolicy.RELIABLE
         event_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
 
-        self.create_subscription(Int16, task_reset_topic, self._on_task_reset, 10)
+        self.create_subscription(Int16, task_reset_topic, self._on_task_reset, event_qos)
         if scenario_reset_topic and scenario_reset_topic != task_reset_topic:
-            self.create_subscription(Int16, scenario_reset_topic, self._on_task_reset, 10)
+            self.create_subscription(Int16, scenario_reset_topic, self._on_task_reset, event_qos)
         self.create_subscription(Empty, finished_topic, self._on_finished, event_qos)
         self.create_subscription(Image, ego_topic, self._on_ego_image, sensor_qos)
         if depth_topic:
@@ -1385,10 +1399,16 @@ def _apply_runtime_defaults(args) -> dict:
         args.dual_vln_enable_visualization = True
         adjustments.setdefault('dual_vln_enable_visualization', True)
 
-    if str(args.dual_vln_device).strip().lower() == 'cpu' and args.dual_vln_inference_timeout_sec <= 0.2:
+    device_name = str(args.dual_vln_device).strip().lower()
+    real_backend_requested = bool(
+        getattr(args, 'dual_vln_require_real_backend', False)
+        or str(getattr(args, 'dual_vln_adapter_target', '')).strip()
+        or str(getattr(args, 'dual_vln_mode', '')).strip().lower() == 'internnav'
+    )
+    if real_backend_requested and args.dual_vln_inference_timeout_sec <= 0.2:
         args.dual_vln_inference_timeout_sec = 120.0
         adjustments['dual_vln_inference_timeout_sec'] = 120.0
-    if str(args.dual_vln_device).strip().lower() == 'cpu' and args.dual_vln_inference_rate_hz >= 10.0:
+    if device_name == 'cpu' and args.dual_vln_inference_rate_hz >= 10.0:
         args.dual_vln_inference_rate_hz = 0.5
         adjustments['dual_vln_inference_rate_hz'] = 0.5
 
@@ -1473,6 +1493,9 @@ def main() -> int:
     parser.add_argument('--episodes', type=int, default=2)
     parser.add_argument('--timeout', type=int, default=120)
     parser.add_argument('--tm-robots', default='random')
+    parser.add_argument('--tm-obstacles', default='random')
+    parser.add_argument('--scenario-file', default='')
+    parser.add_argument('--social-eval', action='store_true', help='Enable stricter social-navigation metrics and artifact validation expectations.')
     parser.add_argument('--headless', default='2')
     parser.add_argument('--log-level', default='warn')
     parser.add_argument('--vln-instruction', default='navigate')
@@ -1526,6 +1549,13 @@ def main() -> int:
     parser.add_argument('--skip-metrics', action='store_true')
     parser.add_argument('extra_launch_args', nargs='*', help='Additional KEY:=VALUE launch arguments')
     args = parser.parse_args()
+    if args.social_eval:
+        if args.tm_robots == 'random':
+            args.tm_robots = 'scenario'
+        if args.tm_obstacles == 'random':
+            args.tm_obstacles = 'scenario'
+        if not args.scenario_file:
+            args.scenario_file = 'normal'
     runtime_adjustments = _apply_runtime_defaults(args)
     if args.internnav_invert_discrete_turns == 'auto':
         # After Ai2_Bot2's Isaac diff-drive / odom chain was fixed to execute
@@ -1543,7 +1573,7 @@ def main() -> int:
     bringup_share = get_package_share_directory('arena_bringup')
     sim_setup_share = get_package_share_directory('arena_simulation_setup')
 
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    timestamp = os.environ.get('ARENA_EVAL_FIXED_TIMESTAMP') or datetime.now().strftime('%Y%m%d_%H%M%S')
     run_name = f'{timestamp}_{args.world}_{args.robot}_{args.dual_vln_mode}'
     relative_dir = os.path.join(args.output_prefix, run_name)
     output_root = _resolve_output_root(args.output_root, arena_eval_share)
@@ -1597,6 +1627,7 @@ def main() -> int:
         f'episodes:={args.episodes}',
         'auto_reset:=true',
         f'tm_robots:={args.tm_robots}',
+        f'tm_obstacles:={args.tm_obstacles}',
         f'timeout:={args.timeout}',
         f'headless:={args.headless}',
         f'log_level:={args.log_level}',
@@ -1631,13 +1662,22 @@ def main() -> int:
         launch_cmd.append(f'vln_instruction_file:={args.vln_instruction_file}')
     if args.dual_vln_model_path:
         launch_cmd.append(f'dual_vln_model_path:={args.dual_vln_model_path}')
+    if args.scenario_file:
+        launch_cmd.append(f'scenario_file:={args.scenario_file}')
     launch_cmd.extend(args.extra_launch_args)
 
     metrics_cmd = ['ros2', 'run', 'arena_evaluation', 'metrics', '--dir', output_dir]
+    social_metrics_cmd = ['ros2', 'run', 'arena_evaluation', 'social_metrics', '--dir', output_dir]
+    artifact_validation_cmd = ['ros2', 'run', 'arena_bringup', 'social_nav_validation', '--dir', output_dir]
     postprocess_commands = [
         ' '.join(launch_cmd),
         ' '.join(metrics_cmd),
     ]
+    if args.social_eval:
+        postprocess_commands.extend([
+            ' '.join(social_metrics_cmd),
+            ' '.join(artifact_validation_cmd),
+        ])
     _write_text(postprocess_commands_path, '\n'.join(postprocess_commands) + '\n')
 
     manifest = {
@@ -1659,6 +1699,27 @@ def main() -> int:
             'episodes': args.episodes,
             'timeout': args.timeout,
             'tm_robots': args.tm_robots,
+            'tm_obstacles': args.tm_obstacles,
+            'scenario_file': args.scenario_file,
+            'social_eval': args.social_eval,
+            'social_eval_expectations': {
+                'world': 'hospital_1',
+                'robot': 'Ai2_Bot2',
+                'human': 'hunav',
+                'tm_obstacles': 'scenario',
+                'scenario_file': args.scenario_file or 'normal',
+                'required_videos': [
+                    'ego_observation',
+                    'ego_debug_overlay',
+                    'sim_top_down',
+                    'map_top_down_follow',
+                ],
+                'required_metrics': [
+                    'metrics.csv',
+                    'social_metrics.json',
+                    'artifact_validation.json',
+                ],
+            } if args.social_eval else None,
             'vln_instruction': args.vln_instruction,
             'vln_instruction_file': args.vln_instruction_file,
             'dual_vln_mode': args.dual_vln_mode,
@@ -1711,6 +1772,8 @@ def main() -> int:
             'dual_vln_status_path': dual_vln_status_path,
             'internnav_trace_path': internnav_trace_path,
             'internnav_diagnostic_summary_path': internnav_diagnostic_summary_path,
+            'social_metrics_path': os.path.join(output_dir, 'social_metrics.json') if args.social_eval else None,
+            'artifact_validation_path': os.path.join(output_dir, 'artifact_validation.json') if args.social_eval else None,
             'postprocess_commands_file': postprocess_commands_path,
             'videos_dir': videos_dir if args.save_eval_video else None,
             'video_index_path': video_index_path if args.save_eval_video else None,
@@ -1720,6 +1783,8 @@ def main() -> int:
             'finished_observed': False,
             'launch_returncode': None,
             'metrics_returncode': None,
+            'social_metrics_returncode': None,
+            'artifact_validation_returncode': None,
             'end_reason': 'running',
             'video_recorder_returncode': None,
         },
@@ -1810,8 +1875,27 @@ def main() -> int:
     deadline = time.monotonic() + launch_timeout_sec
     launch_returncode = None
     metrics_returncode = None
+    social_metrics_returncode = None
+    artifact_validation_returncode = None
     finished_observed = False
     timed_out = False
+
+    def run_social_postprocess() -> int:
+        nonlocal social_metrics_returncode, artifact_validation_returncode
+        if not args.social_eval:
+            return 0
+        social_metrics_result = subprocess.run(social_metrics_cmd, env=env)
+        social_metrics_returncode = social_metrics_result.returncode
+        artifact_validation_result = subprocess.run(artifact_validation_cmd, env=env)
+        artifact_validation_returncode = artifact_validation_result.returncode
+        manifest['result']['social_metrics_returncode'] = social_metrics_returncode
+        manifest['result']['artifact_validation_returncode'] = artifact_validation_returncode
+        manifest['artifacts']['social_metrics_present'] = os.path.exists(os.path.join(output_dir, 'social_metrics.json'))
+        manifest['artifacts']['artifact_validation_present'] = os.path.exists(os.path.join(output_dir, 'artifact_validation.json'))
+        _write_yaml(manifest_path, manifest)
+        if social_metrics_returncode != 0:
+            return social_metrics_returncode
+        return artifact_validation_returncode or 0
 
     try:
         while True:
@@ -1872,6 +1956,8 @@ def main() -> int:
             'finished_observed': finished_observed,
             'launch_returncode': launch_returncode,
             'metrics_returncode': metrics_returncode,
+            'social_metrics_returncode': social_metrics_returncode,
+            'artifact_validation_returncode': artifact_validation_returncode,
             'timed_out': timed_out,
             'end_reason': end_reason,
             'dual_vln_status': dual_vln_status,
@@ -1885,26 +1971,32 @@ def main() -> int:
         launch_returncode = 0
 
     if timed_out:
+        run_social_postprocess()
         manifest['result']['launch_returncode'] = launch_returncode
         _write_yaml(manifest_path, manifest)
         return 124 if launch_returncode == 0 else launch_returncode
 
     if launch_returncode != 0:
+        run_social_postprocess()
         manifest['result']['launch_returncode'] = launch_returncode
         _write_yaml(manifest_path, manifest)
         return launch_returncode
 
     if args.skip_metrics:
+        social_postprocess_returncode = run_social_postprocess()
         _write_yaml(manifest_path, manifest)
-        return 0
+        return social_postprocess_returncode
 
     metrics_result = subprocess.run(metrics_cmd, env=env)
     metrics_returncode = metrics_result.returncode
     manifest['result']['metrics_returncode'] = metrics_returncode
     if metrics_returncode != 0 and manifest['result']['end_reason'] == 'finished':
         manifest['result']['end_reason'] = 'metrics_failed'
+    social_postprocess_returncode = run_social_postprocess()
     _write_yaml(manifest_path, manifest)
-    return metrics_returncode
+    if metrics_returncode != 0:
+        return metrics_returncode
+    return social_postprocess_returncode
 
 
 if __name__ == '__main__':

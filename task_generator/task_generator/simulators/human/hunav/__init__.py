@@ -1,5 +1,6 @@
 
 import enum
+import math
 import os
 import typing
 
@@ -30,6 +31,35 @@ class Goals(list[Position]):
             for waypoint in (obj.get(wpname) for wpname in obj['goals'])
             if waypoint is not None
         ]
+        return cls(waypoints)
+
+    @classmethod
+    def from_waypoint_values(cls, value) -> "Goals":
+        """Parse legacy hospital scenario waypoint values.
+
+        Some hospital_1 scenarios use ``waypoint`` (singular) with either a
+        single ``[x, y, yaw]`` list or a list of such lists.  The canonical
+        DynamicObstacle field is ``waypoints``; this helper bridges the legacy
+        schema without requiring scenario file rewrites.
+        """
+        if value is None:
+            return cls([])
+        values = value
+        if isinstance(values, dict):
+            values = [values]
+        elif isinstance(values, (tuple, list)) and values and all(isinstance(v, (int, float)) for v in values[:2]):
+            values = [values]
+
+        waypoints = []
+        for waypoint in values or []:
+            if isinstance(waypoint, dict):
+                waypoints.append(Position(
+                    x=waypoint.get('x', 0.),
+                    y=waypoint.get('y', 0.),
+                    z=waypoint.get('z', 0.),
+                ))
+            elif isinstance(waypoint, (tuple, list)) and len(waypoint) >= 2:
+                waypoints.append(Position(x=waypoint[0], y=waypoint[1], z=waypoint[2] if len(waypoint) > 2 else 0.))
         return cls(waypoints)
 
     def as_poses(self) -> list[geometry_msgs.msg.Pose]:
@@ -129,6 +159,10 @@ class HunavDynamicObstacle:
 
         if 'goals' in extra:
             waypoints = Goals.parse(extra)
+        elif 'waypoints' in extra:
+            waypoints = Goals.from_waypoint_values(extra.get('waypoints'))
+        elif 'waypoint' in extra:
+            waypoints = Goals.from_waypoint_values(extra.get('waypoint'))
         else:
             waypoints = Goals([
                 Position(
@@ -150,6 +184,10 @@ class HunavDynamicObstacle:
             if behavior_tree.startswith('./') and obj.included_from:
                 behavior_tree = str(obj.included_from / behavior_tree)
 
+        yaw = obj.pose.orientation.to_yaw()
+        if abs(yaw) > math.tau:
+            yaw = math.radians(yaw)
+
         return cls(
             name=obj.name,
             init_pose=PositionH(
@@ -158,7 +196,7 @@ class HunavDynamicObstacle:
                 z=extra.get('position', {}).get('z', cls._default.init_pose.z),
                 h=extra.get('position', {}).get('h', cls._default.init_pose.h),
             ),
-            yaw=0.0,
+            yaw=yaw,
             model=obj.model,
             goals=waypoints,
             velocity=extra.get('velocity', cls._default.velocity),

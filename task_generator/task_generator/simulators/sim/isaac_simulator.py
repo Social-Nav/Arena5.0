@@ -246,6 +246,8 @@ tf_pub = TransformBroadcaster(node) if PUBLISH_FALLBACK_ODOM_TF else None
 frame_id = '{fq_camera_frame}'
 pose = {{'x': 0.0, 'y': 0.0, 'yaw': 0.0}}
 cmd = {{'vx': 0.0, 'wz': 0.0}}
+fallback_odom_active = {{'value': PUBLISH_FALLBACK_ODOM_TF}}
+real_odom_seen_since = {{'t': None}}
 last_t = time.monotonic()
 w, h = 640, 480
 yy, xx = np.mgrid[0:h, 0:w]
@@ -308,6 +310,15 @@ def _on_cmd(msg):
     cmd['vx'] = vx
     cmd['wz'] = wz
 
+def _real_odom_publisher_seen():
+    try:
+        infos = node.get_publishers_info_by_topic('{odom_topic}')
+    except Exception as exc:
+        node.get_logger().debug(f'Could not inspect odom publishers: {{exc}}')
+        return False
+    own_name = node.get_name()
+    return any(getattr(info, 'node_name', '') != own_name for info in infos)
+
 node.create_subscription(PoseStamped, '{pose_topic}', _on_pose, 10)
 node.create_subscription(Twist, '{cmd_topic}', _on_cmd, 10)
 
@@ -328,7 +339,19 @@ def publish():
 
     stamp = node.get_clock().now().to_msg()
     qx, qy, qz, qw = _quat_from_yaw(pose['yaw'])
-    if PUBLISH_FALLBACK_ODOM_TF:
+    if PUBLISH_FALLBACK_ODOM_TF and fallback_odom_active['value']:
+        if _real_odom_publisher_seen():
+            if real_odom_seen_since['t'] is None:
+                real_odom_seen_since['t'] = now_m
+            elif now_m - real_odom_seen_since['t'] >= 1.0:
+                fallback_odom_active['value'] = False
+                node.get_logger().info(
+                    'Disabling fallback odom/TF because a real odom publisher is present on {odom_topic}'
+                )
+        else:
+            real_odom_seen_since['t'] = None
+
+    if PUBLISH_FALLBACK_ODOM_TF and fallback_odom_active['value']:
         tf = TransformStamped()
         tf.header.stamp = stamp
         tf.header.frame_id = 'map'
@@ -511,7 +534,7 @@ rclpy.spin(node)
                         robot.name,
                         robot_params.base_frame,
                         robot_params.odom_frame,
-                        publish_fallback_odom_tf=False,
+                        publish_fallback_odom_tf=True,
                     )
                     spawn_usd_robot_timeout_sec = 75.0
                     response = await self._clients.SpawnUsdRobot.call_timeout(
@@ -544,7 +567,7 @@ rclpy.spin(node)
                         robot.name,
                         robot_params.base_frame,
                         robot_params.odom_frame,
-                        publish_fallback_odom_tf=False,
+                        publish_fallback_odom_tf=True,
                     )
                     await self._clients.SpawnUrdf.call_timeout(
                         SpawnUrdf.Request(

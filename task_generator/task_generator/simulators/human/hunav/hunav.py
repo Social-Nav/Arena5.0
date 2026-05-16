@@ -412,6 +412,10 @@ class HunavHumanSimulator(
                 Pedestrians, self._namespace("arena_peds"), 10
             )
 
+            self._human_states_publisher = self.node.create_publisher(
+                Agents, self._namespace("human_states"), 10
+            )
+
             self._wall_markers_publisher = self.node.create_publisher(
                 MarkerArray,
                 self._namespace('wall_markers'),
@@ -703,6 +707,17 @@ class HunavHumanSimulator(
                     self._logger.debug(
                         f"Successfully registered {len(response.updated_agents.agents)} agents"
                     )
+                    updated_agents = response.updated_agents
+                    if not getattr(updated_agents, 'agents', None):
+                        self._logger.warning(
+                            "HuNav registration response contained no agents; publishing local agent container as fallback"
+                        )
+                        updated_agents = self._agents_container
+                    updated_agents.header.frame_id = "map"
+                    updated_agents.header.stamp = self.node.sim_time.to_msg()
+                    self._last_updated_agents = updated_agents
+                    if hasattr(self, '_human_states_publisher'):
+                        self._human_states_publisher.publish(updated_agents)
 
                     # # Update local agents with response data
                     # for updated_agent in response.updated_agents.agents:
@@ -911,7 +926,7 @@ class HunavHumanSimulator(
                             continue
 
                         # Use last updated agents as current agents
-                        if self._last_updated_agents:
+                        if self._last_updated_agents and getattr(self._last_updated_agents, 'agents', None):
                             current_agents = self._last_updated_agents
                         else:
                             current_agents = self._agents_container
@@ -938,12 +953,17 @@ class HunavHumanSimulator(
 
                         if response and response.updated_agents:
                             # Fix frame_id
-                            response.updated_agents.header.frame_id = "map"
-                            response.updated_agents.header.stamp = (
+                            updated_agents = response.updated_agents
+                            if not getattr(updated_agents, 'agents', None):
+                                updated_agents = current_agents
+                            updated_agents.header.frame_id = "map"
+                            updated_agents.header.stamp = (
                                 self.node.sim_time.to_msg()
                             )
 
-                            self._last_updated_agents = response.updated_agents
+                            self._last_updated_agents = updated_agents
+                            if hasattr(self, '_human_states_publisher'):
+                                self._human_states_publisher.publish(updated_agents)
 
                             self._logger.debug(
                                 f"Updated agents: {self._last_updated_agents}"
@@ -1020,6 +1040,15 @@ class HunavHumanSimulator(
                             )
 
                         self._arena_peds_publisher.publish(self._arena_pedestrians_container)
+                        if hasattr(self, '_human_states_publisher'):
+                            latest_agents = (
+                                self._last_updated_agents
+                                if self._last_updated_agents and getattr(self._last_updated_agents, 'agents', None)
+                                else self._agents_container
+                            )
+                            latest_agents.header.frame_id = "map"
+                            latest_agents.header.stamp = self.node.sim_time.to_msg()
+                            self._human_states_publisher.publish(latest_agents)
                         self._publish_wall_markers()
 
         except asyncio.CancelledError:

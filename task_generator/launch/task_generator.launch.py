@@ -82,6 +82,10 @@ def generate_launch_description():
     tm_obstacles = LaunchArgument(
         name="tm_obstacles",
     )
+    scenario_file = LaunchArgument(
+        name="scenario_file",
+        default_value="default",
+    )
     tm_modules = LaunchArgument(
         name="tm_modules",
     )
@@ -370,6 +374,7 @@ def generate_launch_description():
             {
                 # Keep CLI/launch-time external-server selection authoritative
                 # even when the task_generator YAML contains older defaults.
+                'task.scenario.file': scenario_file.param_value(str),
                 'internnav_external_server': internnav_external_server.param_value(bool),
                 'dual_vln_external_server': dual_vln_external_server.param_value(bool),
                 **enable_collision_monitor.param(bool),

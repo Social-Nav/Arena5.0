@@ -158,6 +158,9 @@ def generate_launch_description():
                 # task_generator publishes task_reset under its fully-qualified name;
                 # recorders use this to attribute samples to episodes.
                 'scenario_reset_topic': PythonExpression(['"', task_generator_node.substitution, '/task_reset"']),
+                # HuNav publishes a shared human state stream at the task-generator
+                # namespace, not below each robot namespace.
+                'human_states_topic': PythonExpression(['"', task_generator_node.substitution, '/human_states"']),
                 'start_topic': 'episode_start_pose',
                 'goal_topic': 'episode_goal_pose_metadata',
             }

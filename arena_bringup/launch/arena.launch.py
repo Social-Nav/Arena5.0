@@ -240,6 +240,11 @@ def generate_launch_description():
         name='tm_obstacles',
         default_value='random'
     )
+    scenario_file = LaunchArgument(
+        name='scenario_file',
+        default_value='default',
+        description='Scenario file/name forwarded to task.scenario.file'
+    )
     tm_modules = LaunchArgument(
         name='tm_modules',
         default_value='rviz_ui'  # TODO breaks launch if empty
@@ -385,6 +390,7 @@ def generate_launch_description():
                     **human.dict,
                     **tm_obstacles.dict,
                     **tm_robots.dict,
+                    **scenario_file.dict,
                     **tm_modules.dict,
                     **robot.dict,
                     **inter_planner.dict,

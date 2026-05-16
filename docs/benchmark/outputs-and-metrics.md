@@ -25,6 +25,14 @@ The newer InternNav path adds structured run artifacts on top of metrics:
 - `videos/episode_xxxx/*.mp4`
 - snapshot config files used for the run
 
+Social-navigation acceptance runs additionally write:
+
+- `human_states.csv`
+- `social_metrics.json`
+- `artifact_validation.json`
+- `frame_analysis/video_frame_analysis.json` when extracted-frame review has been performed
+- `frame_analysis/contact_sheet.jpg` for manual/agent video review
+
 `internnav_trace.jsonl` is the per-decision diagnostic stream.  Each line is a
 standalone JSON record that can be parsed after ROS and Isaac have exited.  The
 most useful fields are:
@@ -97,6 +105,22 @@ That run had `finished_observed: true`, `launch_returncode: 0`,
 `metrics_returncode: 0`, and `end_reason: finished`.  It intentionally did not
 produce videos because it was launched without `--save-eval-video`.
 
+### Recent social-navigation acceptance output
+
+The validated `hospital_1 + Ai2_Bot2 + HuNav + InternNav` social-navigation run wrote artifacts to:
+
+```text
+/home/ubuntu/arena_jazzy_ws/outputs/social_nav_acceptance_smoke7/20260516_081500_hospital_1_Ai2_Bot2_internnav
+```
+
+Acceptance highlights:
+
+- `artifact_validation.json`: `overall_pass=true`, `social_nav_ready=true`, `warnings=[]`
+- `social_metrics.json`: `humans_present=true`, `social_success=true`, `human_sample_count=54`, `max_humans_observed=14`, `odom_sample_count=98`, `large_teleports=[]`
+- InternNav diagnostics: `internnav_trace.jsonl` has 1019 records, including 142 `model_result` records; final status is `internnav_command`, `degraded=false`
+- Required videos: `ego_observation.mp4` 295 frames, `ego_debug_overlay.mp4` 242 frames, `sim_top_down.mp4` 294 frames, `map_top_down_follow.mp4` 295 frames
+- Frame review: `frame_analysis/video_frame_analysis.json` reports `overall_visual_pass=true` and `contact_sheet.jpg` was reviewed
+
 ## Codec policy
 
 The current recorder prefers H.264 MP4 output:
@@ -125,3 +149,6 @@ After a benchmark or InternNav eval run, check these first:
 - does `internnav_trace.jsonl` contain records for model, fallback, or camera-gate events?
 - does `internnav_diagnostic_summary.json` report forward progress and avoid rotate-heavy flags?
 - did `metrics.csv` get generated when metrics were requested?
+- for social-navigation runs, does `artifact_validation.json` report `overall_pass=true` and `social_nav_ready=true`?
+- for social-navigation runs, does `social_metrics.json` report non-empty human/odom samples and no large teleports?
+- if frame analysis was requested, does `frame_analysis/video_frame_analysis.json` report `overall_visual_pass=true`?

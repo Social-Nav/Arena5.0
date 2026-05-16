@@ -475,6 +475,7 @@ class BaseModelSimServer(Node):
         )
         self._publish_status(self._last_decision)
         self.create_timer(0.5, self._publish_readiness_status_if_ready)
+        self.create_timer(1.0, self._republish_last_status)
         self.get_logger().info(
             f'{self.SERVER_LABEL} wrapper active; current model instance={self.MODEL_INSTANCE}. '
             'InternNav inference notebook expects checkpoint clone from '
@@ -614,6 +615,11 @@ class BaseModelSimServer(Node):
             },
         )
         self._set_last_decision(decision)
+        self._publish_status(decision)
+
+    def _republish_last_status(self) -> None:
+        with self._state_lock:
+            decision = self._last_decision
         self._publish_status(decision)
 
     def _to_jsonable(self, value):

@@ -90,7 +90,11 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         self._pub_task_reset = self.create_publisher(
             Int16,
             self.service_namespace('task_reset'),
-            1,
+            QoSProfile(
+                depth=1,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            ),
         )
 
         self._pub_finished = self.create_publisher(

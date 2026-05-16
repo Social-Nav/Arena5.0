@@ -515,17 +515,24 @@ for line in sys.stdin:
             'intrinsic': camera_intrinsic_matrix(observation, rgb).tolist(),
             'look_down': bool(getattr(observation, 'look_down', False)),
         }
+        response: dict[str, Any] = {}
         try:
             assert self._proc.stdin is not None
             self._proc.stdin.write(json.dumps(payload) + '\n')
             self._proc.stdin.flush()
             response = self._read_response(timeout_sec=self._timeout)
         finally:
-            for path in (rgb_path, depth_path):
-                try:
-                    os.unlink(path)
-                except FileNotFoundError:
-                    pass
+            # Do not remove IPC arrays after a timeout: the worker subprocess may
+            # still be computing and has not necessarily opened the files yet.
+            # Removing them races the worker and turns a slow inference into a
+            # misleading FileNotFoundError on the next status update.
+            timed_out = response.get('status') == 'error' and 'timed out' in str(response.get('error', ''))
+            if not timed_out:
+                for path in (rgb_path, depth_path):
+                    try:
+                        os.unlink(path)
+                    except FileNotFoundError:
+                        pass
         if response.get('status') != 'ok':
             raise RuntimeError(response.get('error') or str(response))
         result = response.get('result')
