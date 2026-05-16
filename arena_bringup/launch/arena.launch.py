@@ -290,6 +290,21 @@ def generate_launch_description():
         default_value=PythonExpression(['"', train_config.substitution, '" != ""']),
         description='If true, RL env publishes cmd_vel directly; nav2 controller output is silenced. Implied when train_config is provided.'
     )
+    require_human_states_ready = LaunchArgument(
+        name='require_human_states_ready',
+        default_value='false',
+        description='If true, delay task_reset and goal release until a non-empty HuNav human_states message is observed.'
+    )
+    human_states_ready_timeout_sec = LaunchArgument(
+        name='human_states_ready_timeout_sec',
+        default_value='10.0',
+        description='Maximum wait for non-empty HuNav human_states before releasing an episode.'
+    )
+    episode_start_delay_sec = LaunchArgument(
+        name='episode_start_delay_sec',
+        default_value='0.0',
+        description='Additional post-reset delay before publishing task_reset and releasing navigation goals.'
+    )
 
     def create_task_generators(
         context: launch.LaunchContext,
@@ -430,6 +445,9 @@ def generate_launch_description():
                     'prefix': prefix,
                     'parameter_file': os.path.join(get_package_share_directory('arena_bringup'), 'configs', 'task_generator.yaml'),
                     **train_mode.dict,
+                    **require_human_states_ready.dict,
+                    **human_states_ready_timeout_sec.dict,
+                    **episode_start_delay_sec.dict,
                 }.items(),
             )
         ])

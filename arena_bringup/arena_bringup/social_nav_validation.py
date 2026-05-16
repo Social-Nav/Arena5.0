@@ -195,11 +195,27 @@ def _check_metrics(run_dir: Path, social_metrics: dict[str, Any] | None) -> dict
     metrics_path = run_dir / 'metrics.csv'
     social_path = run_dir / 'social_metrics.json'
     social_present = isinstance(social_metrics, dict)
+    base_metrics = social_metrics.get('base_metrics') if social_present else {}
+    base_first = base_metrics.get('first') if isinstance(base_metrics, dict) else {}
+    episode_result = str(base_first.get('result') or '') if isinstance(base_first, dict) else ''
+    task_success = episode_result == 'GOAL_REACHED'
+    try:
+        path_length_m = float(social_metrics.get('path_length_m') or 0.0) if social_present else 0.0
+    except Exception:
+        path_length_m = 0.0
     return {
-        "pass": metrics_path.exists() and social_present and bool(social_metrics.get('humans_present')),
+        "pass": (
+            metrics_path.exists()
+            and social_present
+            and bool(social_metrics.get('humans_present'))
+            and bool(social_metrics.get('social_success'))
+        ),
         "metrics_csv_present": metrics_path.exists(),
         "social_metrics_present": social_path.exists(),
         "social_success": social_metrics.get('social_success') if social_present else None,
+        "task_success": task_success,
+        "episode_result": episode_result or None,
+        "path_length_m": path_length_m,
         "required_social_fields_present": all(
             key in social_metrics for key in (
                 'min_human_distance_m',

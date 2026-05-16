@@ -165,7 +165,7 @@ rclpy.init()
 node = Node('internnav_eval_status_watcher')
 qos = QoSProfile(depth=1)
 qos.reliability = ReliabilityPolicy.RELIABLE
-qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
+qos.durability = DurabilityPolicy.VOLATILE
 state = {'last': None}
 
 def _cb(msg):
@@ -177,6 +177,7 @@ def _cb(msg):
         record = {
             'wall_time': node.get_clock().now().nanoseconds / 1e9,
             'topic': topic,
+            'event_type': 'model_result',
             'raw': msg.data,
         }
         try:
@@ -252,10 +253,14 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
         return None
 
     action_counts: dict[str, int] = {}
+    no_action_status_counts: dict[str, int] = {}
     statuses: dict[str, int] = {}
     rotate_count = 0
     forward_count = 0
     stop_count = 0
+    control_record_count = 0
+    model_command_record_count = 0
+    pre_episode_ready_records = 0
     yaw_sign_mismatch = 0
     yaw_sign_check_count = 0
     stale_records = 0
@@ -269,15 +274,40 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
     for rec in records:
         event_type = str(rec.get('event_type', 'model_result'))
         event_counts[event_type] = event_counts.get(event_type, 0) + 1
-        status = str(rec.get('status', ''))
+        payload = rec.get('parsed') if isinstance(rec.get('parsed'), dict) else rec
+        debug = payload.get('debug') if isinstance(payload.get('debug'), dict) else {}
+        status = str(payload.get('status', ''))
         statuses[status] = statuses.get(status, 0) + 1
-        action_info = rec.get('action') if isinstance(rec.get('action'), dict) else {}
+
+        # ``backend_ready`` status samples are intentionally emitted by the
+        # external InternNav server before the episode starts.  They prove the
+        # backend is alive, but they often contain old sensor-age diagnostics
+        # from the previous run and no command/action.  Keep them in the raw
+        # status counts, but exclude them from command and fault ratios so the
+        # summary reflects episode-control health instead of startup readiness.
+        if status == 'backend_ready':
+            pre_episode_ready_records += 1
+            continue
+
+        control_record_count += 1
+        if status == 'internnav_command':
+            model_command_record_count += 1
+        action_info = payload.get('action') if isinstance(payload.get('action'), dict) else {}
         action = action_info.get('selected')
+        if action is None:
+            action = debug.get('selected_action')
         if 'invert_discrete_turns' in action_info:
             invert_discrete_turns_values.add(bool(action_info.get('invert_discrete_turns')))
-        key = 'none' if action is None else str(action)
-        action_counts[key] = action_counts.get(key, 0) + 1
-        cmd = rec.get('command') if isinstance(rec.get('command'), dict) else {}
+        elif 'invert_discrete_turns' in debug:
+            invert_discrete_turns_values.add(bool(debug.get('invert_discrete_turns')))
+        if action is None:
+            no_action_status_counts[status] = no_action_status_counts.get(status, 0) + 1
+        else:
+            key = str(action)
+            action_counts[key] = action_counts.get(key, 0) + 1
+        cmd = payload.get('command') if isinstance(payload.get('command'), dict) else {}
+        if not cmd and ('linear_x' in payload or 'angular_z' in payload):
+            cmd = payload
         vx = float(cmd.get('linear_x', 0.0) or 0.0)
         wz = float(cmd.get('angular_z', 0.0) or 0.0)
         commands.append({'linear_x': vx, 'angular_z': wz})
@@ -287,9 +317,9 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
             forward_count += 1
         if abs(vx) <= 0.01 and abs(wz) <= 0.01:
             stop_count += 1
-        goal = rec.get('goal') if isinstance(rec.get('goal'), dict) else {}
-        dist = goal.get('goal_distance')
-        yaw = goal.get('yaw_error')
+        goal = payload.get('goal') if isinstance(payload.get('goal'), dict) else {}
+        dist = goal.get('goal_distance', debug.get('goal_distance'))
+        yaw = goal.get('yaw_error', debug.get('yaw_error'))
         if isinstance(dist, (float, int)):
             goal_distances.append(float(dist))
         if isinstance(yaw, (float, int)):
@@ -298,13 +328,18 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
                 yaw_sign_check_count += 1
                 if (float(yaw) * wz) < 0.0:
                     yaw_sign_mismatch += 1
-        obs = rec.get('observation') if isinstance(rec.get('observation'), dict) else {}
-        if not obs.get('rgb_available', False):
+        obs = payload.get('observation') if isinstance(payload.get('observation'), dict) else {}
+        missing_inputs = debug.get('missing_inputs') if isinstance(debug.get('missing_inputs'), list) else []
+        rgb_available = obs.get('rgb_available', debug.get('rgb_available'))
+        depth_available = obs.get('depth_available', debug.get('depth_available'))
+        if rgb_available is False or 'rgb' in missing_inputs:
             missing_rgb += 1
-        if not obs.get('depth_available', False):
+        if depth_available is False or 'depth' in missing_inputs:
             missing_depth += 1
         ages = obs.get('sensor_ages_sec') if isinstance(obs.get('sensor_ages_sec'), dict) else {}
-        stale_after = float(obs.get('stale_after_sec', 0.0) or 0.0)
+        if not ages and isinstance(debug.get('sensor_ages_sec'), dict):
+            ages = debug.get('sensor_ages_sec')
+        stale_after = float(obs.get('stale_after_sec', debug.get('stale_after_sec', 0.0)) or 0.0)
         if stale_after > 0.0:
             for value in ages.values():
                 if isinstance(value, (float, int)) and float(value) > stale_after:
@@ -316,15 +351,16 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
     last_distance = goal_distances[-1] if goal_distances else None
     min_distance = min(goal_distances) if goal_distances else None
     progress = (first_distance - last_distance) if first_distance is not None and last_distance is not None else None
-    rotate_ratio = rotate_count / total if total else 0.0
-    forward_ratio = forward_count / total if total else 0.0
+    ratio_total = control_record_count or total
+    rotate_ratio = rotate_count / ratio_total if ratio_total else 0.0
+    forward_ratio = forward_count / ratio_total if ratio_total else 0.0
     yaw_sign_mismatch_ratio = yaw_sign_mismatch / yaw_sign_check_count if yaw_sign_check_count else 0.0
     flags = []
     if rotate_ratio >= 0.65 and (progress is None or progress < 0.5):
         flags.append('rotate_heavy_low_progress')
     if yaw_sign_mismatch_ratio >= 0.45:
         flags.append('possible_action_or_yaw_sign_mismatch')
-    if stale_records / total >= 0.2:
+    if ratio_total and stale_records / ratio_total >= 0.2:
         flags.append('possible_stale_observations')
     if missing_rgb or missing_depth:
         flags.append('missing_camera_inputs')
@@ -332,8 +368,12 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
     summary = {
         'trace_path': trace_path,
         'record_count': total,
+        'control_record_count': control_record_count,
+        'model_command_record_count': model_command_record_count,
+        'pre_episode_ready_records': pre_episode_ready_records,
         'event_counts': event_counts,
         'action_counts': action_counts,
+        'no_action_status_counts': no_action_status_counts,
         'status_counts': statuses,
         'invert_discrete_turns_values': sorted(invert_discrete_turns_values),
         'command_stats': {
@@ -802,7 +842,12 @@ class EvalVideoRecorder(Node):
 
         event_qos = QoSProfile(depth=1)
         event_qos.reliability = ReliabilityPolicy.RELIABLE
-        event_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        # The eval recorder is started before the launch process, so it should
+        # observe the new run's task_reset live.  Using TRANSIENT_LOCAL here can
+        # replay a stale latched reset from a previous task_generator process on
+        # the same topic, causing videos to start during scene/robot/pedestrian
+        # loading instead of at the benchmark episode boundary.
+        event_qos.durability = DurabilityPolicy.VOLATILE
 
         self.create_subscription(Int16, task_reset_topic, self._on_task_reset, event_qos)
         if scenario_reset_topic and scenario_reset_topic != task_reset_topic:
@@ -1631,6 +1676,9 @@ def main() -> int:
         f'timeout:={args.timeout}',
         f'headless:={args.headless}',
         f'log_level:={args.log_level}',
+        f'require_human_states_ready:={str(args.social_eval and args.human == "hunav").lower()}',
+        'human_states_ready_timeout_sec:=20.0',
+        'episode_start_delay_sec:=1.0',
         f'vln_instruction:={args.vln_instruction}',
         f'dual_vln_mode:={args.dual_vln_mode}',
         f'dual_vln_device:={args.dual_vln_device}',
@@ -1813,11 +1861,9 @@ def main() -> int:
     env['ARENA_EVAL_INTERNNAV_INFERENCE_TIMEOUT_SEC'] = str(args.dual_vln_inference_timeout_sec)
     env['ARENA_EVAL_INTERNNAV_TRACE_PATH'] = internnav_trace_path
     env['ARENA_INTERNNAV_EXTERNAL_SERVER'] = '1' if args.internnav_external_server else '0'
-    # The current Isaac Ai2_Bot2 differential-drive graph reports ROS odom in the
-    # expected ENU convention, but the InternNav discrete turn stream observed in
-    # hospital_1 consistently chooses action=2 while the goal yaw error is
-    # negative.  Keep the correction scoped to this eval integration by default;
-    # explicit env/CLI settings take precedence for reproducible experiments.
+    # Keep the resolved turn-sign policy explicit in the launched environment so
+    # external-server and in-process InternNav runs use the same reproducible
+    # interpretation.  CLI/env overrides still take precedence for diagnostics.
     if args.internnav_invert_discrete_turns != 'auto':
         env['ARENA_EVAL_INTERNNAV_INVERT_DISCRETE_TURNS'] = str(resolved_invert_discrete_turns).lower()
     elif (
@@ -1865,7 +1911,7 @@ def main() -> int:
         args.task_reset_topic,
         robot_scenario_reset_topic,
     )
-    status_proc = _start_status_watcher(env, args.dual_vln_status_topic, dual_vln_status_path)
+    status_proc = _start_status_watcher(env, args.dual_vln_status_topic, dual_vln_status_path, internnav_trace_path)
     launch_proc = subprocess.Popen(
         launch_cmd,
         env=env,

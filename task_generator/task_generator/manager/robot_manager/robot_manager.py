@@ -438,6 +438,13 @@ class RobotManager(NodeInterface):
                     "World geometry did not report ready before goal publish; proceeding to avoid hanging the eval."
                 )
 
+        wait_for_episode_entities_ready = getattr(self.node, 'wait_for_episode_entities_ready', None)
+        if callable(wait_for_episode_entities_ready):
+            if not await wait_for_episode_entities_ready(timeout_s=120.0):
+                self._logger.warn(
+                    "Episode entities did not report ready before goal publish; proceeding to avoid hanging the eval."
+                )
+
         if not await self._wait_for_sim_tick(timeout_s=1.5):
             self._logger.warn(
                 "Simulation time did not advance before goal publish; nav may use stale pose."

@@ -13,6 +13,7 @@ import std_srvs.srv as std_srvs
 import task_generator_msgs.srv
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.shared import Namespace
+from hunav_msgs.msg import Agents
 from std_msgs.msg import Empty, Int16, String
 from std_srvs.srv import Empty as EmptySrv
 
@@ -71,6 +72,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         self._finished_published = False
         self._world_geometry_spawned = False
         self._world_geometry_ready: asyncio.Event = asyncio.Event()
+        self._episode_entities_ready: asyncio.Event = asyncio.Event()
+        self._human_states_ready: asyncio.Event = asyncio.Event()
+        self._last_human_states_count = 0
         self._task: Task
 
         # VLN instruction interface (published per-episode)
@@ -107,7 +111,20 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             ),
         )
 
+        self.create_subscription(
+            Agents,
+            self.service_namespace('human_states'),
+            self._human_states_callback,
+            10,
+        )
+
         self._check_status_task: asyncio.Task
+
+    def _human_states_callback(self, msg: Agents) -> None:
+        agent_count = len(getattr(msg, 'agents', []) or [])
+        self._last_human_states_count = agent_count
+        if agent_count > 0:
+            self._human_states_ready.set()
 
     async def setup(self):
         self._logger.info("Setting up Task Generator Node")
@@ -224,9 +241,44 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         except asyncio.TimeoutError:
             return False
 
+    async def wait_for_episode_entities_ready(self, timeout_s: float) -> bool:
+        if self._episode_entities_ready.is_set():
+            return True
+        try:
+            await asyncio.wait_for(self._episode_entities_ready.wait(), timeout=max(float(timeout_s), 0.0))
+            return True
+        except asyncio.TimeoutError:
+            return False
+
+    async def _wait_for_human_states_ready_if_required(self) -> None:
+        require_human_states_ready = self.rosparam[bool].get('require_human_states_ready', False)
+        timeout_s = max(0.0, self.rosparam[float].get('human_states_ready_timeout_sec', 10.0))
+        if not require_human_states_ready or timeout_s <= 0.0:
+            return
+
+        if self.conf.Arena.HUMAN.value != Constants.HumanSimulator.HUNAV:
+            return
+
+        if self._human_states_ready.is_set():
+            return
+
+        self.get_logger().info(
+            f"Waiting up to {timeout_s:.1f}s for non-empty HuNav human_states before releasing episode start"
+        )
+        try:
+            await asyncio.wait_for(self._human_states_ready.wait(), timeout=timeout_s)
+        except asyncio.TimeoutError:
+            self.get_logger().warn(
+                "Timed out waiting for non-empty HuNav human_states before episode start; "
+                "continuing to avoid hanging the eval."
+            )
+
     # RUNTIME
     async def _reset_task_unlocked(self, **kwargs):
         self._start_time = self.sim_time
+        self._episode_entities_ready.clear()
+        self._human_states_ready.clear()
+        self._last_human_states_count = 0
 
         await self._simulator.before_reset_task()
 
@@ -234,8 +286,22 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
 
         await self._task.reset(**kwargs)
 
+        await self._wait_for_human_states_ready_if_required()
+
         await self._simulator.after_reset_task()
 
+        episode_start_delay_sec = max(0.0, self.rosparam[float].get('episode_start_delay_sec', 0.0))
+        if episode_start_delay_sec > 0.0:
+            self.get_logger().info(
+                f"Delaying episode start by {episode_start_delay_sec:.1f}s after reset readiness"
+            )
+            await asyncio.sleep(episode_start_delay_sec)
+
+        mark_episode_started = getattr(self._task, 'mark_episode_started', None)
+        if callable(mark_episode_started):
+            mark_episode_started()
+
+        self._episode_entities_ready.set()
         self._pub_task_reset.publish(Int16(data=self._number_of_resets))
 
         # Publish instruction only after the simulator reports post-reset ready so

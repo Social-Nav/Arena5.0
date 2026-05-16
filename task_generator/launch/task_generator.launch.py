@@ -250,6 +250,18 @@ def generate_launch_description():
         name="train_mode",
         default_value="false",
     )
+    require_human_states_ready = LaunchArgument(
+        name="require_human_states_ready",
+        default_value="false",
+    )
+    human_states_ready_timeout_sec = LaunchArgument(
+        name="human_states_ready_timeout_sec",
+        default_value="10.0",
+    )
+    episode_start_delay_sec = LaunchArgument(
+        name="episode_start_delay_sec",
+        default_value="0.0",
+    )
 
     map_server_node = launch.actions.IncludeLaunchDescription(
         launch.launch_description_sources.PythonLaunchDescriptionSource(
@@ -368,6 +380,9 @@ def generate_launch_description():
                 **prefix.str_param,
                 **debug.param(bool),
                 **train_mode.param(bool),
+                **require_human_states_ready.param(bool),
+                **human_states_ready_timeout_sec.param(float),
+                **episode_start_delay_sec.param(float),
             },
             {"use_sim_time": False},
             parameter_file.substitution,

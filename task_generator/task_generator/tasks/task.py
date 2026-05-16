@@ -298,6 +298,12 @@ class Task(_TaskRegistry, NodeInterface, Props_):
         self._force_reset = False
         await self._reset_task(**kwargs)
 
+    def mark_episode_started(self) -> None:
+        """Mark the moment the reset has been released to evaluators/controllers."""
+        marker = getattr(self.__tm_robots, 'mark_episode_started', None)
+        if callable(marker):
+            marker()
+
     @property
     async def is_done(self) -> bool:
         """

@@ -23,6 +23,20 @@ class TM_Robots(TaskMode):
         self._last_reset = self._PROPS.clock.clock.sec
         self._last_reset_wall = time.monotonic()
 
+    def mark_episode_started(self) -> None:
+        """Start timeout accounting at the released episode boundary.
+
+        In Isaac-backed evals the task reset can spend substantial wall-clock
+        time waiting for world geometry, robot/camera readiness, HuNav agents,
+        and InternNav readiness before ``task_reset`` is published and the
+        navigation goal is released.  Counting that readiness window against the
+        robot timeout makes the first episode finish almost immediately after it
+        starts on slow simulator/model runs.  Refresh the timeout origin at the
+        public episode-start edge instead.
+        """
+        self._last_reset = self._PROPS.clock.clock.sec
+        self._last_reset_wall = time.monotonic()
+
     async def set_position(self, pose: Pose):
         """
         Set the position of all robots.
