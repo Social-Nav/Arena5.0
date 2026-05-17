@@ -141,8 +141,14 @@ class RobotManager(NodeInterface):
         self._camera_ready_topics: dict[str, str] = {}
         self._camera_ready_seen: dict[str, bool] = {}
         self._dual_vln_status_topic: str | None = None
+        self._dual_vln_status_subscription = None
         self._dual_vln_status: str = 'startup'
         self._dual_vln_status_wall_time: float = 0.0
+        self._direct_dual_vln_client: rclpy.client.Client | None = None
+        self._direct_dual_vln_timer: rclpy.timer.Timer | None = None
+        self._direct_dual_vln_future = None
+        self._direct_dual_vln_status_bridge_active = False
+        self._direct_dual_vln_last_status_twist: geometry_msgs.msg.Twist | None = None
 
         self._publish_goal_task: typing.Optional[asyncio.Task] = None
 
@@ -200,6 +206,7 @@ class RobotManager(NodeInterface):
         )
 
         self._setup_camera_readiness_subscriptions()
+        self._ensure_dual_vln_status_subscription()
 
         await self._launch_robot(node_names)
 
@@ -456,6 +463,7 @@ class RobotManager(NodeInterface):
             )
 
         self._reset_navigation_readiness_state()
+        self._ensure_dual_vln_status_subscription()
         await self._wait_for_camera_ready_before_navigation(timeout_s=90.0)
         await self._wait_for_dual_vln_status_before_navigation(timeout_s=120.0)
         await self._wait_for_dual_vln_command_service_before_navigation(timeout_s=180.0)
@@ -472,6 +480,7 @@ class RobotManager(NodeInterface):
         self._goal_pub.publish(goal_msg)
         self._last_goal_msg = goal_msg
         self._goal_republish_ticks = 10
+        self._start_direct_dual_vln_command_bridge()
 
         if self._goal_timer is None:
             self._goal_timer = self.node.create_timer(
@@ -483,7 +492,7 @@ class RobotManager(NodeInterface):
         self._goal_start_time = self.node.sim_time
 
     def _default_camera_topics_for_readiness(self) -> dict[str, str] | None:
-        if str(getattr(self._robot, 'local_planner', '')).strip().lower() != 'dual_vln':
+        if not self._is_dual_vln_robot():
             return None
 
         model_name = str(self.model_name or '').strip().lower()
@@ -506,7 +515,7 @@ class RobotManager(NodeInterface):
         }
 
     def _configured_camera_topics_for_readiness(self) -> dict[str, str] | None:
-        if str(getattr(self._robot, 'local_planner', '')).strip().lower() != 'dual_vln':
+        if not self._is_dual_vln_robot():
             return None
 
         defaults = self._default_camera_topics_for_readiness() or {}
@@ -529,6 +538,16 @@ class RobotManager(NodeInterface):
             self._camera_ready_seen = {key: False for key in self._camera_ready_seen}
         self._dual_vln_status = 'startup'
         self._dual_vln_status_wall_time = 0.0
+        self._direct_dual_vln_last_status_twist = None
+
+    def _is_dual_vln_robot(self) -> bool:
+        """Return true when this robot is configured for the dual_vln planner."""
+        candidates = [getattr(self._robot, 'local_planner', '')]
+        try:
+            candidates.append(self._get_compat_rosparam(str, 'local_planner', 'local_planner', ''))
+        except Exception:
+            pass
+        return any(str(value).strip().lower() == 'dual_vln' for value in candidates)
 
     def _setup_camera_readiness_subscriptions(self) -> None:
         camera_topics = self._configured_camera_topics_for_readiness()
@@ -564,11 +583,19 @@ class RobotManager(NodeInterface):
             sensor_qos,
         )
 
+        self._ensure_dual_vln_status_subscription()
+
+    def _ensure_dual_vln_status_subscription(self) -> None:
+        if self._dual_vln_status_subscription is not None:
+            return
+        if not self._is_dual_vln_robot():
+            return
+
         self._dual_vln_status_topic = str(self.namespace('internnav', 'status'))
         status_qos = QoSProfile(depth=1)
         status_qos.reliability = ReliabilityPolicy.RELIABLE
         status_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
-        self.node.create_subscription(
+        self._dual_vln_status_subscription = self.node.create_subscription(
             String,
             self._dual_vln_status_topic,
             self._on_dual_vln_status,
@@ -586,6 +613,43 @@ class RobotManager(NodeInterface):
             return
         self._dual_vln_status = str(payload.get('status', '') or 'unknown')
         self._dual_vln_status_wall_time = time.monotonic()
+        self._update_direct_dual_vln_status_twist(payload)
+        self._publish_direct_dual_vln_status_command(payload)
+
+    def _update_direct_dual_vln_status_twist(self, payload: dict) -> None:
+        if str(payload.get('status', '') or '') != 'internnav_command':
+            return
+        try:
+            linear_x = float(payload.get('linear_x', 0.0) or 0.0)
+            angular_z = float(payload.get('angular_z', 0.0) or 0.0)
+        except (TypeError, ValueError):
+            return
+        if not (math.isfinite(linear_x) and math.isfinite(angular_z)):
+            return
+
+        twist = geometry_msgs.msg.Twist()
+        twist.linear.x = linear_x
+        twist.angular.z = angular_z
+        self._direct_dual_vln_last_status_twist = twist
+
+    def _publish_direct_dual_vln_status_command(self, payload: dict) -> None:
+        """Publish InternNav status commands directly to cmd_vel when active.
+
+        Nav2's dual_vln controller may successfully call get_command and update
+        the InternNav status stream while still not emitting a Twist on cmd_vel.
+        The status payload already contains the converted linear/angular command,
+        so mirror it to cmd_vel during an active dual_vln episode.
+        """
+        if not self._direct_dual_vln_status_bridge_active:
+            return
+        if self._cmd_vel_pub is None or self._is_goal_reached or self._nav_stop_ticks > 0:
+            return
+        if str(payload.get('status', '') or '') != 'internnav_command':
+            return
+        twist = self._direct_dual_vln_last_status_twist
+        if twist is None:
+            return
+        self._cmd_vel_pub.publish(twist)
 
     async def _wait_for_camera_ready_before_navigation(self, *, timeout_s: float) -> bool:
         if not self._camera_ready_seen:
@@ -615,7 +679,7 @@ class RobotManager(NodeInterface):
         return False
 
     async def _wait_for_dual_vln_status_before_navigation(self, *, timeout_s: float) -> bool:
-        if str(getattr(self._robot, 'local_planner', '')).strip().lower() != 'dual_vln':
+        if not self._is_dual_vln_robot():
             return True
 
         status_topic = self._dual_vln_status_topic or str(self.namespace('internnav', 'status'))
@@ -640,7 +704,7 @@ class RobotManager(NodeInterface):
         return False
 
     async def _wait_for_dual_vln_command_service_before_navigation(self, *, timeout_s: float) -> bool:
-        if str(getattr(self._robot, 'local_planner', '')).strip().lower() != 'dual_vln':
+        if not self._is_dual_vln_robot():
             return True
 
         service_name = str(self.namespace('get_command'))
@@ -662,6 +726,67 @@ class RobotManager(NodeInterface):
                 self.node.destroy_client(client)
             except Exception:
                 pass
+
+    def _start_direct_dual_vln_command_bridge(self) -> None:
+        """Poll dual_vln get_command and publish its Twist directly.
+
+        In external InternNav Isaac evals the model server can produce valid
+        command responses while Nav2's controller path emits no cmd_vel.  The
+        namespaced cmd_vel topic is the command source consumed by both the
+        Isaac robot graph and the Arena fallback odom bridge, so publish the
+        service response directly for the active episode.
+        """
+        if self._cmd_vel_pub is None:
+            return
+        self._ensure_dual_vln_status_subscription()
+        if self._direct_dual_vln_client is None:
+            self._direct_dual_vln_client = self.node.create_client(GetCommand, str(self.namespace('get_command')))
+        self._direct_dual_vln_status_bridge_active = True
+        if self._direct_dual_vln_timer is None:
+            self._logger.info('Starting direct dual_vln get_command -> cmd_vel bridge')
+            self._direct_dual_vln_timer = self.node.create_timer(0.1, self._direct_dual_vln_timer_cb)
+
+    def _stop_direct_dual_vln_command_bridge(self) -> None:
+        if self._direct_dual_vln_timer is not None:
+            try:
+                self._direct_dual_vln_timer.cancel()
+                self._direct_dual_vln_timer.destroy()
+            except Exception:
+                pass
+            self._direct_dual_vln_timer = None
+        self._direct_dual_vln_future = None
+        self._direct_dual_vln_status_bridge_active = False
+
+    def _direct_dual_vln_timer_cb(self) -> None:
+        if self._cmd_vel_pub is None or self._is_goal_reached or self._nav_stop_ticks > 0:
+            return
+        if self._direct_dual_vln_last_status_twist is not None:
+            self._cmd_vel_pub.publish(self._direct_dual_vln_last_status_twist)
+        client = self._direct_dual_vln_client
+        if client is None:
+            return
+        if self._direct_dual_vln_future is not None and not self._direct_dual_vln_future.done():
+            return
+        if not client.service_is_ready():
+            return
+
+        future = client.call_async(GetCommand.Request())
+        self._direct_dual_vln_future = future
+
+        def _publish_response(done_future) -> None:
+            if self._cmd_vel_pub is None or self._is_goal_reached or self._nav_stop_ticks > 0:
+                return
+            try:
+                response = done_future.result()
+                twist = getattr(response, 'twist', None)
+                if twist is None:
+                    return
+                self._direct_dual_vln_last_status_twist = twist
+                self._cmd_vel_pub.publish(twist)
+            except Exception as exc:
+                self._logger.warn(f'direct dual_vln get_command bridge failed: {exc}')
+
+        future.add_done_callback(_publish_response)
 
     def _republish_goal_timer_cb(self) -> None:
         if self._goal_republish_ticks <= 0 or self._last_goal_msg is None:
@@ -877,7 +1002,7 @@ class RobotManager(NodeInterface):
                 'enable_collision_monitor': str(
                     self.node.rosparam[bool].get(
                         'enable_collision_monitor',
-                        self._robot.local_planner != 'dual_vln',
+                        not self._is_dual_vln_robot(),
                     )
                 ).lower(),
             }
@@ -995,6 +1120,7 @@ class RobotManager(NodeInterface):
             # On any terminal nav status (succeeded, aborted, canceled):
             # publish an immediate zero and arm the timer to keep publishing
             # zeros for 1.5s to flush any stale velocity from the pipeline.
+            self._stop_direct_dual_vln_command_bridge()
             if self._cmd_vel_pub is not None:
                 self._cmd_vel_pub.publish(geometry_msgs.msg.Twist())
             self._nav_stop_ticks = 15  # 1.5 s at 10 Hz
@@ -1013,6 +1139,14 @@ class RobotManager(NodeInterface):
         if self._goal_timer is not None:
             self._goal_timer.cancel()
             self._goal_timer.destroy()
+            self._goal_timer = None
+        self._stop_direct_dual_vln_command_bridge()
+        if self._direct_dual_vln_client is not None:
+            try:
+                self.node.destroy_client(self._direct_dual_vln_client)
+            except Exception:
+                pass
+            self._direct_dual_vln_client = None
         if self._stop_vel_timer is not None:
             self._stop_vel_timer.cancel()
             self._stop_vel_timer.destroy()

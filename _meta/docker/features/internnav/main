@@ -72,6 +72,14 @@ default_depth_ckpt(){
     printf '%s\n' "${INTERNNAV_DEPTH_ANYTHING_CKPT:-/opt/arena_ws/deps/models/depth-anything-v2-metric-hypersim-small/depth_anything_v2_metric_hypersim_vits.pth}"
 }
 
+ros_double(){
+    case "$1" in
+        *.*|*e*|*E*) printf '%s\n' "$1" ;;
+        ''|*[!0-9+-]*) printf '%s\n' "$1" ;;
+        *) printf '%s.0\n' "$1" ;;
+    esac
+}
+
 install_runtime(){
     set -e
 
@@ -245,6 +253,10 @@ launch(){
             *) echo "Unknown launch option: $1" >&2; return 1 ;;
         esac
     done
+
+    visualization_rate_hz="$(ros_double "$visualization_rate_hz")"
+    inference_rate_hz="$(ros_double "$inference_rate_hz")"
+    inference_timeout_sec="$(ros_double "$inference_timeout_sec")"
 
     arena_docker_compose up -d --remove-orphans --no-recreate internnav
     trap 'arena_docker_compose stop internnav || true' EXIT INT TERM
