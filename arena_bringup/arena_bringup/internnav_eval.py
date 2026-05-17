@@ -1710,6 +1710,8 @@ def main() -> int:
     parser.add_argument('--tm-robots', default='random')
     parser.add_argument('--tm-obstacles', default='random')
     parser.add_argument('--scenario-file', default='')
+    parser.add_argument('--scenario-config-id', default='')
+    parser.add_argument('--scenario-config-path', default='')
     parser.add_argument('--social-eval', action='store_true', help='Enable stricter social-navigation metrics and artifact validation expectations.')
     parser.add_argument('--headless', default='2')
     parser.add_argument('--log-level', default='warn')
@@ -1937,6 +1939,8 @@ def main() -> int:
             'tm_robots': args.tm_robots,
             'tm_obstacles': args.tm_obstacles,
             'scenario_file': args.scenario_file,
+            'scenario_config_id': args.scenario_config_id,
+            'scenario_config_path': args.scenario_config_path,
             'social_eval': args.social_eval,
             'social_eval_expectations': {
                 'world': 'hospital_1',

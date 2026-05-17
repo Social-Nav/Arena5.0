@@ -53,6 +53,9 @@ setup(
             'internnav_eval = arena_bringup.internnav_eval:main',
             'dual_vln_eval = arena_bringup.internnav_eval:main',
             'social_nav_validation = arena_bringup.social_nav_validation:main',
+            'social_nav_scenario_validate = arena_bringup.social_nav_scenario:main',
+            'social_nav_scenario_eval = arena_bringup.social_nav_scenario:eval_main',
+            'social_nav_metrics_aggregate = arena_bringup.social_nav_metrics_aggregate:main',
         ],
         'launch_ros.node_action': [
             'NodeLogLevelExtension = arena_bringup.extensions.NodeLogLevelExtension:NodeLogLevelExtension',

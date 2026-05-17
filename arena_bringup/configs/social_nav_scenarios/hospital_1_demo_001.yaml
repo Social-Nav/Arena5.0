@@ -1,0 +1,141 @@
+# Sample benchmark-level scenario config for the short-term Dynamic Social VLN
+# paper target.  This file intentionally sits above Arena's native world/scenario
+# YAMLs: it references the reusable world geometry and HuNav scenario assets, then
+# adds benchmark semantics, natural-language task metadata, expected artifacts,
+# and metric gates.
+
+schema_version: 0.1
+id: hospital_1_demo_001
+name: Hospital corridor dynamic social VLN demo
+description: >-
+  Canonical single-episode scenario matching the validated hospital_1 + Ai2_Bot2
+  + HuNav + InternNav/dual_vln pipeline.  The robot navigates through a dynamic
+  hospital corridor while maintaining basic social safety constraints around
+  pedestrians.
+
+world:
+  name: hospital_1
+  world_config: package://arena_simulation_setup/worlds/hospital_1/world.yaml
+  map_yaml: package://arena_simulation_setup/worlds/hospital_1/map/map.yaml
+  native_scenario:
+    name: default
+    file: package://arena_simulation_setup/worlds/hospital_1/scenarios/default/scenario.yaml
+  semantic_regions:
+    start_region: reception_waiting_area
+    goal_region: central_hallway_north
+    interaction_region: central_hallway
+
+robot:
+  name: Ai2_Bot2
+  local_planner: dual_vln
+  start:
+    frame: map
+    pose_xy_yaw: [2.850000046, 26.750000402, -0.694299674]
+  goal:
+    frame: map
+    pose_xy_yaw: [7.000000108, 29.550000444, -0.318417648]
+    tolerance_m: 0.45
+  command_interface:
+    cmd_vel_topic: /task_generator_node/Ai2_Bot2/cmd_vel
+    odom_topic: /task_generator_node/Ai2_Bot2/odom
+    goal_topic: /task_generator_node/Ai2_Bot2/episode_goal_pose
+
+language:
+  instruction_id: hospital_1_demo_001_keep_distance
+  instruction: >-
+    Navigate to the target room through the hospital corridor while keeping a
+    safe distance from pedestrians.
+  instruction_type: social_distance_goal
+  rephrases:
+    - Go to the target room and avoid getting too close to people in the corridor.
+    - Move through the hallway toward the goal while maintaining a safe distance from pedestrians.
+
+humans:
+  simulator: hunav
+  density_level: high
+  expected_count: 14
+  source: native_scenario
+  native_scenario_file: package://arena_simulation_setup/worlds/hospital_1/scenarios/default/scenario.yaml
+  behavior_tree_dir: package://arena_simulation_setup/worlds/hospital_1/scenarios/default
+  notes:
+    - HuNav's synthetic robot agent id=0 with empty name must be filtered from human_states.
+    - Dynamic actor positions and waypoints are inherited from the native Arena scenario file.
+
+task_spec:
+  type: bddl_like_social_nav
+  predicates:
+    entities:
+      robot: Ai2_Bot2
+      humans: all_hunav_pedestrians
+      goal: robot.goal
+    success:
+      - goal_reached(robot, goal)
+      - robot_moved(robot, min_path_length_m=0.1)
+    social_constraints:
+      - human_collision_count == 0
+      - near_miss_count == 0
+      - personal_space_violation_time_sec == 0.0
+      - min_human_distance_m >= 0.25
+    failure:
+      - timeout
+      - no_motion
+      - collision
+      - missing_humans
+      - missing_required_artifacts
+
+evaluation:
+  timeout_sec: 120.0
+  repetitions: 1
+  random_seed: null
+  metrics:
+    task:
+      - episode_result
+      - path_length_m
+      - goal_progress_m
+      - robot_moved
+      - timeout
+    social:
+      - social_success
+      - min_human_distance_m
+      - near_miss_count
+      - human_collision_count
+      - personal_space_violation_time_sec
+      - crowd_freezing_time_sec
+    diagnostics:
+      - internnav_status
+      - internnav_trace_summary
+      - command_stats
+      - stale_camera_count
+      - artifact_validation
+  pass_criteria:
+    artifact_validation_overall_pass: true
+    humans_present: true
+    min_humans_observed: 1
+    robot_moved_min_path_length_m: 0.1
+    require_goal_reached: true
+    require_social_success: true
+
+artifacts_required:
+  - run_manifest.yaml
+  - params.yaml
+  - start_goal.csv
+  - odom.csv
+  - cmd_vel.csv
+  - human_states.csv
+  - metrics.csv
+  - social_metrics.json
+  - artifact_validation.json
+  - internnav_status.json
+  - internnav_diagnostic_summary.json
+  - videos/episode_0000/ego_observation.mp4
+  - videos/episode_0000/map_top_down_follow.mp4
+
+runner_hint:
+  command: >-
+    ros2 run arena_bringup social_nav_scenario_eval
+    --scenario-config src/Arena/arena_bringup/configs/social_nav_scenarios/hospital_1_demo_001.yaml
+    --output-prefix hospital_1_demo_001 -- --internnav-external-server
+  implementation_status: runner_wrapper_available
+  notes:
+    - social_nav_scenario_eval validates this overlay and translates it into internnav_eval arguments.
+    - Native Arena world/scenario YAMLs still provide actual geometry and HuNav actor spawn/behavior data.
