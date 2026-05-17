@@ -1,5 +1,5 @@
 site_name: Arena Benchmark Documentation
-site_description: English documentation for the Arena benchmark stack, evaluation flows, and Isaac/Gazebo workflows.
+site_description: English documentation for the Arena benchmark stack, Dynamic Social VLN scenarios, evaluation flows, and Isaac/Gazebo workflows.
 site_url: https://social-nav.github.io/arena-benchmark/
 repo_url: https://github.com/voshch/Arena
 repo_name: voshch/Arena
@@ -16,8 +16,8 @@ nav:
   - Benchmark:
       - Overview: benchmark/overview.md
       - Architecture: benchmark/architecture.md
-      - Running Benchmarks: benchmark/running-benchmarks.md
-      - Outputs and Metrics: benchmark/outputs-and-metrics.md
+      - Running Benchmarks and Social VLN Eval: benchmark/running-benchmarks.md
+      - Outputs, Social Metrics, and Aggregation: benchmark/outputs-and-metrics.md
       - Troubleshooting: benchmark/troubleshooting.md
 markdown_extensions:
   - admonition

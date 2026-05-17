@@ -35,6 +35,96 @@ arena launch sim:=isaac robot:=Ai2_Bot2 world:=hospital_1
 
 The specialized entrypoint is `arena_bringup/arena_bringup/internnav_eval.py`.
 
+## Dynamic Social VLN scenario config
+
+Dynamic Social VLN runs can be launched from a top-level scenario YAML overlay.
+The sample config is:
+
+```text
+arena_bringup/configs/social_nav_scenarios/hospital_1_demo_001.yaml
+```
+
+This file is an overlay, not an Arena world replacement.  It references the
+native Arena assets and adds benchmark-level semantics:
+
+| Section | Purpose |
+| --- | --- |
+| `schema_version`, `id`, `name`, `description` | Stable identity and human-readable metadata. |
+| `world` | World name, `world.yaml`, `map.yaml`, native Arena scenario file, and optional semantic region names. |
+| `robot` | Robot name, planner, start pose, goal pose, tolerance, and expected command/odom/goal topics. |
+| `language` | Natural-language VLN instruction, instruction type, and optional rephrases. |
+| `humans` | Human simulator (`hunav`), expected actor count, source scenario, and behavior-tree references. |
+| `task_spec` | BDDL-like predicates for success, social constraints, and failure tags. |
+| `evaluation` | Timeout, repetitions, metric groups, and pass criteria. |
+| `artifacts_required` | Files/videos that must exist for an accepted run. |
+
+Validate the overlay before running a long simulation:
+
+```bash
+cd /home/ubuntu/arena_jazzy_ws
+PYTHONPATH=src/Arena/arena_bringup \
+python3 -m arena_bringup.social_nav_scenario \
+  src/Arena/arena_bringup/configs/social_nav_scenarios/hospital_1_demo_001.yaml
+```
+
+After the package is built and sourced, the installed console script is:
+
+```bash
+ros2 run arena_bringup social_nav_scenario_validate \
+  src/Arena/arena_bringup/configs/social_nav_scenarios/hospital_1_demo_001.yaml
+```
+
+For CI or launch review, use `--dry-run` to inspect the derived `internnav_eval`
+arguments without starting Isaac or ROS launch processes:
+
+```bash
+ros2 run arena_bringup social_nav_scenario_eval \
+  --scenario-config src/Arena/arena_bringup/configs/social_nav_scenarios/hospital_1_demo_001.yaml \
+  --dry-run \
+  --no-save-eval-video \
+  -- --internnav-external-server --headless 2
+```
+
+The wrapper validates the YAML and translates it into the existing
+`internnav_eval` contract, including `--social-eval`, `--world`, `--robot`,
+`--local-planner`, `--scenario-file`, `--internnav-mode internnav`, the VLN
+instruction, and scenario metadata stored later in `run_manifest.yaml`.
+
+Run these commands from the Arena container, not from the host shell.  The
+validated Docker image is built from `osrf/ros:jazzy-desktop` and contains
+`/opt/ros/jazzy/setup.bash`; a host machine may still have only `/opt/ros/humble`
+installed.  A quick sanity check is:
+
+```bash
+docker exec arena-arena_jazzy_ws-arena-1 bash -lc \
+  'source /opt/ros/jazzy/setup.bash && echo $ROS_DISTRO && python3 --version'
+```
+
+To run the full scenario with required video artifacts, omit `--dry-run` and
+`--no-save-eval-video`:
+
+```bash
+ARENA_INTERNNAV_EXTERNAL_SERVER=1 \
+ros2 run arena_bringup social_nav_scenario_eval \
+  --scenario-config src/Arena/arena_bringup/configs/social_nav_scenarios/hospital_1_demo_001.yaml \
+  --output-prefix hospital_1_demo_001 \
+  -- --internnav-external-server --headless 2
+```
+
+Any arguments after `--` are appended to `internnav_eval`, so this is where you
+pass backend/runtime controls such as `--internnav-external-server`,
+`--internnav-device`, `--internnav-model-path`, `--internnav-python-executable`,
+or explicit camera topics.
+
+The latest validated video rerun used this path:
+
+```text
+/home/ubuntu/arena_jazzy_ws/outputs/social_nav_video_rerun_20260517/20260517_081450_hospital_1_Ai2_Bot2_internnav
+```
+
+It produced all four required videos under `videos/episode_0000/` and passed
+`artifact_validation.json` with `overall_pass=true` and `social_nav_ready=true`.
+
 ### Recommended three-container flow
 
 For GPU-backed InternNav inference, run the model server from the dedicated

@@ -62,3 +62,33 @@ The new InternNav evaluation path is slightly different from the legacy CSV-only
 - it can run on Isaac Sim with robot camera topics and debug overlays
 
 So you can think of InternNav evaluation as a specialized benchmark entrypoint built on top of the same world, robot, Nav2, and task generator foundations.
+
+## Dynamic Social VLN scenario overlays
+
+Dynamic Social VLN experiments add a benchmark-level scenario overlay on top of
+Arena's existing world and native scenario files.  The overlay does **not**
+replace `world.yaml`, `map.yaml`, or the HuNav dynamic-agent scenario.  Instead,
+it binds those reusable assets to a language instruction, a robot start/goal, a
+BDDL-like task description, social metric gates, and the artifacts expected from
+an evaluation run.
+
+The sample overlay is:
+
+```text
+arena_bringup/configs/social_nav_scenarios/hospital_1_demo_001.yaml
+```
+
+The validated phase-1 stack currently targets:
+
+- simulator: Isaac Sim
+- world: `hospital_1`
+- robot: `Ai2_Bot2`
+- human simulator: `hunav`
+- local planner / policy bridge: `dual_vln`
+- model runtime: InternNav external server or equivalent `internnav_eval` backend
+
+At this level, success is evaluated with a task result plus social-safety gates.
+SPL is intentionally not a default Dynamic Social VLN metric because the dynamic
+pedestrian field changes the effective route cost over time and the current
+pipeline does not provide a static shortest-path oracle that is valid under
+moving-human constraints.
