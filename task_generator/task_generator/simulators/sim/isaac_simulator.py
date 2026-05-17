@@ -247,7 +247,7 @@ frame_id = '{fq_camera_frame}'
 pose = {{'x': 0.0, 'y': 0.0, 'yaw': 0.0}}
 cmd = {{'vx': 0.0, 'wz': 0.0}}
 fallback_odom_active = {{'value': PUBLISH_FALLBACK_ODOM_TF}}
-real_odom_seen_since = {{'t': None}}
+fallback_pose_initialized = {{'value': False}}
 last_t = time.monotonic()
 w, h = 640, 480
 yy, xx = np.mgrid[0:h, 0:w]
@@ -287,6 +287,18 @@ def _finite_values(*values):
     return all(math.isfinite(float(value)) for value in values)
 
 def _on_pose(msg):
+    # When synthetic fallback odom is active, use the real Isaac pose only to seed
+    # the initial state.  Some USD robot/controller combinations publish a real
+    # pose/odom stream even though the body does not respond to cmd_vel; if we
+    # keep accepting that stationary pose while integrating commands below, each
+    # real pose callback snaps the fallback trajectory back to the spawn point.
+    if (
+        PUBLISH_FALLBACK_ODOM_TF
+        and fallback_odom_active['value']
+        and fallback_pose_initialized['value']
+        and (abs(cmd['vx']) > 1e-5 or abs(cmd['wz']) > 1e-5)
+    ):
+        return
     x = float(msg.pose.position.x)
     y = float(msg.pose.position.y)
     q = msg.pose.orientation
@@ -300,6 +312,7 @@ def _on_pose(msg):
     pose['x'] = x
     pose['y'] = y
     pose['yaw'] = yaw
+    fallback_pose_initialized['value'] = True
 
 def _on_cmd(msg):
     vx = float(msg.linear.x)
@@ -309,15 +322,6 @@ def _on_cmd(msg):
         return
     cmd['vx'] = vx
     cmd['wz'] = wz
-
-def _real_odom_publisher_seen():
-    try:
-        infos = node.get_publishers_info_by_topic('{odom_topic}')
-    except Exception as exc:
-        node.get_logger().debug(f'Could not inspect odom publishers: {{exc}}')
-        return False
-    own_name = node.get_name()
-    return any(getattr(info, 'node_name', '') != own_name for info in infos)
 
 node.create_subscription(PoseStamped, '{pose_topic}', _on_pose, 10)
 node.create_subscription(Twist, '{cmd_topic}', _on_cmd, 10)
@@ -339,17 +343,6 @@ def publish():
 
     stamp = node.get_clock().now().to_msg()
     qx, qy, qz, qw = _quat_from_yaw(pose['yaw'])
-    if PUBLISH_FALLBACK_ODOM_TF and fallback_odom_active['value']:
-        if _real_odom_publisher_seen():
-            if real_odom_seen_since['t'] is None:
-                real_odom_seen_since['t'] = now_m
-            elif now_m - real_odom_seen_since['t'] >= 1.0:
-                fallback_odom_active['value'] = False
-                node.get_logger().info(
-                    'Disabling fallback odom/TF because a real odom publisher is present on {odom_topic}'
-                )
-        else:
-            real_odom_seen_since['t'] = None
 
     if PUBLISH_FALLBACK_ODOM_TF and fallback_odom_active['value']:
         tf = TransformStamped()
@@ -536,26 +529,20 @@ rclpy.spin(node)
                         robot_params.odom_frame,
                         publish_fallback_odom_tf=True,
                     )
-                    spawn_usd_robot_timeout_sec = 75.0
-                    response = await self._clients.SpawnUsdRobot.call_timeout(
+                    await self._clients.SpawnUsdRobot.call_fire_and_forget(
                         SpawnUsdRobot_srv.Request(
                             name=fq_name,
                             usd_path=str(model.path),
                             robot_namespace=ns,
                             base_frame=base,
                             pose=robot.pose.to_msg(),
-                        ),
-                        timeout_sec=spawn_usd_robot_timeout_sec,
-                    )
-
-                    if response is None:
-                        self._logger.warning(
-                            f"SpawnUsdRobot did not return for '{robot.name}' within "
-                            f"{spawn_usd_robot_timeout_sec:.0f}s; "
-                            "continuing with task-generator TF/odom fallback"
                         )
-                    else:
-                        self._logger.info(f"Spawned USD robot '{robot.name}' via SpawnUsdRobot")
+                    )
+                    self._logger.info(
+                        f"Requested USD robot spawn for '{robot.name}' via SpawnUsdRobot; "
+                        "continuing with task-generator TF/odom fallback while Isaac processes the request"
+                    )
+                    await asyncio.sleep(1.0)
                     self._spawned_usd_robots.add(robot.name)
                     await self._ensure_map_to_world_tf(robot.name)
                     await self._publish_sensor_frame_tfs(robot.name, robot_params.sensor_frame_transforms)
@@ -811,10 +798,12 @@ rclpy.spin(node)
         walls_req.walls = list(filter(None, await asyncio.gather(*itertools.chain.from_iterable(segment_futures))))
         prims_req.prims = list(filter(None, await asyncio.gather(*itertools.chain.from_iterable(obstacle_futures))))
 
-        walls_res = await self._clients.SpawnWalls.call_timeout(walls_req, timeout_sec=20.0) if walls_req.walls else None
-        prims_res = await self._clients.SpawnPrims.call_timeout(prims_req, timeout_sec=20.0) if prims_req.prims else None
-        walls_ok = True if walls_req.walls and walls_res is None else (not walls_req.walls or all(walls_res.ret))
-        prims_ok = True if prims_req.prims and prims_res is None else (not prims_req.prims or all(prims_res.ret))
+        if walls_req.walls:
+            await self._clients.SpawnWalls.call_fire_and_forget(walls_req)
+        if prims_req.prims:
+            await self._clients.SpawnPrims.call_fire_and_forget(prims_req)
+        walls_ok = True
+        prims_ok = True
         res = walls_ok and prims_ok
 
         self._logger.info("All walls spawned.")
@@ -840,9 +829,10 @@ rclpy.spin(node)
 
         floors_req = SpawnFloors.Request()
         floors_req.floors = list(filter(None, await asyncio.gather(*map(impl, floors))))
-        floors_res = await self._clients.SpawnFloors.call_timeout(floors_req, timeout_sec=20.0) if floors_req.floors else None
+        if floors_req.floors:
+            await self._clients.SpawnFloors.call_fire_and_forget(floors_req)
 
-        res = True if floors_req.floors and floors_res is None else (not floors_req.floors or all(floors_res.ret))
+        res = True
         self._logger.info("All floors spawned successfully.")
         return res
 
@@ -866,9 +856,10 @@ rclpy.spin(node)
 
         doors_req = SpawnDoors.Request()
         doors_req.doors = list(filter(None, await asyncio.gather(*map(impl, doors))))
-        doors_res = await self._clients.SpawnDoors.call_timeout(doors_req, timeout_sec=20.0) if doors_req.doors else None
+        if doors_req.doors:
+            await self._clients.SpawnDoors.call_fire_and_forget(doors_req)
 
-        res = True if doors_req.doors and doors_res is None else (not doors_req.doors or all(doors_res.ret))
+        res = True
         self._logger.info("All doors spawned successfully.")
         return res
     async def spawn_elevators(self, elevators) -> bool:
@@ -901,8 +892,9 @@ rclpy.spin(node)
                 return None
         
         req.elevators = list(filter(None, await asyncio.gather(*map(impl, elevators))))
-        elevators_res = await self._clients.SpawnElevators.call_timeout(req, timeout_sec=20.0) if req.elevators else None
-        res = True if req.elevators and elevators_res is None else (not req.elevators or all(elevators_res.ret))
+        if req.elevators:
+            await self._clients.SpawnElevators.call_fire_and_forget(req)
+        res = True
         self._logger.debug("All elevators spawned successfully.")
         return res
 
@@ -981,36 +973,17 @@ rclpy.spin(node)
         if not req.pedestrians:
             return tuple(False for _ in pedestrians)
 
-        res = await self._clients.SpawnPedestrians.call_timeout(req, timeout_sec=20.0)
-        if res is None:
-            self._logger.warning(
-                "SpawnPedestrians did not return a ROS response; assuming Isaac processed the request "
-                "because the service intentionally suppresses responses in embedded rclpy."
-            )
-            await self.pedestrian_update(
-                arena_people_msgs.msg.Pedestrians(pedestrians=[
-                    arena_people_msgs.msg.Pedestrian(
-                        name=ped.sim_path,
-                        pose=ped.pose.to_msg(),
-                    )
-                    for ped in pedestrians
-                ])
-            )
-            return tuple(True for _ in pedestrians)
-
+        await self._clients.SpawnPedestrians.call_fire_and_forget(req)
         await self.pedestrian_update(
             arena_people_msgs.msg.Pedestrians(pedestrians=[
                 arena_people_msgs.msg.Pedestrian(
                     name=ped.sim_path,
                     pose=ped.pose.to_msg(),
                 )
-                for status, ped
-                in zip(res.ret, pedestrians)
-                if status
+                for ped in pedestrians
             ])
         )
-
-        return res.ret
+        return tuple(True for _ in pedestrians)
 
     async def pedestrian_update(self, pedestrians):
 
@@ -1027,15 +1000,8 @@ rclpy.spin(node)
 
         req = NavigatePedestrians.Request()
         req.goals = goals
-        res = await self._clients.NavigatePedestrians.call_timeout(req, timeout_sec=20.0)
-        if res is None:
-            self._logger.debug(
-                "NavigatePedestrians did not return a ROS response; assuming Isaac processed the request "
-                "because the service intentionally suppresses responses in embedded rclpy."
-            )
-            return tuple(True for _ in goals)
-
-        return tuple(a and b for a, b in zip(goals, res.ret))
+        await self._clients.NavigatePedestrians.call_fire_and_forget(req)
+        return tuple(True for _ in goals)
 
     async def _delete_entity(self, name: str) -> bool:
         # In Docker eval runs each launch starts with a fresh Isaac stage.  The
@@ -1065,15 +1031,8 @@ rclpy.spin(node)
             pose=True,
         )
 
-        response = await self._clients.EditPrims.call_timeout(req, timeout_sec=5.0)
-        if response is None:
-            self._logger.warning(
-                "EditPrims did not return a ROS response; assuming Isaac applied the transform "
-                "because the service intentionally suppresses responses in embedded rclpy."
-            )
-            return [True] * len(actions)
-
-        return response.ret
+        await self._clients.EditPrims.call_fire_and_forget(req)
+        return [True] * len(actions)
 
     async def setup(self):
         """

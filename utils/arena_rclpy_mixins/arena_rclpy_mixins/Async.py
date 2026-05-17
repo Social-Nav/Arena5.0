@@ -231,6 +231,16 @@ class ClientWrapper(typing.Generic[ServiceT]):
             self._node.get_logger().warning(f"Service call to {self._client.srv_name} timed out after {timeout_sec} seconds")
         return res
 
+    async def call_fire_and_forget(self, request: ServiceT.Request) -> None:
+        """Send a service request without waiting for a response.
+
+        Some Isaac embedded-rclpy services intentionally suppress responses after
+        processing requests to avoid response conversion aborts.  Waiting for
+        those responses turns expected behavior into fixed timeout stalls.
+        """
+        self._client.call_async(request)
+        await asyncio.sleep(0)
+
     def call_timeout_sync(
         self,
         request: ServiceT.Request,
