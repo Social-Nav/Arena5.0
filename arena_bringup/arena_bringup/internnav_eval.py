@@ -229,6 +229,15 @@ def _read_text_if_exists(path: str) -> str | None:
         return None
 
 
+def _wait_for_file(path: str, timeout_sec: float) -> bool:
+    deadline = time.monotonic() + max(float(timeout_sec), 0.0)
+    while time.monotonic() < deadline:
+        if os.path.exists(path):
+            return True
+        time.sleep(0.05)
+    return os.path.exists(path)
+
+
 def _normalize_external_ros_env(env: dict[str, str]) -> dict[str, dict[str, str]]:
     """Resolve ROS discovery defaults used by the three-container eval path."""
     defaults = {
@@ -302,6 +311,18 @@ def _listed_names(command_result: dict) -> set[str]:
     }
 
 
+def _topic_publisher_count(command_result: dict) -> int | None:
+    for line in str(command_result.get('stdout') or '').splitlines():
+        stripped = line.strip()
+        if not stripped.lower().startswith('publisher count:'):
+            continue
+        try:
+            return int(stripped.split(':', 1)[1].strip())
+        except Exception:
+            return None
+    return None
+
+
 def _run_external_internnav_preflight(
     env: dict[str, str],
     *,
@@ -309,24 +330,52 @@ def _run_external_internnav_preflight(
     expected_status_topic: str,
     timeout_sec: float,
 ) -> dict:
-    service_result = _run_ros_list_command(env, ['ros2', 'service', 'list'], timeout_sec)
-    topic_result = _run_ros_list_command(env, ['ros2', 'topic', 'list'], timeout_sec)
-    services = _listed_names(service_result)
-    topics = _listed_names(topic_result)
+    deadline = time.monotonic() + max(float(timeout_sec), 0.0)
+    service_result: dict | None = None
+    topic_result: dict | None = None
+    topic_info_result: dict | None = None
     checks = {
-        'service_visible': expected_service in services,
-        'status_topic_visible': expected_status_topic in topics,
+        'service_visible': False,
+        'status_topic_visible': False,
     }
+    status_topic_publisher_count: int | None = None
+    attempts = 0
+
+    while True:
+        attempts += 1
+        remaining = max(deadline - time.monotonic(), 0.0)
+        command_timeout = min(max(remaining, 0.1), 2.0)
+        service_result = _run_ros_list_command(env, ['ros2', 'service', 'list'], command_timeout)
+        remaining = max(deadline - time.monotonic(), 0.0)
+        command_timeout = min(max(remaining, 0.1), 2.0)
+        topic_result = _run_ros_list_command(env, ['ros2', 'topic', 'list'], command_timeout)
+        remaining = max(deadline - time.monotonic(), 0.0)
+        command_timeout = min(max(remaining, 0.1), 2.0)
+        topic_info_result = _run_ros_list_command(env, ['ros2', 'topic', 'info', expected_status_topic], command_timeout)
+        services = _listed_names(service_result)
+        topics = _listed_names(topic_result)
+        status_topic_publisher_count = _topic_publisher_count(topic_info_result)
+        checks = {
+            'service_visible': expected_service in services,
+            'status_topic_visible': expected_status_topic in topics and (status_topic_publisher_count or 0) > 0,
+        }
+        if all(checks.values()) or time.monotonic() >= deadline:
+            break
+        time.sleep(min(0.5, max(deadline - time.monotonic(), 0.0)))
+
     missing = [name for name, passed in checks.items() if not passed]
     return {
         'pass': not missing,
         'timeout_sec': timeout_sec,
+        'attempts': attempts,
         'expected_service': expected_service,
         'expected_status_topic': expected_status_topic,
+        'status_topic_publisher_count': status_topic_publisher_count,
         'checks': checks,
         'missing_checks': missing,
         'service_list': service_result,
         'topic_list': topic_result,
+        'topic_info': topic_info_result,
     }
 
 
@@ -1269,6 +1318,16 @@ class EvalVideoRecorder(Node):
                 self.debug_overlay_writer.write(debug_overlay_frame)
                 self.current_episode_info['debug_overlay_frames'] += 1
                 self.current_episode_info['debug_overlay_video_codec'] = getattr(self.debug_overlay_writer, 'codec', None)
+        elif self.debug_overlay_writer is not None:
+            fallback_overlay = PILImage.fromarray(ego_frame).convert('RGB')
+            draw = ImageDraw.Draw(fallback_overlay)
+            draw.rectangle((8, 8, min(fallback_overlay.width - 8, 430), 58), fill=(0, 0, 0), outline=(255, 180, 0), width=2)
+            draw.text((16, 18), 'InternNav debug overlay unavailable', fill=(255, 220, 80))
+            draw.text((16, 36), 'showing ego camera fallback', fill=(255, 255, 255))
+            self.debug_overlay_writer.write(np.asarray(fallback_overlay, dtype=np.uint8))
+            self.current_episode_info['debug_overlay_frames'] += 1
+            self.current_episode_info['debug_overlay_video_codec'] = getattr(self.debug_overlay_writer, 'codec', None)
+            self.current_episode_info['debug_overlay_fallback'] = True
         if (
             self.sim_top_down_writer is not None
             and self.latest_sim_top_down is not None
@@ -1439,6 +1498,16 @@ except BaseException:
     node._record_error(traceback.format_exc())
     exit_code = 1
 finally:
+    if not node.index.get('episodes'):
+        node._record_error(
+            'video recorder exited without opening an episode; '
+            f'reset_seen={node.reset_seen}, current_episode={node.current_episode}, '
+            f'reset_generation={node.reset_generation}, latest_rgb={node.latest_rgb is not None}, '
+            f'rgb_generation={node.latest_rgb_generation}, depth_ready={node.depth_ready}, '
+            f'depth_generation={node.depth_ready_generation}, camera_info_ready={node.camera_info_ready}, '
+            f'camera_info_generation={node.camera_info_generation}, latest_pose={node.latest_pose is not None}, '
+            f'pose_generation={node.latest_pose_generation}'
+        )
     node._close_episode(reason='process_exit' if exit_code == 0 else 'exception')
     node.destroy_node()
     if rclpy.ok():
@@ -2064,6 +2133,11 @@ def main() -> int:
             top_down_size_px=args.eval_video_top_down_size_px,
             top_down_window_m=args.eval_video_top_down_window_m,
         )
+        if not _wait_for_file(video_index_path, timeout_sec=5.0):
+            video_error = f'eval video recorder did not create video_index.json within 5s: {video_index_path}'
+            _write_text(video_error_path, video_error)
+            manifest['artifacts']['video_recorder_start_error'] = video_error
+            _write_yaml(manifest_path, manifest)
     finished_proc = _start_finished_watcher(
         env,
         args.finished_topic,
