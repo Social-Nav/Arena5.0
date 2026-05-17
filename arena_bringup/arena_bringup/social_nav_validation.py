@@ -216,12 +216,21 @@ def _check_metrics(run_dir: Path, social_metrics: dict[str, Any] | None) -> dict
         path_length_m = float(social_metrics.get('path_length_m') or 0.0) if social_present else 0.0
     except Exception:
         path_length_m = 0.0
+    is_dual_vln = False
+    try:
+        manifest = _read_yaml(run_dir / 'run_manifest.yaml') or {}
+        params = manifest.get('parameters', {}) if isinstance(manifest, dict) else {}
+        is_dual_vln = str(params.get('local_planner', '')).lower() == 'dual_vln'
+    except Exception:
+        is_dual_vln = False
+    robot_moved = (not is_dual_vln) or path_length_m >= 0.1
     return {
         "pass": (
             metrics_path.exists()
             and social_present
             and bool(social_metrics.get('humans_present'))
             and bool(social_metrics.get('social_success'))
+            and robot_moved
         ),
         "metrics_csv_present": metrics_path.exists(),
         "social_metrics_present": social_path.exists(),
@@ -229,6 +238,7 @@ def _check_metrics(run_dir: Path, social_metrics: dict[str, Any] | None) -> dict
         "task_success": task_success,
         "episode_result": episode_result or None,
         "path_length_m": path_length_m,
+        "robot_moved": robot_moved,
         "required_social_fields_present": all(
             key in social_metrics for key in (
                 'min_human_distance_m',

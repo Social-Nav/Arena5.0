@@ -487,6 +487,28 @@ class HunavHumanSimulator(
             )
         return current_agents
 
+    def _filter_hunav_robot_agent(self, agents: Agents) -> Agents:
+        """Remove HuNav's synthetic robot entry from published human states.
+
+        HuNav ``ComputeAgents`` responses may include the robot as agent id 0
+        with an empty name.  That entry is useful internally for HuNav, but it is
+        not a pedestrian.  Publishing it on ``human_states`` makes social metrics
+        count the robot as a human and produces false near-miss/collision
+        failures at the robot's own pose.
+        """
+        try:
+            filtered = [
+                agent for agent in (getattr(agents, 'agents', []) or [])
+                if not (
+                    int(getattr(agent, 'id', -1)) == 0
+                    and not str(getattr(agent, 'name', '') or '').strip()
+                )
+            ]
+            agents.agents = filtered
+        except Exception as e:
+            self._logger.debug(f"Failed to filter HuNav robot agent from human_states: {e}")
+        return agents
+
     async def _get_agents_callback(self, request, response):
         """Handle get_agents service request - return UNMODIFIED agents"""
         del request
@@ -715,6 +737,7 @@ class HunavHumanSimulator(
                         updated_agents = self._agents_container
                     updated_agents.header.frame_id = "map"
                     updated_agents.header.stamp = self.node.sim_time.to_msg()
+                    updated_agents = self._filter_hunav_robot_agent(updated_agents)
                     self._last_updated_agents = updated_agents
                     if hasattr(self, '_human_states_publisher'):
                         self._human_states_publisher.publish(updated_agents)
@@ -960,6 +983,7 @@ class HunavHumanSimulator(
                             updated_agents.header.stamp = (
                                 self.node.sim_time.to_msg()
                             )
+                            updated_agents = self._filter_hunav_robot_agent(updated_agents)
 
                             self._last_updated_agents = updated_agents
                             if hasattr(self, '_human_states_publisher'):
@@ -1048,6 +1072,7 @@ class HunavHumanSimulator(
                             )
                             latest_agents.header.frame_id = "map"
                             latest_agents.header.stamp = self.node.sim_time.to_msg()
+                            latest_agents = self._filter_hunav_robot_agent(latest_agents)
                             self._human_states_publisher.publish(latest_agents)
                         self._publish_wall_markers()
 
