@@ -22,6 +22,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         build-essential \
         ca-certificates \
         curl \
+        ffmpeg \
         git \
         python-is-python3 \
         python3-dev \

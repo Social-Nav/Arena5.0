@@ -61,14 +61,37 @@ def _sanitize_debug(value: Any) -> dict[str, Any]:
     return {str(key): item for key, item in value.items()}
 
 
-def _trajectory_first_step(trajectory: Any) -> Optional[tuple[float, float, float]]:
+def _to_jsonable(value: Any) -> Any:
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, Mapping):
+        return {str(key): _to_jsonable(item) for key, item in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return [_to_jsonable(item) for item in value]
+    if hasattr(value, 'tolist'):
+        return _to_jsonable(value.tolist())
+    shape = _shape_of(value)
+    if shape is not None:
+        return {'type': type(value).__name__, 'shape': shape}
+    return str(value)
+
+
+def _trajectory_control_step(trajectory: Any) -> Optional[tuple[float, float, float]]:
+    """Return the trajectory waypoint used for continuous velocity control.
+
+    InternNav's real-world continuous controller derives ``(v, w)`` from the
+    final predicted subgoal rather than turning the trajectory into a discrete
+    action sequence.  Use the last available waypoint to keep Arena eval close
+    to that continuous-action interface; when the trajectory contains only x/y,
+    fall back to the waypoint bearing as the angular component.
+    """
     try:
         if isinstance(trajectory, Sequence) and not isinstance(trajectory, (str, bytes)):
             if not trajectory:
                 return None
-            first = trajectory[0]
-            if isinstance(first, Sequence) and not isinstance(first, (str, bytes)):
-                values = [float(item) for item in first[:3]]
+            selected = trajectory[-1]
+            if isinstance(selected, Sequence) and not isinstance(selected, (str, bytes)):
+                values = [float(item) for item in selected[:3]]
             else:
                 values = [float(item) for item in trajectory[:3]]
         else:
@@ -82,6 +105,56 @@ def _trajectory_first_step(trajectory: Any) -> Optional[tuple[float, float, floa
     y = values[1]
     yaw = values[2] if len(values) >= 3 else math.atan2(y, x)
     return x, y, yaw
+
+
+def _trajectory_first_step(trajectory: Any) -> Optional[tuple[float, float, float]]:
+    """Backward-compatible debug helper for the first trajectory waypoint."""
+    try:
+        if isinstance(trajectory, Sequence) and not isinstance(trajectory, (str, bytes)):
+            if not trajectory:
+                return None
+            selected = trajectory[0]
+            if isinstance(selected, Sequence) and not isinstance(selected, (str, bytes)):
+                values = [float(item) for item in selected[:3]]
+            else:
+                values = [float(item) for item in trajectory[:3]]
+        else:
+            values = [float(item) for item in trajectory[:3]]
+    except Exception:
+        return None
+
+    if len(values) < 2:
+        return None
+    x = values[0]
+    y = values[1]
+    yaw = values[2] if len(values) >= 3 else math.atan2(y, x)
+    return x, y, yaw
+
+
+def _model_output_policy(params: Mapping[str, Any]) -> str:
+    """Resolve how adapter outputs should be converted to cmd_vel.
+
+    ``trajectory`` is the default because InternNav's real-world continuous
+    controller consumes S1's generated trajectory directly.  ``discrete`` keeps
+    a diagnostic path for action-id evaluation, and ``raw`` preserves the legacy
+    adapter precedence where discrete actions won when both fields were present.
+    """
+    raw = str(params.get('model_output_policy', params.get('output_policy', 'trajectory'))).strip().lower()
+    aliases = {
+        'continuous': 'trajectory',
+        'continuous_trajectory': 'trajectory',
+        'output_trajectory': 'trajectory',
+        'traj': 'trajectory',
+        'action': 'discrete',
+        'actions': 'discrete',
+        'discrete_action': 'discrete',
+        'legacy': 'raw',
+        'auto': 'trajectory',
+    }
+    resolved = aliases.get(raw, raw)
+    if resolved not in {'trajectory', 'discrete', 'raw'}:
+        return 'trajectory'
+    return resolved
 
 
 def _action_to_command(action: Any, params: dict[str, Any]) -> Optional[tuple[float, float, str, dict[str, Any]]]:
@@ -122,15 +195,18 @@ def _action_to_command(action: Any, params: dict[str, Any]) -> Optional[tuple[fl
     if selected_int == 1:
         return max(max_linear * 0.6, 0.05), 0.0, 'discrete_forward', debug
     if selected_int == 2:
-        # InternNav often emits several turn actions before a forward action.  A
-        # pure in-place rotation can trip Nav2's progress checker during slow CPU
-        # inference cycles, so execute turns as gentle forward arcs while keeping
-        # the angular command dominant.
-        debug['arc_turn'] = True
-        return max(max_linear * 0.6, 0.12), left_sign * max_angular * 0.25, 'discrete_turn_left', debug
+        # Keep discrete turns aligned with InternNav's native simulator action
+        # semantics: turn actions rotate in place, while action 1 is responsible
+        # for forward motion.  Direct bridge execution no longer depends on
+        # Nav2's progress checker, so avoid adding forward arc motion that would
+        # alter the raw policy being evaluated.
+        debug['arc_turn'] = False
+        status = 'discrete_turn_right' if invert_turns else 'discrete_turn_left'
+        return 0.0, left_sign * max_angular * 0.25, status, debug
     if selected_int == 3:
-        debug['arc_turn'] = True
-        return max(max_linear * 0.6, 0.12), right_sign * max_angular * 0.25, 'discrete_turn_right', debug
+        debug['arc_turn'] = False
+        status = 'discrete_turn_left' if invert_turns else 'discrete_turn_right'
+        return 0.0, right_sign * max_angular * 0.25, status, debug
     if selected_int == 5:
         debug['look_down_requested'] = True
         return 0.0, 0.0, 'look_down_requested', debug
@@ -615,54 +691,86 @@ class PythonAdapterBackend(ModelSimBackend):
 
     def _coerce_output(self, output: Any) -> ModelSimDecision:
         if isinstance(output, ModelSimDecision):
+            output.debug.setdefault('raw_model_output_type', type(output).__name__)
             return output
         if isinstance(output, Mapping):
             debug = _sanitize_debug(output.get('debug', {}))
+            debug.setdefault('raw_model_output', _to_jsonable(output))
+            debug.setdefault('raw_model_output_type', type(output).__name__)
             target_pixel = output.get('target_pixel')
             if target_pixel is None:
                 target_pixel = output.get('output_pixel', output.get('pixel_goal'))
             if target_pixel is not None:
                 debug.setdefault('target_pixel', target_pixel)
 
+            output_policy = _model_output_policy(self._params)
+            debug.setdefault('model_output_policy', output_policy)
+
             trajectory = output.get('output_trajectory', output.get('trajectory'))
             if trajectory is not None:
                 debug.setdefault('trajectory_preview', trajectory)
 
             discrete_action = output.get('discrete_action', output.get('output_action', output.get('action')))
-            if discrete_action is not None and 'linear_x' not in output and 'angular_z' not in output:
-                command = _action_to_command(discrete_action, self._params)
-                if command is not None:
-                    linear_x, angular_z, status, action_debug = command
-                    debug.update(action_debug)
-                    debug.setdefault('converted_status', status)
-                    if trajectory is not None:
-                        first_step = _trajectory_first_step(trajectory)
-                        if first_step is not None:
-                            debug.setdefault('trajectory_first_step', list(first_step))
-                    return ModelSimDecision(
-                        linear_x=linear_x,
-                        angular_z=angular_z,
-                        status=str(output.get('status', status)),
-                        degraded=bool(output.get('degraded', False)),
-                        debug=debug,
-                    )
 
-            if trajectory is not None:
+            def _trajectory_decision() -> Optional[ModelSimDecision]:
+                if trajectory is None:
+                    return None
+                control_step = _trajectory_control_step(trajectory)
+                if control_step is None:
+                    return None
+                x, y, yaw = control_step
+                linear_x = clamp(math.hypot(x, y), 0.0, float(self._params['max_linear']))
+                angular_z = clamp(yaw, -float(self._params['max_angular']), float(self._params['max_angular']))
+                debug.setdefault('trajectory_control_step', [x, y, yaw])
                 first_step = _trajectory_first_step(trajectory)
                 if first_step is not None:
-                    x, y, yaw = first_step
-                    heading = math.atan2(y, x) if abs(x) > 1e-6 or abs(y) > 1e-6 else yaw
-                    linear_x = clamp(math.hypot(x, y), 0.0, float(self._params['max_linear']))
-                    angular_z = clamp(heading, -float(self._params['max_angular']), float(self._params['max_angular']))
-                    debug.setdefault('trajectory_first_step', [x, y, yaw])
-                    return ModelSimDecision(
-                        linear_x=linear_x,
-                        angular_z=angular_z,
-                        status=str(output.get('status', 'trajectory_command')),
-                        degraded=bool(output.get('degraded', False)),
-                        debug=debug,
-                    )
+                    debug.setdefault('trajectory_first_step', list(first_step))
+                debug.setdefault('trajectory_command_interface', 'internnav_continuous_subgoal_vw')
+                debug.setdefault('selected_output_mode', 'trajectory')
+                return ModelSimDecision(
+                    linear_x=linear_x,
+                    angular_z=angular_z,
+                    status=str(output.get('status', 'trajectory_command')),
+                    degraded=bool(output.get('degraded', False)),
+                    debug=debug,
+                )
 
+            def _discrete_decision() -> Optional[ModelSimDecision]:
+                if discrete_action is None or 'linear_x' in output or 'angular_z' in output:
+                    return None
+                command = _action_to_command(discrete_action, self._params)
+                if command is None:
+                    return None
+                linear_x, angular_z, status, action_debug = command
+                debug.update(action_debug)
+                debug.setdefault('converted_status', status)
+                debug.setdefault('selected_output_mode', 'discrete')
+                if trajectory is not None:
+                    first_step = _trajectory_first_step(trajectory)
+                    if first_step is not None:
+                        debug.setdefault('trajectory_first_step', list(first_step))
+                return ModelSimDecision(
+                    linear_x=linear_x,
+                    angular_z=angular_z,
+                    status=str(output.get('status', status)),
+                    degraded=bool(output.get('degraded', False)),
+                    debug=debug,
+                )
+
+            if output_policy == 'trajectory':
+                decision = _trajectory_decision() or _discrete_decision()
+                if decision is not None:
+                    return decision
+            elif output_policy == 'discrete':
+                decision = _discrete_decision() or _trajectory_decision()
+                if decision is not None:
+                    return decision
+            else:
+                decision = _discrete_decision() or _trajectory_decision()
+                if decision is not None:
+                    return decision
+
+            debug.setdefault('selected_output_mode', 'cmd_vel')
             return ModelSimDecision(
                 linear_x=float(output.get('linear_x', 0.0)),
                 angular_z=float(output.get('angular_z', 0.0)),

@@ -106,6 +106,76 @@ def _draw_path(draw: ImageDraw.ImageDraw, points: list[tuple[int, int]], color: 
         draw.text((points[0][0] + 8, points[0][1] + 8), label, fill=color)
 
 
+def _draw_arrow(
+    draw: ImageDraw.ImageDraw,
+    start: tuple[int, int],
+    end: tuple[int, int],
+    color: tuple[int, int, int],
+    *,
+    width: int = 5,
+    label: str = '',
+) -> None:
+    draw.line([start, end], fill=color, width=width)
+    angle = math.atan2(end[1] - start[1], end[0] - start[0])
+    head = max(10, width * 3)
+    spread = math.radians(28)
+    left = (
+        int(end[0] - head * math.cos(angle - spread)),
+        int(end[1] - head * math.sin(angle - spread)),
+    )
+    right = (
+        int(end[0] - head * math.cos(angle + spread)),
+        int(end[1] - head * math.sin(angle + spread)),
+    )
+    draw.polygon([end, left, right], fill=color)
+    if label:
+        draw.text((end[0] + 8, end[1] - 14), label, fill=color)
+
+
+def _draw_action_glyph(
+    draw: ImageDraw.ImageDraw,
+    center: tuple[int, int],
+    action_label: object,
+    linear_x: float,
+    angular_z: float,
+    color: tuple[int, int, int],
+) -> None:
+    label = str(action_label or '').lower()
+    is_stop = 'stop' in label or (abs(linear_x) < 1e-6 and abs(angular_z) < 1e-6)
+    is_left = 'left' in label or angular_z > 1e-6
+    is_right = 'right' in label or angular_z < -1e-6
+    is_forward = 'forward' in label or (linear_x > 1e-6 and not is_left and not is_right)
+    if is_stop:
+        radius = 28
+        draw.ellipse((center[0] - radius, center[1] - radius, center[0] + radius, center[1] + radius), outline=color, width=5)
+        draw.line((center[0] - 18, center[1] - 18, center[0] + 18, center[1] + 18), fill=color, width=5)
+        draw.text((center[0] - 22, center[1] + 34), 'model action: STOP', fill=color)
+        return
+    if is_left or is_right:
+        radius = 42
+        bbox = (center[0] - radius, center[1] - radius, center[0] + radius, center[1] + radius)
+        if is_left:
+            draw.arc(bbox, start=205, end=25, fill=color, width=6)
+            end = (center[0] - 28, center[1] - 32)
+            points = [end, (end[0] + 18, end[1] - 4), (end[0] + 6, end[1] + 16)]
+            text = 'model action: LEFT ARC' if linear_x > 1e-6 else 'model action: LEFT'
+        else:
+            draw.arc(bbox, start=155, end=335, fill=color, width=6)
+            end = (center[0] + 28, center[1] - 32)
+            points = [end, (end[0] - 18, end[1] - 4), (end[0] - 6, end[1] + 16)]
+            text = 'model action: RIGHT ARC' if linear_x > 1e-6 else 'model action: RIGHT'
+        draw.polygon(points, fill=color)
+        if linear_x > 1e-6:
+            _draw_arrow(draw, center, (center[0], center[1] - 48), color, width=3, label='vx')
+        draw.text((center[0] - 52, center[1] + 52), text, fill=color)
+        return
+    if is_forward:
+        length = max(34, min(90, int(130.0 * max(linear_x, 0.05))))
+        _draw_arrow(draw, center, (center[0], center[1] - length), color, width=7, label='model action: FWD')
+        return
+    _draw_arrow(draw, center, (center[0], center[1] - 42), color, width=5, label='model action')
+
+
 def _format_scalar(name: str, value: object, *, precision: int = 3) -> str:
     if isinstance(value, (float, int)):
         return f'{name}: {float(value):.{precision}f}'
@@ -267,24 +337,24 @@ def render_debug_overlay(
     if effective_action_label not in (None, ''):
         draw.text((glyph_center[0] - 42, glyph_center[1] + 12), str(effective_action_label)[:12], fill=glyph_color)
 
-    heading = 0.0
-    if isinstance(yaw_error, (float, int)):
-        heading = -float(yaw_error)
-    magnitude = max(0.15, min(1.0, abs(decision.linear_x) / 0.3 if 0.3 > 0 else 0.15))
-    length = int(70 * magnitude)
-    end_point = (
-        int(center[0] + math.cos(heading) * length),
-        int(center[1] - math.sin(heading) * length),
-    )
     arrow_color = (0, 255, 0) if not decision.degraded else (255, 128, 0)
-    draw.line([center, end_point], fill=arrow_color, width=5)
-    draw.polygon(
-        [
-            end_point,
-            (end_point[0] - 8, end_point[1] - 5),
-            (end_point[0] - 8, end_point[1] + 5),
-        ],
-        fill=arrow_color,
+    _draw_action_glyph(
+        draw,
+        center,
+        effective_action_label or action_label,
+        float(decision.linear_x),
+        float(decision.angular_z),
+        arrow_color,
     )
+
+    if isinstance(yaw_error, (float, int)):
+        # Goal bearing in image coordinates: straight up is aligned with the robot,
+        # positive yaw_error is to the robot's left.
+        goal_heading = -math.pi / 2.0 - float(yaw_error)
+        goal_end = (
+            int(center[0] + math.cos(goal_heading) * 58),
+            int(center[1] + math.sin(goal_heading) * 58),
+        )
+        _draw_arrow(draw, center, goal_end, (255, 255, 64), width=3, label='goal')
 
     return np.asarray(canvas)

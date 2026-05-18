@@ -1707,6 +1707,18 @@ def main() -> int:
     parser.add_argument('--global-planner', default='navfn')
     parser.add_argument('--episodes', type=int, default=2)
     parser.add_argument('--timeout', type=int, default=120)
+    parser.add_argument(
+        '--timeout-wall-factor',
+        type=float,
+        default=5.0,
+        help='Wall-clock timeout multiplier forwarded to task_generator for slow Isaac/model evals.',
+    )
+    parser.add_argument(
+        '--timeout-wall-sec',
+        type=float,
+        default=0.0,
+        help='Explicit wall-clock timeout forwarded to task_generator; 0 lets timeout_wall_factor decide.',
+    )
     parser.add_argument('--tm-robots', default='random')
     parser.add_argument('--tm-obstacles', default='random')
     parser.add_argument('--scenario-file', default='')
@@ -1729,11 +1741,21 @@ def main() -> int:
     parser.add_argument('--internnav-adapter-target', '--dual-vln-adapter-target', dest='dual_vln_adapter_target', default='')
     parser.add_argument('--internnav-require-real-backend', '--dual-vln-require-real-backend', dest='dual_vln_require_real_backend', action='store_true')
     parser.add_argument('--internnav-strict-device', '--dual-vln-strict-device', dest='dual_vln_strict_device', action='store_true')
+    parser.add_argument(
+        '--internnav-model-output-policy',
+        '--dual-vln-model-output-policy',
+        dest='dual_vln_model_output_policy',
+        choices=['trajectory', 'discrete', 'raw'],
+        default='trajectory',
+        help='Select how InternNav outputs are converted: trajectory prefers output_trajectory->cmd_vel; discrete forces action ids; raw keeps legacy precedence.',
+    )
     parser.add_argument('--internnav-look-down', '--dual-vln-look-down', dest='dual_vln_look_down', action='store_true')
     parser.add_argument('--internnav-enable-visualization', '--dual-vln-enable-visualization', dest='dual_vln_enable_visualization', action='store_true')
     parser.add_argument('--internnav-external-server', '--dual-vln-external-server', dest='internnav_external_server', action='store_true')
     parser.add_argument('--internnav-visualization-topic', '--dual-vln-visualization-topic', dest='dual_vln_visualization_topic', default='internnav/debug_image')
+    parser.add_argument('--internnav-action-visualization-topic', '--dual-vln-action-visualization-topic', dest='dual_vln_action_visualization_topic', default='internnav/action_image')
     parser.add_argument('--internnav-visualization-rate-hz', '--dual-vln-visualization-rate-hz', dest='dual_vln_visualization_rate_hz', type=float, default=5.0)
+    parser.add_argument('--internnav-model-output-topic', '--dual-vln-model-output-topic', dest='dual_vln_model_output_topic', default='internnav/model_output')
     parser.add_argument(
         '--internnav-invert-discrete-turns',
         choices=('auto', 'true', 'false'),
@@ -1786,13 +1808,13 @@ def main() -> int:
             args.scenario_file = 'normal'
     runtime_adjustments = _apply_runtime_defaults(args)
     if args.internnav_invert_discrete_turns == 'auto':
-        # After Ai2_Bot2's Isaac diff-drive / odom chain was fixed to execute
-        # commanded motion again, the earlier temporary Isaac+Ai2_Bot2 turn-sign
-        # inversion no longer matches observed motion.  Keep ``auto`` aligned
-        # with the latest validated A/B run: for this pair the native InternNav
-        # discrete turn directions should pass through unchanged.
-        resolved_invert_discrete_turns = False
-        invert_discrete_turns_source = 'auto_isaac_ai2_bot2_noinvert'
+        # InternNav/InternVLA-N1's native discrete action ids use the model
+        # adapter's camera/action convention.  The model-output diagnostic run
+        # showed action=2 repeatedly while the ROS goal yaw error required a
+        # right correction, so the Arena/Isaac cmd_vel side must invert 2/3 by
+        # default.  Keep explicit true/false for reproducible A/B diagnostics.
+        resolved_invert_discrete_turns = True
+        invert_discrete_turns_source = 'auto_internnav_native_action_frame'
     else:
         resolved_invert_discrete_turns = args.internnav_invert_discrete_turns == 'true'
         invert_discrete_turns_source = 'cli'
@@ -1832,6 +1854,7 @@ def main() -> int:
     robot_depth_topic = _robot_topic(args.task_reset_topic, args.robot, args.dual_vln_depth_topic)
     robot_camera_info_topic = _robot_topic(args.task_reset_topic, args.robot, args.dual_vln_camera_info_topic)
     robot_debug_overlay_topic = _robot_topic(args.task_reset_topic, args.robot, args.eval_video_debug_overlay_topic)
+    robot_model_output_topic = _robot_topic(args.task_reset_topic, args.robot, args.dual_vln_model_output_topic)
     robot_sim_top_down_topic = _robot_topic(args.task_reset_topic, args.robot, args.eval_video_sim_top_down_topic)
     robot_odom_topic = _robot_topic(args.task_reset_topic, args.robot, 'odom')
     robot_goal_topic = _robot_topic(args.task_reset_topic, args.robot, 'episode_goal_pose')
@@ -1864,6 +1887,8 @@ def main() -> int:
         f'tm_robots:={args.tm_robots}',
         f'tm_obstacles:={args.tm_obstacles}',
         f'timeout:={args.timeout}',
+        f'timeout_wall_factor:={args.timeout_wall_factor}',
+        f'timeout_wall_sec:={args.timeout_wall_sec}',
         f'headless:={args.headless}',
         f'log_level:={args.log_level}',
         f'require_human_states_ready:={str(args.social_eval and args.human == "hunav").lower()}',
@@ -1880,7 +1905,9 @@ def main() -> int:
         f'dual_vln_require_real_backend:={str(args.dual_vln_require_real_backend).lower()}',
         f'dual_vln_strict_device:={str(args.dual_vln_strict_device).lower()}',
         f'dual_vln_visualization_topic:={args.dual_vln_visualization_topic}',
+        f'dual_vln_action_visualization_topic:={args.dual_vln_action_visualization_topic}',
         f'dual_vln_visualization_rate_hz:={args.dual_vln_visualization_rate_hz}',
+        f'dual_vln_model_output_topic:={args.dual_vln_model_output_topic}',
     ]
     if args.local_planner == 'dual_vln':
         launch_cmd.append('enable_collision_monitor:=false')
@@ -1894,6 +1921,8 @@ def main() -> int:
         launch_cmd.append(f'dual_vln_python_executable:={args.dual_vln_python_executable}')
     if args.dual_vln_adapter_target:
         launch_cmd.append(f'dual_vln_adapter_target:={args.dual_vln_adapter_target}')
+    if args.dual_vln_model_output_policy:
+        launch_cmd.append(f'dual_vln_model_output_policy:={args.dual_vln_model_output_policy}')
     if args.dual_vln_look_down:
         launch_cmd.append('dual_vln_look_down:=true')
     if args.vln_instruction_file:
@@ -1936,6 +1965,8 @@ def main() -> int:
             'global_planner': args.global_planner,
             'episodes': args.episodes,
             'timeout': args.timeout,
+            'timeout_wall_factor': args.timeout_wall_factor,
+            'timeout_wall_sec': args.timeout_wall_sec,
             'tm_robots': args.tm_robots,
             'tm_obstacles': args.tm_obstacles,
             'scenario_file': args.scenario_file,
@@ -1975,13 +2006,17 @@ def main() -> int:
             'dual_vln_adapter_target': args.dual_vln_adapter_target,
             'dual_vln_require_real_backend': args.dual_vln_require_real_backend,
             'dual_vln_strict_device': args.dual_vln_strict_device,
+            'dual_vln_model_output_policy': args.dual_vln_model_output_policy,
             'dual_vln_look_down': args.dual_vln_look_down,
             'dual_vln_enable_visualization': args.dual_vln_enable_visualization,
             'internnav_external_server': args.internnav_external_server,
             'external_server_preflight_timeout_sec': args.external_server_preflight_timeout_sec,
             'skip_external_server_preflight': args.skip_external_server_preflight,
             'dual_vln_visualization_topic': args.dual_vln_visualization_topic,
+            'dual_vln_action_visualization_topic': args.dual_vln_action_visualization_topic,
             'dual_vln_visualization_rate_hz': args.dual_vln_visualization_rate_hz,
+            'dual_vln_model_output_topic': args.dual_vln_model_output_topic,
+            'dual_vln_model_output_topic_resolved': robot_model_output_topic,
             'internnav_invert_discrete_turns': args.internnav_invert_discrete_turns,
             'internnav_invert_discrete_turns_resolved': resolved_invert_discrete_turns,
             'internnav_invert_discrete_turns_source': invert_discrete_turns_source,
@@ -2000,6 +2035,7 @@ def main() -> int:
             'eval_video_scenario_reset_topic': robot_scenario_reset_topic if args.save_eval_video else None,
             'eval_video_map_yaml_path': map_yaml_path if args.save_eval_video else None,
             'dual_vln_status_topic': args.dual_vln_status_topic,
+            'dual_vln_model_output_topic': robot_model_output_topic,
             'dual_vln_command_service': robot_command_service,
             'finished_topic': args.finished_topic,
             'task_reset_topic': args.task_reset_topic,
@@ -2051,10 +2087,13 @@ def main() -> int:
     env['ARENA_EVAL_INTERNNAV_ADAPTER_TARGET'] = str(args.dual_vln_adapter_target or '')
     env['ARENA_EVAL_INTERNNAV_REQUIRE_REAL_BACKEND'] = str(bool(args.dual_vln_require_real_backend)).lower()
     env['ARENA_EVAL_INTERNNAV_STRICT_DEVICE'] = str(bool(args.dual_vln_strict_device)).lower()
+    env['ARENA_EVAL_INTERNNAV_MODEL_OUTPUT_POLICY'] = str(args.dual_vln_model_output_policy or 'trajectory')
     env['ARENA_EVAL_INTERNNAV_LOOK_DOWN'] = str(bool(args.dual_vln_look_down)).lower()
     env['ARENA_EVAL_INTERNNAV_ENABLE_VISUALIZATION'] = str(bool(args.dual_vln_enable_visualization)).lower()
     env['ARENA_EVAL_INTERNNAV_VISUALIZATION_TOPIC'] = str(args.dual_vln_visualization_topic)
+    env['ARENA_EVAL_INTERNNAV_ACTION_VISUALIZATION_TOPIC'] = str(args.dual_vln_action_visualization_topic)
     env['ARENA_EVAL_INTERNNAV_VISUALIZATION_RATE_HZ'] = str(args.dual_vln_visualization_rate_hz)
+    env['ARENA_EVAL_INTERNNAV_MODEL_OUTPUT_TOPIC'] = str(args.dual_vln_model_output_topic)
     env['ARENA_EVAL_INTERNNAV_INFERENCE_RATE_HZ'] = str(args.dual_vln_inference_rate_hz)
     env['ARENA_EVAL_INTERNNAV_INFERENCE_TIMEOUT_SEC'] = str(args.dual_vln_inference_timeout_sec)
     env['ARENA_EVAL_INTERNNAV_TRACE_PATH'] = internnav_trace_path
@@ -2114,7 +2153,11 @@ def main() -> int:
 
     launch_timeout_sec = args.launch_timeout_sec
     if launch_timeout_sec <= 0.0:
-        launch_timeout_sec = max(float(args.timeout) * max(args.episodes, 1) + 120.0, 180.0)
+        timeout_wall_sec = float(args.timeout_wall_sec or 0.0)
+        if timeout_wall_sec <= 0.0:
+            timeout_wall_factor = max(float(args.timeout_wall_factor or 1.0), 1.0)
+            timeout_wall_sec = max(float(args.timeout) * timeout_wall_factor, float(args.timeout) + 120.0)
+        launch_timeout_sec = max(timeout_wall_sec * max(args.episodes, 1) + 180.0, 300.0)
 
     video_proc = None
     if args.save_eval_video:

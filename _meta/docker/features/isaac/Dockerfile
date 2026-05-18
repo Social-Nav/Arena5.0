@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -y software-properties-common && \
     add-apt-repository ppa:deadsnakes/ppa -y && apt-get update
 
 RUN apt-get install -y \
-    build-essential cmake git curl \
+    build-essential cmake ffmpeg git curl \
     python3.11 python3.11-dev python3.11-venv \
     python3-colcon-common-extensions && rm -rf /var/lib/apt/lists/*
 
@@ -80,6 +80,8 @@ ENV HTTP_PROXY=${HTTP_PROXY} \
 
 # 6. Switch to root to fix system libs and paths
 USER root
+
+RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
 # Install runtime Python dependencies directly into Isaac's internal site-packages to ensure they persist
 RUN /isaac-sim/python.sh -m pip install cattrs pyyaml pandas

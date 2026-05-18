@@ -102,6 +102,16 @@ def generate_launch_description():
         default_value='120.0',
         description='Task timeout in seconds'
     )
+    timeout_wall_factor = LaunchArgument(
+        name='timeout_wall_factor',
+        default_value='5.0',
+        description='Wall-clock timeout multiplier for slow simulator/model evals'
+    )
+    timeout_wall_sec = LaunchArgument(
+        name='timeout_wall_sec',
+        default_value='0.0',
+        description='Explicit wall-clock timeout in seconds; 0 derives it from timeout_wall_factor'
+    )
     vln_instruction = LaunchArgument(
         name='vln_instruction',
         default_value='navigate',
@@ -202,6 +212,13 @@ def generate_launch_description():
         description='Forward a look_down hint to native InternNav backends'
     )
     dual_vln_look_down = declare_legacy_alias('dual_vln_look_down', internnav_look_down)
+    internnav_model_output_policy = LaunchArgument(
+        name='internnav_model_output_policy',
+        default_value='trajectory',
+        choices=['trajectory', 'discrete', 'raw'],
+        description='How InternNav model outputs are converted: trajectory prefers output_trajectory->cmd_vel; discrete forces action ids; raw keeps legacy adapter precedence'
+    )
+    dual_vln_model_output_policy = declare_legacy_alias('dual_vln_model_output_policy', internnav_model_output_policy)
     internnav_enable_visualization = LaunchArgument(
         name='internnav_enable_visualization',
         default_value='false',
@@ -214,12 +231,26 @@ def generate_launch_description():
         description='Topic for annotated InternNav debug images'
     )
     dual_vln_visualization_topic = declare_legacy_alias('dual_vln_visualization_topic', internnav_visualization_topic)
+    internnav_action_visualization_topic = LaunchArgument(
+        name='internnav_action_visualization_topic',
+        default_value='internnav/action_image',
+        description='Topic for InternNav ego-centric action visualization images'
+    )
+    dual_vln_action_visualization_topic = declare_legacy_alias(
+        'dual_vln_action_visualization_topic', internnav_action_visualization_topic
+    )
     internnav_visualization_rate_hz = LaunchArgument(
         name='internnav_visualization_rate_hz',
         default_value='5.0',
         description='Maximum debug image publish rate for InternNav visualization'
     )
     dual_vln_visualization_rate_hz = declare_legacy_alias('dual_vln_visualization_rate_hz', internnav_visualization_rate_hz)
+    internnav_model_output_topic = LaunchArgument(
+        name='internnav_model_output_topic',
+        default_value='internnav/model_output',
+        description='Topic for InternNav raw model output JSON diagnostics'
+    )
+    dual_vln_model_output_topic = declare_legacy_alias('dual_vln_model_output_topic', internnav_model_output_topic)
     internnav_external_server = LaunchArgument(
         name='internnav_external_server',
         default_value='false',
@@ -416,6 +447,8 @@ def generate_launch_description():
                     **episodes.dict,
                     **auto_reset.dict,
                     **timeout.dict,
+                    **timeout_wall_factor.dict,
+                    **timeout_wall_sec.dict,
                     **vln_instruction.dict,
                     **vln_instruction_file.dict,
                     **dual_vln_mode.dict,
@@ -430,10 +463,13 @@ def generate_launch_description():
                     **dual_vln_adapter_target.dict,
                     **dual_vln_require_real_backend.dict,
                     **dual_vln_strict_device.dict,
+                    **dual_vln_model_output_policy.dict,
                     **dual_vln_look_down.dict,
                     **dual_vln_enable_visualization.dict,
                     **dual_vln_visualization_topic.dict,
+                    **dual_vln_action_visualization_topic.dict,
                     **dual_vln_visualization_rate_hz.dict,
+                    **dual_vln_model_output_topic.dict,
                     **internnav_external_server.dict,
                     **dual_vln_external_server.dict,
                     **enable_collision_monitor.dict,

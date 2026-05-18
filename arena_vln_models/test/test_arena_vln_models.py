@@ -1,6 +1,99 @@
+import threading
+import sys
+import types
 from types import SimpleNamespace
 
 import numpy as np
+
+
+def _install_ros_import_stubs_if_needed():
+    try:
+        import rclpy  # noqa: F401
+        return
+    except ModuleNotFoundError:
+        pass
+
+    class _Node:
+        pass
+
+    class _Parameter:
+        def __init__(self, name, value=None):
+            self.name = name
+            self.value = value
+
+    class _Twist:
+        def __init__(self):
+            self.linear = SimpleNamespace(x=0.0)
+            self.angular = SimpleNamespace(z=0.0)
+
+    class _String:
+        def __init__(self):
+            self.data = ''
+
+    class _Image:
+        def __init__(self):
+            self.header = SimpleNamespace(frame_id='')
+            self.height = 0
+            self.width = 0
+            self.encoding = ''
+            self.is_bigendian = 0
+            self.step = 0
+            self.data = b''
+
+    rclpy_mod = types.ModuleType('rclpy')
+    node_mod = types.ModuleType('rclpy.node')
+    parameter_mod = types.ModuleType('rclpy.parameter')
+    qos_mod = types.ModuleType('rclpy.qos')
+    node_mod.Node = _Node
+    parameter_mod.Parameter = _Parameter
+    qos_mod.DurabilityPolicy = SimpleNamespace(TRANSIENT_LOCAL=1, VOLATILE=2)
+    qos_mod.ReliabilityPolicy = SimpleNamespace(RELIABLE=1, BEST_EFFORT=2)
+    qos_mod.QoSProfile = lambda *args, **kwargs: SimpleNamespace(**kwargs)
+
+    geometry_msgs_mod = types.ModuleType('geometry_msgs')
+    geometry_msgs_msg_mod = types.ModuleType('geometry_msgs.msg')
+    geometry_msgs_msg_mod.PoseStamped = type('PoseStamped', (), {})
+    geometry_msgs_msg_mod.Twist = _Twist
+
+    nav_msgs_mod = types.ModuleType('nav_msgs')
+    nav_msgs_msg_mod = types.ModuleType('nav_msgs.msg')
+    nav_msgs_msg_mod.Odometry = type('Odometry', (), {})
+
+    sensor_msgs_mod = types.ModuleType('sensor_msgs')
+    sensor_msgs_msg_mod = types.ModuleType('sensor_msgs.msg')
+    sensor_msgs_msg_mod.CameraInfo = type('CameraInfo', (), {})
+    sensor_msgs_msg_mod.Image = _Image
+
+    rosnav_mod = types.ModuleType('rosnav_rl_msgs')
+    rosnav_srv_mod = types.ModuleType('rosnav_rl_msgs.srv')
+    rosnav_srv_mod.GetCommand = type('GetCommand', (), {
+        'Request': type('Request', (), {}),
+        'Response': type('Response', (), {}),
+    })
+
+    std_msgs_mod = types.ModuleType('std_msgs')
+    std_msgs_msg_mod = types.ModuleType('std_msgs.msg')
+    std_msgs_msg_mod.String = _String
+
+    sys.modules.update({
+        'rclpy': rclpy_mod,
+        'rclpy.node': node_mod,
+        'rclpy.parameter': parameter_mod,
+        'rclpy.qos': qos_mod,
+        'geometry_msgs': geometry_msgs_mod,
+        'geometry_msgs.msg': geometry_msgs_msg_mod,
+        'nav_msgs': nav_msgs_mod,
+        'nav_msgs.msg': nav_msgs_msg_mod,
+        'sensor_msgs': sensor_msgs_mod,
+        'sensor_msgs.msg': sensor_msgs_msg_mod,
+        'rosnav_rl_msgs': rosnav_mod,
+        'rosnav_rl_msgs.srv': rosnav_srv_mod,
+        'std_msgs': std_msgs_mod,
+        'std_msgs.msg': std_msgs_msg_mod,
+    })
+
+
+_install_ros_import_stubs_if_needed()
 
 from arena_vln_models.core import (
     camera_intrinsic_matrix,
@@ -12,7 +105,7 @@ from arena_vln_models.core import (
 from arena_vln_models.backends import HeuristicBackend, ModelSimDecision, Pose2D, PythonAdapterBackend, DualVLNObservation, _action_to_command
 from arena_vln_models import internnav as internnav_module
 from arena_vln_models.internnav import InternNavAdapter, available_backends, load_internnav_adapter
-from arena_vln_models.internnav_server import _normalize_internnav_adapter_target
+from arena_vln_models.internnav_server import InternNavServer, _normalize_internnav_adapter_target
 from arena_vln_models.visualization import image_msg_to_numpy, numpy_to_image_msg, render_debug_overlay
 
 
@@ -124,12 +217,89 @@ def test_python_adapter_backend_loads_canonical_target_only():
 def test_discrete_turn_mapping_supports_inverted_effective_labels():
     params = {'max_linear': 1.0, 'max_angular': 2.0, 'invert_discrete_turns': True}
     linear_x, angular_z, status, debug = _action_to_command(2, params)
-    assert status == 'discrete_turn_left'
-    assert linear_x > 0.0
+    assert status == 'discrete_turn_right'
+    assert linear_x == 0.0
     assert angular_z < 0.0
     assert debug['native_action_label'] == 'turn_left'
     assert debug['effective_action_label'] == 'turn_right'
     assert debug['invert_discrete_turns'] is True
+    assert debug['arc_turn'] is False
+
+
+def test_discrete_turn_mapping_default_preserves_native_effective_labels():
+    params = {'max_linear': 1.0, 'max_angular': 2.0, 'invert_discrete_turns': False}
+    linear_x, angular_z, status, debug = _action_to_command(2, params)
+    assert status == 'discrete_turn_left'
+    assert linear_x == 0.0
+    assert angular_z > 0.0
+    assert debug['native_action_label'] == 'turn_left'
+    assert debug['effective_action_label'] == 'turn_left'
+    assert debug['invert_discrete_turns'] is False
+    assert debug['arc_turn'] is False
+
+
+def test_trajectory_output_uses_internnav_continuous_subgoal_interface():
+    backend = PythonAdapterBackend.__new__(PythonAdapterBackend)
+    backend._params = {'max_linear': 0.5, 'max_angular': 0.5}
+
+    decision = backend._coerce_output({
+        'output_trajectory': [
+            [0.05, 0.0, 0.1],
+            [0.3, 0.4, -0.8],
+        ],
+        'debug': {'source': 'unit'},
+    })
+
+    assert decision.status == 'trajectory_command'
+    assert decision.linear_x == 0.5
+    assert decision.angular_z == -0.5
+    assert decision.debug['trajectory_control_step'] == [0.3, 0.4, -0.8]
+    assert decision.debug['trajectory_first_step'] == [0.05, 0.0, 0.1]
+    assert decision.debug['trajectory_command_interface'] == 'internnav_continuous_subgoal_vw'
+
+
+def test_trajectory_policy_prefers_trajectory_when_action_is_also_present():
+    backend = PythonAdapterBackend.__new__(PythonAdapterBackend)
+    backend._params = {
+        'max_linear': 0.5,
+        'max_angular': 0.5,
+        'model_output_policy': 'trajectory',
+        'invert_discrete_turns': False,
+    }
+
+    decision = backend._coerce_output({
+        'discrete_action': 2,
+        'output_trajectory': [[0.4, 0.0, 0.25]],
+    })
+
+    assert decision.status == 'trajectory_command'
+    assert decision.linear_x == 0.4
+    assert decision.angular_z == 0.25
+    assert decision.debug['selected_output_mode'] == 'trajectory'
+    assert decision.debug['model_output_policy'] == 'trajectory'
+    assert 'selected_action' not in decision.debug
+
+
+def test_discrete_policy_forces_action_mapping_for_ablation():
+    backend = PythonAdapterBackend.__new__(PythonAdapterBackend)
+    backend._params = {
+        'max_linear': 0.5,
+        'max_angular': 0.5,
+        'model_output_policy': 'discrete',
+        'invert_discrete_turns': False,
+    }
+
+    decision = backend._coerce_output({
+        'discrete_action': 2,
+        'output_trajectory': [[0.4, 0.0, 0.25]],
+    })
+
+    assert decision.status == 'discrete_turn_left'
+    assert decision.linear_x == 0.0
+    assert decision.angular_z > 0.0
+    assert decision.debug['selected_output_mode'] == 'discrete'
+    assert decision.debug['model_output_policy'] == 'discrete'
+    assert decision.debug['selected_action'] == 2
 
 
 def test_internnav_server_defaults_empty_adapter_target_for_internnav_mode():
@@ -145,6 +315,41 @@ def test_internnav_server_normalizes_legacy_native_adapter_target():
     )
     assert adapter_target == 'arena_vln_models.internnav:load_internnav_adapter'
     assert source == 'legacy:internnav.agent.internvla_n1_agent_realworld.InternVLAN1AsyncAgent'
+
+
+def test_internnav_cached_command_preserves_last_model_turn_direction():
+    server = InternNavServer.__new__(InternNavServer)
+    server._state_lock = threading.Lock()
+    server._params = {'camera_stale_after_sec': 2.0, 'invert_discrete_turns': True}
+    server._latest_rgb_ts = 0.0
+    server._latest_depth_ts = 0.0
+    server._camera_info_ts = 0.0
+    server._last_model_decision = ModelSimDecision(
+        linear_x=0.36,
+        angular_z=-0.375,
+        status='internnav_command',
+        degraded=False,
+        debug={
+            'selected_action': 2,
+            'native_action_label': 'turn_left',
+            'effective_action_label': 'turn_right',
+            'invert_discrete_turns': True,
+        },
+    )
+
+    cached = server._cached_model_decision_while_computing(DualVLNObservation(
+        pose=Pose2D(0.0, 0.0, 0.0),
+        goal=Pose2D(1.0, 0.0, 0.0),
+        instruction='go forward',
+    ))
+
+    assert cached is not None
+    assert cached.status == 'inference_in_progress_cached_internnav_command'
+    assert cached.linear_x == 0.36
+    assert cached.angular_z == -0.375
+    assert cached.debug['cached_previous_model_command'] is True
+    assert cached.debug['cached_selected_action'] == 2
+    assert 'selected_action' not in cached.debug
 
 
 def test_heuristic_backend_produces_forward_command():

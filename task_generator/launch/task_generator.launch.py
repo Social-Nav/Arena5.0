@@ -118,6 +118,14 @@ def generate_launch_description():
         name="timeout",
         default_value="120.0",
     )
+    timeout_wall_factor = LaunchArgument(
+        name="timeout_wall_factor",
+        default_value="5.0",
+    )
+    timeout_wall_sec = LaunchArgument(
+        name="timeout_wall_sec",
+        default_value="0.0",
+    )
     vln_instruction = LaunchArgument(
         name="vln_instruction",
         default_value="navigate",
@@ -213,11 +221,23 @@ def generate_launch_description():
         default_value="internnav/debug_image",
     )
     dual_vln_visualization_topic = declare_legacy_alias("dual_vln_visualization_topic", internnav_visualization_topic)
+    internnav_action_visualization_topic = LaunchArgument(
+        name="internnav_action_visualization_topic",
+        default_value="internnav/action_image",
+    )
+    dual_vln_action_visualization_topic = declare_legacy_alias(
+        "dual_vln_action_visualization_topic", internnav_action_visualization_topic
+    )
     internnav_visualization_rate_hz = LaunchArgument(
         name="internnav_visualization_rate_hz",
         default_value="5.0",
     )
     dual_vln_visualization_rate_hz = declare_legacy_alias("dual_vln_visualization_rate_hz", internnav_visualization_rate_hz)
+    internnav_model_output_topic = LaunchArgument(
+        name="internnav_model_output_topic",
+        default_value="internnav/model_output",
+    )
+    dual_vln_model_output_topic = declare_legacy_alias("dual_vln_model_output_topic", internnav_model_output_topic)
     internnav_external_server = LaunchArgument(
         name="internnav_external_server",
         default_value="false",
@@ -338,6 +358,8 @@ def generate_launch_description():
                 **episodes.param(int),
                 **auto_reset.param(bool),
                 **timeout.param(int),
+                **timeout_wall_factor.param(float),
+                **timeout_wall_sec.param(float),
                 **vln_instruction.str_param,
                 **vln_instruction_file.str_param,
                 'internnav_mode': dual_vln_mode.param_value(str),
@@ -355,7 +377,9 @@ def generate_launch_description():
                 'internnav_look_down': dual_vln_look_down.param_value(bool),
                 'internnav_enable_visualization': dual_vln_enable_visualization.param_value(bool),
                 'internnav_visualization_topic': dual_vln_visualization_topic.param_value(str),
+                'internnav_action_visualization_topic': dual_vln_action_visualization_topic.param_value(str),
                 'internnav_visualization_rate_hz': dual_vln_visualization_rate_hz.param_value(float),
+                'internnav_model_output_topic': dual_vln_model_output_topic.param_value(str),
                 'internnav_external_server': internnav_external_server.param_value(bool),
                 **dual_vln_mode.str_param,
                 **dual_vln_model_path.str_param,
@@ -372,7 +396,9 @@ def generate_launch_description():
                 **dual_vln_look_down.param(bool),
                 **dual_vln_enable_visualization.param(bool),
                 **dual_vln_visualization_topic.str_param,
+                **dual_vln_action_visualization_topic.str_param,
                 **dual_vln_visualization_rate_hz.param(float),
+                **dual_vln_model_output_topic.str_param,
                 **internnav_external_server.param(bool),
                 **dual_vln_external_server.param(bool),
                 **enable_collision_monitor.param(bool),

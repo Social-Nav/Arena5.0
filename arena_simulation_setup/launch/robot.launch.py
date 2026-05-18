@@ -83,12 +83,18 @@ def generate_launch_description():
     dual_vln_strict_device = declare_legacy_alias('dual_vln_strict_device', internnav_strict_device)
     internnav_look_down = LaunchArgument('internnav_look_down', default_value='false')
     dual_vln_look_down = declare_legacy_alias('dual_vln_look_down', internnav_look_down)
+    internnav_model_output_policy = LaunchArgument('internnav_model_output_policy', default_value='trajectory')
+    dual_vln_model_output_policy = declare_legacy_alias('dual_vln_model_output_policy', internnav_model_output_policy)
     internnav_enable_visualization = LaunchArgument('internnav_enable_visualization', default_value='false')
     dual_vln_enable_visualization = declare_legacy_alias('dual_vln_enable_visualization', internnav_enable_visualization)
     internnav_visualization_topic = LaunchArgument('internnav_visualization_topic', default_value='internnav/debug_image')
     dual_vln_visualization_topic = declare_legacy_alias('dual_vln_visualization_topic', internnav_visualization_topic)
+    internnav_action_visualization_topic = LaunchArgument('internnav_action_visualization_topic', default_value='internnav/action_image')
+    dual_vln_action_visualization_topic = declare_legacy_alias('dual_vln_action_visualization_topic', internnav_action_visualization_topic)
     internnav_visualization_rate_hz = LaunchArgument('internnav_visualization_rate_hz', default_value='5.0')
     dual_vln_visualization_rate_hz = declare_legacy_alias('dual_vln_visualization_rate_hz', internnav_visualization_rate_hz)
+    internnav_model_output_topic = LaunchArgument('internnav_model_output_topic', default_value='internnav/model_output')
+    dual_vln_model_output_topic = declare_legacy_alias('dual_vln_model_output_topic', internnav_model_output_topic)
     internnav_external_server = LaunchArgument('internnav_external_server', default_value='false')
     dual_vln_external_server = declare_legacy_alias('dual_vln_external_server', internnav_external_server)
     enable_collision_monitor = LaunchArgument('enable_collision_monitor', default_value='true')
@@ -209,13 +215,16 @@ def generate_launch_description():
             'look_down': launch_ros.parameter_descriptions.ParameterValue(
                 internnav_look_down.substitution, value_type=bool
             ),
+            'model_output_policy': internnav_model_output_policy.substitution,
             'enable_visualization': launch_ros.parameter_descriptions.ParameterValue(
                 internnav_enable_visualization.substitution, value_type=bool
             ),
             'visualization_topic': internnav_visualization_topic.substitution,
+            'action_visualization_topic': internnav_action_visualization_topic.substitution,
             'visualization_rate_hz': launch_ros.parameter_descriptions.ParameterValue(
                 internnav_visualization_rate_hz.substitution, value_type=float
             ),
+            'model_output_topic': internnav_model_output_topic.substitution,
             'inference_rate_hz': launch_ros.parameter_descriptions.ParameterValue(
                 internnav_inference_rate_hz.substitution, value_type=float
             ),

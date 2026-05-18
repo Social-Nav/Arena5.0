@@ -4,6 +4,7 @@ import os
 import sys
 import threading
 import time
+from copy import deepcopy
 from typing import Optional
 
 
@@ -112,7 +113,9 @@ class BaseModelSimServer(Node):
     SERVER_LABEL = 'model_sim'
     MODEL_INSTANCE = 'generic'
     DEFAULT_VISUALIZATION_TOPIC = 'model_sim/debug_image'
+    DEFAULT_ACTION_VISUALIZATION_TOPIC = 'model_sim/action_image'
     DEFAULT_STATUS_TOPIC = 'model_sim/status'
+    DEFAULT_MODEL_OUTPUT_TOPIC = 'model_sim/model_output'
     COMPUTE_THREAD_NAME = 'model_sim_compute_worker'
 
     def __init__(self) -> None:
@@ -129,8 +132,10 @@ class BaseModelSimServer(Node):
         self.declare_parameter('camera_info_topic', '')
         self.declare_parameter('enable_visualization', False)
         self.declare_parameter('visualization_topic', self.DEFAULT_VISUALIZATION_TOPIC)
+        self.declare_parameter('action_visualization_topic', self.DEFAULT_ACTION_VISUALIZATION_TOPIC)
         self.declare_parameter('visualization_rate_hz', 5.0)
         self.declare_parameter('status_topic', self.DEFAULT_STATUS_TOPIC)
+        self.declare_parameter('model_output_topic', self.DEFAULT_MODEL_OUTPUT_TOPIC)
 
         # Control params
         # NOTE: "command_timeout_sec" historically acted as a compute throttle.
@@ -147,6 +152,7 @@ class BaseModelSimServer(Node):
         self.declare_parameter('require_real_backend', False)
         self.declare_parameter('strict_device', False)
         self.declare_parameter('look_down', False)
+        self.declare_parameter('model_output_policy', 'trajectory')
         self.declare_parameter('max_linear', 0.6)
         self.declare_parameter('max_angular', 1.5)
         self.declare_parameter('k_lin', 1.2)
@@ -155,7 +161,11 @@ class BaseModelSimServer(Node):
         self.declare_parameter('angle_tolerance', 0.25)
         self.declare_parameter('min_lin_when_aligned', 0.05)
         self.declare_parameter('trace_path', '')
-        self.declare_parameter('invert_discrete_turns', False)
+        # InternNav/InternVLA-N1 emits discrete action ids in the native agent's
+        # camera/action convention.  In Isaac/ROS cmd_vel, action 2 must be
+        # executed as a right arc and action 3 as a left arc; keep the parameter
+        # explicit so diagnostics can still force the legacy mapping when needed.
+        self.declare_parameter('invert_discrete_turns', True)
 
         self._pose: Optional[Pose2D] = None
         self._last_odom_pose_ts: float = 0.0
@@ -166,6 +176,7 @@ class BaseModelSimServer(Node):
         self._last_visualization_ts: float = 0.0
         self._last_cmd: Twist = Twist()
         self._last_decision: ModelSimDecision = ModelSimDecision(status='startup', degraded=True)
+        self._last_model_decision: Optional[ModelSimDecision] = None
         self._state_lock = threading.Lock()
         self._compute_in_progress = False
         self._latest_rgb: Optional[np.ndarray] = None
@@ -181,6 +192,7 @@ class BaseModelSimServer(Node):
         self._initial_camera_timed_out: bool = False
         self._trace_path: str = ''
         self._trace_seq: int = 0
+        self._model_output_seq: int = 0
         self._action_history: list[int] = []
 
         mode, mode_source = _resolve_string(
@@ -244,13 +256,25 @@ class BaseModelSimServer(Node):
             self.get_parameter('invert_discrete_turns').value,
             env_names=('ARENA_EVAL_INTERNNAV_INVERT_DISCRETE_TURNS', 'ARENA_INTERNNAV_INVERT_DISCRETE_TURNS'),
         )
+        model_output_policy, model_output_policy_source = _resolve_string(
+            self.get_parameter('model_output_policy').value,
+            env_names=('ARENA_EVAL_INTERNNAV_MODEL_OUTPUT_POLICY', 'ARENA_INTERNNAV_MODEL_OUTPUT_POLICY'),
+        )
         visualization_topic, visualization_topic_source = _resolve_string(
             self.get_parameter('visualization_topic').value,
             env_names=('ARENA_EVAL_INTERNNAV_VISUALIZATION_TOPIC',),
         )
+        action_visualization_topic, action_visualization_topic_source = _resolve_string(
+            self.get_parameter('action_visualization_topic').value,
+            env_names=('ARENA_EVAL_INTERNNAV_ACTION_VISUALIZATION_TOPIC',),
+        )
         visualization_rate_hz, visualization_rate_hz_source = _resolve_float(
             self.get_parameter('visualization_rate_hz').value,
             env_names=('ARENA_EVAL_INTERNNAV_VISUALIZATION_RATE_HZ',),
+        )
+        model_output_topic, model_output_topic_source = _resolve_string(
+            self.get_parameter('model_output_topic').value,
+            env_names=('ARENA_EVAL_INTERNNAV_MODEL_OUTPUT_TOPIC',),
         )
         adapter_target_raw, adapter_target_env_source = _resolve_string(
             self.get_parameter('adapter_target').value,
@@ -277,8 +301,11 @@ class BaseModelSimServer(Node):
             ('enable_visualization', enable_visualization, enable_visualization_source),
             ('trace_path', trace_path, trace_path_source),
             ('invert_discrete_turns', invert_discrete_turns, invert_discrete_turns_source),
+            ('model_output_policy', model_output_policy, model_output_policy_source),
             ('visualization_topic', visualization_topic, visualization_topic_source),
+            ('action_visualization_topic', action_visualization_topic, action_visualization_topic_source),
             ('visualization_rate_hz', visualization_rate_hz, visualization_rate_hz_source),
+            ('model_output_topic', model_output_topic, model_output_topic_source),
         ):
             if source is not None:
                 parameter_overrides.append(Parameter(name, value=value))
@@ -306,6 +333,7 @@ class BaseModelSimServer(Node):
             'angle_tolerance': float(self.get_parameter('angle_tolerance').value),
             'min_lin_when_aligned': float(self.get_parameter('min_lin_when_aligned').value),
             'invert_discrete_turns': bool(invert_discrete_turns),
+            'model_output_policy': model_output_policy,
         }
         self._trace_path = trace_path
 
@@ -362,13 +390,24 @@ class BaseModelSimServer(Node):
             str(self.get_parameter('status_topic').value),
             status_qos,
         )
+        self._model_output_publisher = self.create_publisher(
+            String,
+            str(self.get_parameter('model_output_topic').value),
+            status_qos,
+        )
 
         self._visualization_enabled = enable_visualization
         self._visualization_publisher = None
+        self._action_visualization_publisher = None
         if self._visualization_enabled:
             self._visualization_publisher = self.create_publisher(
                 Image,
                 str(self.get_parameter('visualization_topic').value),
+                10,
+            )
+            self._action_visualization_publisher = self.create_publisher(
+                Image,
+                str(self.get_parameter('action_visualization_topic').value),
                 10,
             )
             if not rgb_topic:
@@ -400,8 +439,11 @@ class BaseModelSimServer(Node):
             ('enable_visualization', enable_visualization_source),
             ('trace_path', trace_path_source),
             ('invert_discrete_turns', invert_discrete_turns_source),
+            ('model_output_policy', model_output_policy_source),
             ('visualization_topic', visualization_topic_source),
+            ('action_visualization_topic', action_visualization_topic_source),
             ('visualization_rate_hz', visualization_rate_hz_source),
+            ('model_output_topic', model_output_topic_source),
         ):
             if source is not None:
                 self.get_logger().info(f'Using InternNav {label} override from {source}')
@@ -444,6 +486,8 @@ class BaseModelSimServer(Node):
                 f'rgb={rgb_topic or "<disabled>"} depth={depth_topic or "<disabled>"} '
                 f'camera_info={camera_info_topic or "<disabled>"} look_down={self._params["look_down"]} '
                 f'visualization={self._visualization_enabled} trace={self._trace_path or "<disabled>"} '
+                f'action_visualization_topic={self.get_parameter("action_visualization_topic").value} '
+                f'model_output_topic={self.get_parameter("model_output_topic").value} '
                 f'invert_discrete_turns={self._params["invert_discrete_turns"]}'
             )
         )
@@ -455,7 +499,7 @@ class BaseModelSimServer(Node):
         if missing_inputs or stale_inputs:
             startup_status = 'camera_timeout' if self._initial_camera_timed_out else 'waiting_for_camera'
             startup_degraded = True
-        self._last_decision = ModelSimDecision(
+            self._last_decision = ModelSimDecision(
             status=startup_status,
             degraded=startup_degraded,
             debug={
@@ -474,6 +518,7 @@ class BaseModelSimServer(Node):
             },
         )
         self._publish_status(self._last_decision)
+        self._publish_model_output(None, self._last_decision, event_type='startup')
         self.create_timer(0.5, self._publish_readiness_status_if_ready)
         self.create_timer(1.0, self._republish_last_status)
         self.get_logger().info(
@@ -616,10 +661,13 @@ class BaseModelSimServer(Node):
         )
         self._set_last_decision(decision)
         self._publish_status(decision)
+        self._publish_model_output(None, decision, event_type='readiness')
 
     def _republish_last_status(self) -> None:
         with self._state_lock:
-            decision = self._last_decision
+            decision = deepcopy(self._last_decision)
+        decision.debug['sensor_ages_sec'] = self._camera_sensor_ages()
+        decision.debug['stale_after_sec'] = float(self._params.get('camera_stale_after_sec', 0.0))
         self._publish_status(decision)
 
     def _to_jsonable(self, value):
@@ -772,6 +820,39 @@ class BaseModelSimServer(Node):
         decision.debug['action_history_tail'] = list(self._action_history[-12:])
         decision.debug.setdefault('invert_discrete_turns', bool(self._params.get('invert_discrete_turns', False)))
 
+    def _cached_model_decision_while_computing(self, observation: ModelSimObservation) -> ModelSimDecision | None:
+        with self._state_lock:
+            last_model_decision = deepcopy(self._last_model_decision)
+
+        if last_model_decision is None:
+            return None
+        if last_model_decision.degraded:
+            return None
+
+        cached_debug = dict(last_model_decision.debug)
+        cached_debug['background_compute_in_progress'] = True
+        cached_debug['cached_previous_model_command'] = True
+        cached_debug['cached_previous_model_status'] = last_model_decision.status
+        selected_action = cached_debug.pop('selected_action', None)
+        if selected_action is not None:
+            cached_debug['cached_selected_action'] = selected_action
+        cached_debug['sensor_ages_sec'] = self._camera_sensor_ages()
+        cached_debug['stale_after_sec'] = float(self._params.get('camera_stale_after_sec', 0.0))
+
+        geometry = self._goal_geometry(observation)
+        if geometry.get('goal_distance') is not None:
+            cached_debug['goal_distance'] = geometry.get('goal_distance')
+        if geometry.get('yaw_error') is not None:
+            cached_debug['yaw_error'] = geometry.get('yaw_error')
+
+        return ModelSimDecision(
+            linear_x=last_model_decision.linear_x,
+            angular_z=last_model_decision.angular_z,
+            status='inference_in_progress_cached_' + last_model_decision.status,
+            degraded=True,
+            debug=cached_debug,
+        )
+
     def _decision_to_twist(self, decision: ModelSimDecision) -> Twist:
         cmd = Twist()
         cmd.linear.x = float(decision.linear_x)
@@ -794,6 +875,93 @@ class BaseModelSimServer(Node):
             sort_keys=True,
         )
         self._status_publisher.publish(message)
+
+    def _publish_model_output(
+        self,
+        observation: Optional[ModelSimObservation],
+        decision: ModelSimDecision,
+        *,
+        event_type: str = 'model_result',
+    ) -> None:
+        self._model_output_seq += 1
+        debug = self._to_jsonable(decision.debug)
+        selected_action = debug.get('selected_action')
+        try:
+            selected_action_int = int(selected_action) if selected_action is not None else None
+        except (TypeError, ValueError):
+            selected_action_int = None
+
+        geometry = self._goal_geometry(observation) if observation is not None else {
+            'pose': None,
+            'goal': None,
+            'goal_distance': debug.get('goal_distance'),
+            'yaw_error': debug.get('yaw_error'),
+        }
+        raw_model_output = debug.get('raw_model_output')
+        if raw_model_output is None:
+            raw_model_output = {
+                'linear_x': float(decision.linear_x),
+                'angular_z': float(decision.angular_z),
+                'status': decision.status,
+                'degraded': bool(decision.degraded),
+            }
+            if selected_action_int is not None:
+                raw_model_output['discrete_action'] = selected_action_int
+
+        record = {
+            'seq': self._model_output_seq,
+            'stamp_wall_time': time.time(),
+            'stamp_monotonic': time.monotonic(),
+            'namespace': self.get_namespace(),
+            'wrapper': self.SERVER_LABEL,
+            'model_instance': self.MODEL_INSTANCE,
+            'backend_type': getattr(self._backend, 'backend_type', ''),
+            'event_type': event_type,
+            'status': decision.status,
+            'degraded': bool(decision.degraded),
+            'raw_model_output_type': debug.get('raw_model_output_type'),
+            'raw_model_output': raw_model_output,
+            'converted_command': {
+                'linear_x': float(decision.linear_x),
+                'angular_z': float(decision.angular_z),
+            },
+            'action': {
+                'selected': selected_action_int,
+                'label': debug.get('action_label'),
+                'native_label': debug.get('native_action_label', debug.get('action_label')),
+                'effective_label': debug.get('effective_action_label', debug.get('action_label')),
+                'converted_status': debug.get('converted_status'),
+                'arc_turn': bool(debug.get('arc_turn', False)),
+                'invert_discrete_turns': bool(debug.get('invert_discrete_turns', self._params.get('invert_discrete_turns', False))),
+                'history_tail': list(self._action_history[-24:]),
+                'remaining_action_queue': debug.get('remaining_action_queue'),
+            },
+            'goal': geometry,
+            'observation': {
+                'rgb_available': bool(observation is not None and observation.rgb_image is not None),
+                'depth_available': bool(observation is not None and observation.depth_image is not None),
+                'camera_info_available': bool(observation is not None and observation.camera_intrinsics is not None),
+                'rgb_shape': debug.get('rgb_shape'),
+                'depth_shape': debug.get('depth_shape'),
+                'camera_frame_id': observation.camera_frame_id if observation is not None else '',
+                'sensor_ages_sec': self._to_jsonable(self._camera_sensor_ages()),
+                'stale_after_sec': float(self._params.get('camera_stale_after_sec', 0.0)),
+                'look_down': bool(observation.look_down) if observation is not None else bool(debug.get('look_down', False)),
+            },
+            'instruction': {
+                'length': len(observation.instruction) if observation is not None else None,
+                'preview': observation.instruction[:220] if observation is not None else '',
+            },
+            'timing': {
+                'infer_time_sec': debug.get('infer_time_sec'),
+                'subprocess_compute_sec': debug.get('subprocess_compute_sec'),
+            },
+            'debug': debug,
+        }
+
+        message = String()
+        message.data = json.dumps(self._to_jsonable(record), ensure_ascii=False, sort_keys=True)
+        self._model_output_publisher.publish(message)
 
     def _should_compute(self, now: float) -> bool:
         if self._backend.uses_model_inference:
@@ -845,26 +1013,35 @@ class BaseModelSimServer(Node):
         with self._state_lock:
             self._last_decision = decision
             self._last_cmd = self._decision_to_twist(decision)
+            if not decision.degraded:
+                self._last_model_decision = deepcopy(decision)
             self._compute_in_progress = False
 
         self._publish_status(decision)
+        self._publish_model_output(observation, decision, event_type='model_result')
         self._maybe_publish_visualization(observation, decision)
 
     def _publish_fallback_while_computing(self, observation: ModelSimObservation) -> None:
         try:
-            decision = self._fallback_backend.compute(observation)
-            decision.status = 'inference_in_progress_cached_' + decision.status
-            decision.degraded = True
-            decision.debug['background_compute_in_progress'] = True
+            decision = self._cached_model_decision_while_computing(observation)
+            if decision is None:
+                decision = self._fallback_backend.compute(observation)
+                decision.status = 'inference_in_progress_cached_' + decision.status
+                decision.degraded = True
+                decision.debug['background_compute_in_progress'] = True
+                decision.debug['cached_previous_model_command'] = False
             self._annotate_decision_for_diagnostics(observation, decision)
             self._write_trace_record(observation, decision, event_type='fallback_command')
             self._set_last_decision(decision)
             self._publish_status(decision)
+            self._publish_model_output(observation, decision, event_type='fallback_command')
         except Exception as exc:
             self.get_logger().warn(f'fallback command while model inference is running failed: {exc}')
 
     def _maybe_publish_visualization(self, observation: ModelSimObservation, decision: ModelSimDecision) -> None:
-        if not self._visualization_enabled or self._visualization_publisher is None:
+        if not self._visualization_enabled or (
+            self._visualization_publisher is None and self._action_visualization_publisher is None
+        ):
             return
         if self._latest_rgb is None or self._latest_rgb_msg is None:
             return
@@ -882,7 +1059,11 @@ class BaseModelSimServer(Node):
                 decision,
                 backend_name=self._backend.backend_type,
             )
-            self._visualization_publisher.publish(numpy_to_image_msg(image, self._latest_rgb_msg))
+            image_msg = numpy_to_image_msg(image, self._latest_rgb_msg)
+            if self._visualization_publisher is not None:
+                self._visualization_publisher.publish(image_msg)
+            if self._action_visualization_publisher is not None:
+                self._action_visualization_publisher.publish(image_msg)
             self._last_visualization_ts = now
         except Exception as exc:
             self.get_logger().warn(f'Failed to publish {self.SERVER_LABEL} visualization: {exc}')
@@ -968,6 +1149,7 @@ class BaseModelSimServer(Node):
                 self._write_trace_record(observation, camera_gate_decision, event_type='camera_gate')
                 self._set_last_decision(camera_gate_decision)
                 self._publish_status(camera_gate_decision)
+                self._publish_model_output(observation, camera_gate_decision, event_type='camera_gate')
                 response.twist = self._get_last_cmd()
                 return response
             observation = self._build_observation()
@@ -993,6 +1175,7 @@ class BaseModelSimServer(Node):
                     self._set_last_decision(decision)
                     self._last_compute_ts = now
                     self._publish_status(decision)
+                    self._publish_model_output(observation, decision, event_type='model_result')
             with self._state_lock:
                 last_decision = self._last_decision
             self._maybe_publish_visualization(observation, last_decision)
@@ -1005,6 +1188,7 @@ class BaseModelSimServer(Node):
             )
             self._set_last_decision(decision)
             self._publish_status(decision)
+            self._publish_model_output(None, decision, event_type='exception')
 
         response.twist = self._get_last_cmd()
         return response
@@ -1022,7 +1206,9 @@ class InternNavServer(BaseModelSimServer):
     SERVER_LABEL = 'internnav'
     MODEL_INSTANCE = 'dual_vln'
     DEFAULT_VISUALIZATION_TOPIC = 'internnav/debug_image'
+    DEFAULT_ACTION_VISUALIZATION_TOPIC = 'internnav/action_image'
     DEFAULT_STATUS_TOPIC = 'internnav/status'
+    DEFAULT_MODEL_OUTPUT_TOPIC = 'internnav/model_output'
     COMPUTE_THREAD_NAME = 'internnav_compute_worker'
 
     def _requires_initial_camera(self, *, mode: str, rgb_topic: str, depth_topic: str, camera_info_topic: str) -> bool:

@@ -211,7 +211,7 @@ source_fn(){
 }
 
 launch(){
-    local robot namespace mode model_path device rgb_topic depth_topic camera_info_topic instruction_topic trace_path status_topic visualization_topic visualization_rate_hz enable_visualization inference_rate_hz inference_timeout_sec extra_ros_args
+    local robot namespace mode model_path device rgb_topic depth_topic camera_info_topic instruction_topic trace_path status_topic visualization_topic action_visualization_topic model_output_topic model_output_policy visualization_rate_hz enable_visualization invert_discrete_turns inference_rate_hz inference_timeout_sec extra_ros_args
     robot="${ARENA_INTERNNAV_ROBOT:-Ai2_Bot2}"
     namespace="${ARENA_INTERNNAV_NAMESPACE:-/task_generator_node/$robot}"
     mode="${ARENA_INTERNNAV_MODE:-internnav}"
@@ -224,8 +224,12 @@ launch(){
     trace_path="${ARENA_INTERNNAV_TRACE_PATH:-}"
     status_topic="${ARENA_INTERNNAV_STATUS_TOPIC:-internnav/status}"
     visualization_topic="${ARENA_INTERNNAV_VISUALIZATION_TOPIC:-internnav/debug_image}"
+    action_visualization_topic="${ARENA_INTERNNAV_ACTION_VISUALIZATION_TOPIC:-internnav/action_image}"
+    model_output_topic="${ARENA_INTERNNAV_MODEL_OUTPUT_TOPIC:-internnav/model_output}"
+    model_output_policy="${ARENA_INTERNNAV_MODEL_OUTPUT_POLICY:-${ARENA_EVAL_INTERNNAV_MODEL_OUTPUT_POLICY:-trajectory}}"
     visualization_rate_hz="${ARENA_INTERNNAV_VISUALIZATION_RATE_HZ:-5.0}"
     enable_visualization="${ARENA_INTERNNAV_ENABLE_VISUALIZATION:-true}"
+    invert_discrete_turns="${ARENA_INTERNNAV_INVERT_DISCRETE_TURNS:-${ARENA_EVAL_INTERNNAV_INVERT_DISCRETE_TURNS:-true}}"
     inference_rate_hz="${ARENA_INTERNNAV_INFERENCE_RATE_HZ:-10.0}"
     inference_timeout_sec="${ARENA_INTERNNAV_INFERENCE_TIMEOUT_SEC:-120.0}"
     extra_ros_args="${ARENA_INTERNNAV_EXTRA_ROS_ARGS:-}"
@@ -244,9 +248,14 @@ launch(){
             --trace-path) trace_path="$2"; shift 2 ;;
             --status-topic) status_topic="$2"; shift 2 ;;
             --visualization-topic) visualization_topic="$2"; shift 2 ;;
+            --action-visualization-topic) action_visualization_topic="$2"; shift 2 ;;
+            --model-output-topic) model_output_topic="$2"; shift 2 ;;
+            --model-output-policy) model_output_policy="$2"; shift 2 ;;
             --visualization-rate-hz) visualization_rate_hz="$2"; shift 2 ;;
             --enable-visualization) enable_visualization="true"; shift ;;
             --disable-visualization) enable_visualization="false"; shift ;;
+            --invert-discrete-turns) invert_discrete_turns="true"; shift ;;
+            --no-invert-discrete-turns) invert_discrete_turns="false"; shift ;;
             --inference-rate-hz) inference_rate_hz="$2"; shift 2 ;;
             --inference-timeout-sec) inference_timeout_sec="$2"; shift 2 ;;
             --) shift; extra_ros_args="$*"; break ;;
@@ -266,7 +275,7 @@ launch(){
     if [ -n "$trace_path" ]; then
         cmd="$cmd export ARENA_EVAL_INTERNNAV_TRACE_PATH='$trace_path';"
     fi
-    cmd="$cmd ros2 run arena_vln_models dual_vln_server --ros-args -r __ns:='$namespace' -r __node:=internnav_server -p namespace:='$namespace' -p mode:='$mode' -p model_path:='$model_path' -p device:='$device' -p goal_topic:=episode_goal_pose -p instruction_topic:='$instruction_topic' -p rgb_topic:='$rgb_topic' -p depth_topic:='$depth_topic' -p camera_info_topic:='$camera_info_topic' -p adapter_target:=arena_vln_models.internnav:load_internnav_adapter -p require_real_backend:=true -p strict_device:=false -p status_topic:='$status_topic' -p enable_visualization:='$enable_visualization' -p visualization_topic:='$visualization_topic' -p visualization_rate_hz:='$visualization_rate_hz' -p inference_rate_hz:='$inference_rate_hz' -p inference_timeout_sec:='$inference_timeout_sec' $extra_ros_args"
+    cmd="$cmd ros2 run arena_vln_models dual_vln_server --ros-args -r __ns:='$namespace' -r __node:=internnav_server -p namespace:='$namespace' -p mode:='$mode' -p model_path:='$model_path' -p device:='$device' -p goal_topic:=episode_goal_pose -p instruction_topic:='$instruction_topic' -p rgb_topic:='$rgb_topic' -p depth_topic:='$depth_topic' -p camera_info_topic:='$camera_info_topic' -p adapter_target:=arena_vln_models.internnav:load_internnav_adapter -p require_real_backend:=true -p strict_device:=false -p status_topic:='$status_topic' -p enable_visualization:='$enable_visualization' -p visualization_topic:='$visualization_topic' -p action_visualization_topic:='$action_visualization_topic' -p model_output_topic:='$model_output_topic' -p model_output_policy:='$model_output_policy' -p invert_discrete_turns:='$invert_discrete_turns' -p visualization_rate_hz:='$visualization_rate_hz' -p inference_rate_hz:='$inference_rate_hz' -p inference_timeout_sec:='$inference_timeout_sec' $extra_ros_args"
 
     arena_docker_compose exec -T internnav /entrypoint.sh bash -lc "$cmd"
 }
@@ -298,7 +307,11 @@ Launch options:
   --status-topic TOPIC          Default: internnav/status
   --enable-visualization        Publish debug overlay frames (default)
   --disable-visualization       Disable debug overlay frames
+  --invert-discrete-turns       Execute native action 2 as right, 3 as left (default)
+  --no-invert-discrete-turns    Preserve native action 2 as left, 3 as right
   --visualization-topic TOPIC   Default: internnav/debug_image
+  --action-visualization-topic TOPIC Default: internnav/action_image
+  --model-output-topic TOPIC    Default: internnav/model_output
   --visualization-rate-hz HZ    Default: 5.0
   --inference-rate-hz HZ        Default: 10.0
   --inference-timeout-sec SEC   Default: 120.0

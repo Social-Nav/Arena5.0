@@ -264,7 +264,12 @@ class InternNavSubprocessAdapter:
         self._seq = 0
         self._stderr_lines: list[str] = []
         env = os.environ.copy()
-        env.setdefault('ARENA_INTERNNAV_MAX_NEW_TOKENS', str(int(params.get('internnav_max_new_tokens', 10))))
+        output_policy = str(params.get('model_output_policy', 'trajectory')).strip().lower()
+        default_max_new_tokens = 32 if output_policy in {'trajectory', 'continuous', 'output_trajectory', 'traj'} else 10
+        env.setdefault(
+            'ARENA_INTERNNAV_MAX_NEW_TOKENS',
+            str(int(params.get('internnav_max_new_tokens', default_max_new_tokens))),
+        )
         work_dir = Path(env.get('ARENA_INTERNNAV_WORK_DIR', '/tmp/arena_internnav_work'))
         work_dir.mkdir(parents=True, exist_ok=True)
         pythonpath_parts = [str(internnav_root), str(internnav_root / 'third_party' / 'diffusion-policy')]
@@ -290,6 +295,10 @@ class InternNavSubprocessAdapter:
                 str(int(params.get('internnav_num_history', os.environ.get('ARENA_INTERNNAV_NUM_HISTORY', 0)))),
                 '--plan-step-gap',
                 str(int(params.get('internnav_plan_step_gap', os.environ.get('ARENA_INTERNNAV_PLAN_STEP_GAP', 12)))),
+                '--model-output-policy',
+                output_policy,
+                '--invert-discrete-turns',
+                str(bool(params.get('invert_discrete_turns', False))).lower(),
             ],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -347,7 +356,33 @@ def _jsonable(value):
         return _jsonable(value.tolist())
     return str(value)
 
-def _normalize_output(output):
+def _action_to_synthetic_trajectory(action, invert_discrete_turns=False):
+    try:
+        action_id = int(action)
+    except Exception:
+        return None
+    # Local [x, y, yaw] subgoal matching InternNav's real-world continuous
+    # trajectory interface closely enough for Arena's trajectory cmd_vel path.
+    # This is only used when the model answers with symbolic arrows despite a
+    # trajectory-policy prompt, so trajectory policy still exercises the
+    # output_trajectory -> cmd_vel converter instead of silently falling back to
+    # action_list -> cmd_vel.
+    turn = math.radians(15.0)
+    if invert_discrete_turns:
+        turn = -turn
+    if action_id == 1:
+        return [[0.25, 0.0, 0.0]]
+    if action_id == 2:
+        return [[0.0, 0.0, turn]]
+    if action_id == 3:
+        return [[0.0, 0.0, -turn]]
+    if action_id == 0:
+        return [[0.0, 0.0, 0.0]]
+    if action_id == 5:
+        return [[0.0, 0.0, 0.0]]
+    return None
+
+def _normalize_output(output, policy='trajectory', invert_discrete_turns=False):
     if isinstance(output, dict):
         result = dict(output)
     elif isinstance(output, (int, np.integer)):
@@ -377,6 +412,18 @@ def _normalize_output(output):
             result['status'] = 'internnav_unknown_output'
     result.setdefault('status', 'internnav_command')
     result.setdefault('debug', {})
+    normalized_policy = str(policy or 'trajectory').strip().lower()
+    if normalized_policy in {'trajectory', 'continuous', 'output_trajectory', 'traj'}:
+        if result.get('output_trajectory') is None and result.get('discrete_action') is not None:
+            synthetic = _action_to_synthetic_trajectory(
+                result.get('discrete_action'),
+                invert_discrete_turns=bool(invert_discrete_turns),
+            )
+            if synthetic is not None:
+                result['output_trajectory'] = synthetic
+                result['debug']['trajectory_synthesized_from_discrete_action'] = True
+                result['debug']['trajectory_synthesis_reason'] = 'model_returned_symbolic_action_without_output_trajectory'
+                result['debug']['trajectory_synthesis_invert_discrete_turns'] = bool(invert_discrete_turns)
     return _jsonable(result)
 
 parser = argparse.ArgumentParser()
@@ -386,6 +433,8 @@ parser.add_argument('--resize-w', type=int, default=448)
 parser.add_argument('--resize-h', type=int, default=448)
 parser.add_argument('--num-history', type=int, default=4)
 parser.add_argument('--plan-step-gap', type=int, default=4)
+parser.add_argument('--model-output-policy', default='trajectory')
+parser.add_argument('--invert-discrete-turns', default='false')
 args = parser.parse_args()
 
 try:
@@ -404,6 +453,23 @@ try:
         plan_step_gap=args.plan_step_gap,
     )
     agent = InternVLAN1AsyncAgent(agent_args)
+    policy = str(args.model_output_policy or 'trajectory').strip().lower()
+    if policy in {'trajectory', 'continuous', 'output_trajectory', 'traj'}:
+        # InternVLA-N1 can emit either symbolic arrows or image coordinates.
+        # For Arena's trajectory policy, bias S2 toward numeric image waypoints
+        # so S1 can decode the latent into output_trajectory instead of falling
+        # back to an action list.  Keep the normal prompt for discrete policy.
+        prompt = (
+            "You are an autonomous navigation assistant. Your task is to <instruction>. "
+            "Where should you go next to stay on track? Output ONLY the next waypoint's "
+            "numeric image coordinates as two integers in row column order, for example "
+            "240 320. Do not output arrow actions such as ↑, ←, →, ↓. Output STOP only "
+            "when you have successfully completed the task."
+        )
+        try:
+            agent.conversation = [{"from": "human", "value": prompt}, {"from": "gpt", "value": ""}]
+        except Exception:
+            pass
     print(json.dumps({
         'status': 'ready',
         'runtime_device': runtime_device,
@@ -441,11 +507,19 @@ for line in sys.stdin:
             bool(req.get('look_down', False)),
         )
         elapsed = time.time() - t0
-        result = _normalize_output(output)
+        result = _normalize_output(
+            output,
+            policy=args.model_output_policy,
+            invert_discrete_turns=str(args.invert_discrete_turns).strip().lower() in {'1', 'true', 'yes', 'on'},
+        )
         result.setdefault('debug', {})
         result['debug']['subprocess_runtime_device'] = getattr(agent_args, 'device', '')
         result['debug']['subprocess_compute_sec'] = elapsed
         result['debug']['subprocess_episode_idx'] = getattr(agent, 'episode_idx', None)
+        result['debug']['subprocess_model_output_policy'] = str(args.model_output_policy or '')
+        result['debug']['subprocess_llm_output'] = getattr(agent, 'llm_output', '')
+        result['debug']['subprocess_output_latent_pending'] = getattr(agent, 'output_latent', None) is not None
+        result['debug']['subprocess_output_action_pending'] = getattr(agent, 'output_action', None) is not None
         print(json.dumps({'status': 'ok', 'result': result}), flush=True)
     except Exception as exc:
         print(json.dumps({'status': 'error', 'error': str(exc), 'traceback': traceback.format_exc()}), flush=True)
@@ -843,9 +917,13 @@ class InternNavAdapter:
         response['debug'].update({'shim_mode': self._mode, **self._load_debug, **depth_debug(depth)})
 
         action_tail = response.get('debug', {}).pop('action_sequence_tail', None)
-        if action_tail:
+        output_policy = str(self._params.get('model_output_policy', 'trajectory')).strip().lower()
+        if action_tail and output_policy in {'discrete', 'raw', 'legacy'}:
             self._pending_actions.extend([int(item) for item in action_tail])
             response['debug']['remaining_action_queue'] = len(self._pending_actions)
+        elif action_tail:
+            response['debug']['ignored_action_sequence_tail'] = [int(item) for item in action_tail]
+            response['debug']['ignored_action_sequence_tail_reason'] = 'model_output_policy=trajectory'
         return response
 
     def _subprocess_response(self, observation: Any) -> dict[str, Any]:
