@@ -71,8 +71,12 @@ class TM_Robots(TaskMode):
         timeout_sec = self.node.conf.Robot.TIMEOUT.value
         sim_elapsed = self._PROPS.clock.clock.sec - self._last_reset
         wall_elapsed = time.monotonic() - getattr(self, '_last_reset_wall', time.monotonic())
+        wall_timeout_sec = self.node.rosparam[float].get('timeout_wall_sec', 0.0)
+        if wall_timeout_sec <= 0.0:
+            wall_timeout_factor = self.node.rosparam[float].get('timeout_wall_factor', 5.0)
+            wall_timeout_sec = max(timeout_sec * max(wall_timeout_factor, 1.0), timeout_sec + 120.0)
 
-        if sim_elapsed > timeout_sec or wall_elapsed > timeout_sec:
+        if sim_elapsed > timeout_sec or wall_elapsed > wall_timeout_sec:
             return True
 
         if not self._PROPS.robots:

@@ -36,6 +36,11 @@ from task_generator.shared import Orientation, Pose, Position, Robot
 
 import rclpy.node
 
+try:
+    import yaml
+except ModuleNotFoundError:  # pragma: no cover - PyYAML is present in ROS images
+    yaml = None
+
 _TERMINAL_NAV_STATUSES = frozenset({
     action_msgs.msg.GoalStatus.STATUS_SUCCEEDED,
     action_msgs.msg.GoalStatus.STATUS_ABORTED,
@@ -131,6 +136,7 @@ class RobotManager(NodeInterface):
         self._navigate_to_pose_client: typing.Optional[rclpy.action.ActionClient] = None
         self._navigate_goal_handle = None
         self._navigate_result_future = None
+        self._active_navigation_goal_uuid: tuple[int, ...] | None = None
 
         self._robot = self.node._environment_manager.realize(robot)
         self._robot.extra.setdefault('namespace', self.namespace)
@@ -140,15 +146,19 @@ class RobotManager(NodeInterface):
         self._goal_republish_ticks = 0
         self._camera_ready_topics: dict[str, str] = {}
         self._camera_ready_seen: dict[str, bool] = {}
+        self._camera_ready_seen_wall_time: dict[str, float] = {}
         self._dual_vln_status_topic: str | None = None
         self._dual_vln_status_subscription = None
         self._dual_vln_status: str = 'startup'
         self._dual_vln_status_wall_time: float = 0.0
+        self._dual_vln_status_payload: dict = {}
         self._direct_dual_vln_client: rclpy.client.Client | None = None
         self._direct_dual_vln_timer: rclpy.timer.Timer | None = None
         self._direct_dual_vln_future = None
         self._direct_dual_vln_status_bridge_active = False
         self._direct_dual_vln_last_status_twist: geometry_msgs.msg.Twist | None = None
+        self._direct_dual_vln_map_bounds: tuple[float, float, float, float] | None = None
+        self._direct_dual_vln_bounds_warning_emitted = False
 
         self._publish_goal_task: typing.Optional[asyncio.Task] = None
 
@@ -405,6 +415,7 @@ class RobotManager(NodeInterface):
             self._goal_pos = self._environment_manager.realize(goal_pos)
             self._is_goal_reached = False
             self._nav_stop_ticks = 0  # new goal incoming, stop publishing stop-zeros
+            self._active_navigation_goal_uuid = None
             self._goal_metadata_pub.publish(self._pose_stamped(self._goal_pos))
 
             await self._cancel_navigation_goal()
@@ -536,8 +547,10 @@ class RobotManager(NodeInterface):
     def _reset_navigation_readiness_state(self) -> None:
         if self._camera_ready_seen:
             self._camera_ready_seen = {key: False for key in self._camera_ready_seen}
+            self._camera_ready_seen_wall_time = {key: 0.0 for key in self._camera_ready_seen}
         self._dual_vln_status = 'startup'
         self._dual_vln_status_wall_time = 0.0
+        self._dual_vln_status_payload = {}
         self._direct_dual_vln_last_status_twist = None
 
     def _is_dual_vln_robot(self) -> bool:
@@ -556,6 +569,7 @@ class RobotManager(NodeInterface):
 
         self._camera_ready_topics = camera_topics
         self._camera_ready_seen = {key: False for key in self._camera_ready_topics}
+        self._camera_ready_seen_wall_time = {key: 0.0 for key in self._camera_ready_topics}
 
         # Isaac Sim camera topics are sensor-data streams and are commonly offered
         # as BEST_EFFORT.  Use matching QoS here so the navigation-start readiness
@@ -605,6 +619,7 @@ class RobotManager(NodeInterface):
     def _mark_camera_ready(self, key: str) -> None:
         if key in self._camera_ready_seen:
             self._camera_ready_seen[key] = True
+            self._camera_ready_seen_wall_time[key] = time.monotonic()
 
     def _on_dual_vln_status(self, msg: String) -> None:
         try:
@@ -613,8 +628,28 @@ class RobotManager(NodeInterface):
             return
         self._dual_vln_status = str(payload.get('status', '') or 'unknown')
         self._dual_vln_status_wall_time = time.monotonic()
+        self._dual_vln_status_payload = payload
         self._update_direct_dual_vln_status_twist(payload)
         self._publish_direct_dual_vln_status_command(payload)
+
+    def _dual_vln_status_has_fresh_sensors(self, payload: dict) -> bool:
+        debug = payload.get('debug') if isinstance(payload.get('debug'), dict) else {}
+        ages = debug.get('sensor_ages_sec') if isinstance(debug.get('sensor_ages_sec'), dict) else {}
+        stale_after = debug.get('stale_after_sec', 2.0)
+        try:
+            stale_after = float(stale_after)
+        except (TypeError, ValueError):
+            stale_after = 2.0
+        if stale_after <= 0.0:
+            return True
+
+        for key in ('rgb', 'depth'):
+            value = ages.get(key)
+            if not isinstance(value, (float, int)):
+                return False
+            if float(value) > stale_after:
+                return False
+        return True
 
     def _update_direct_dual_vln_status_twist(self, payload: dict) -> None:
         if str(payload.get('status', '') or '') != 'internnav_command':
@@ -649,7 +684,88 @@ class RobotManager(NodeInterface):
         twist = self._direct_dual_vln_last_status_twist
         if twist is None:
             return
+        if not self._direct_dual_vln_pose_inside_map_bounds():
+            self._publish_direct_dual_vln_stop()
+            return
         self._cmd_vel_pub.publish(twist)
+
+    def _publish_direct_dual_vln_stop(self) -> None:
+        if self._cmd_vel_pub is None:
+            return
+        self._direct_dual_vln_last_status_twist = None
+        self._cmd_vel_pub.publish(geometry_msgs.msg.Twist())
+
+    def _load_direct_dual_vln_map_bounds(self) -> tuple[float, float, float, float] | None:
+        if self._direct_dual_vln_map_bounds is not None:
+            return self._direct_dual_vln_map_bounds
+        if yaml is None:
+            return None
+        try:
+            world = str(self.node.conf.Arena.WORLD.value)
+            share = ament_index_python.packages.get_package_share_directory('arena_simulation_setup')
+            map_yaml = os.path.join(share, 'worlds', world, 'map', 'map.yaml')
+            with open(map_yaml, 'r', encoding='utf-8') as map_file:
+                metadata = yaml.safe_load(map_file) or {}
+            resolution = float(metadata.get('resolution', 0.0) or 0.0)
+            origin = metadata.get('origin') or [0.0, 0.0, 0.0]
+            image_path = str(metadata.get('image', '') or '')
+            if not os.path.isabs(image_path):
+                image_path = os.path.join(os.path.dirname(map_yaml), image_path)
+            if resolution <= 0.0 or len(origin) < 2 or not image_path:
+                return None
+            width, height = self._read_map_image_dimensions(image_path)
+            min_x = float(origin[0])
+            min_y = float(origin[1])
+            max_x = min_x + width * resolution
+            max_y = min_y + height * resolution
+            self._direct_dual_vln_map_bounds = (min_x, max_x, min_y, max_y)
+        except Exception as exc:
+            if not self._direct_dual_vln_bounds_warning_emitted:
+                self._logger.warn(f'Failed to load map bounds for direct dual_vln bridge safety guard: {exc}')
+                self._direct_dual_vln_bounds_warning_emitted = True
+            return None
+        return self._direct_dual_vln_map_bounds
+
+    def _read_map_image_dimensions(self, image_path: str) -> tuple[int, int]:
+        with open(image_path, 'rb') as image_file:
+            signature = image_file.read(24)
+            if signature.startswith(b'\x89PNG\r\n\x1a\n'):
+                return int.from_bytes(signature[16:20], 'big'), int.from_bytes(signature[20:24], 'big')
+
+            image_file.seek(0)
+            magic = image_file.readline().strip()
+            if magic not in {b'P2', b'P5'}:
+                raise ValueError(f'unsupported map image format {magic!r}')
+            tokens: list[bytes] = []
+            while len(tokens) < 2:
+                line = image_file.readline()
+                if not line:
+                    break
+                line = line.split(b'#', 1)[0]
+                tokens.extend(line.split())
+            if len(tokens) < 2:
+                raise ValueError('PGM header does not contain width/height')
+            return int(tokens[0]), int(tokens[1])
+
+    def _direct_dual_vln_pose_inside_map_bounds(self) -> bool:
+        if not self._is_dual_vln_robot():
+            return True
+        bounds = self._load_direct_dual_vln_map_bounds()
+        if bounds is None:
+            return True
+        margin = self.node.rosparam[float].get('direct_dual_vln_map_bounds_margin_m', 0.5)
+        min_x, max_x, min_y, max_y = bounds
+        x = float(self._pose.position.x)
+        y = float(self._pose.position.y)
+        inside = (min_x + margin) <= x <= (max_x - margin) and (min_y + margin) <= y <= (max_y - margin)
+        if not inside and not self._direct_dual_vln_bounds_warning_emitted:
+            self._logger.warn(
+                'Direct dual_vln bridge stopped because robot pose is outside the safe map bounds: '
+                f'pose=({x:.2f}, {y:.2f}), bounds=({min_x:.2f}, {max_x:.2f}, {min_y:.2f}, {max_y:.2f}), '
+                f'margin={margin:.2f}'
+            )
+            self._direct_dual_vln_bounds_warning_emitted = True
+        return inside
 
     async def _wait_for_camera_ready_before_navigation(self, *, timeout_s: float) -> bool:
         if not self._camera_ready_seen:
@@ -689,8 +805,16 @@ class RobotManager(NodeInterface):
             f'{status_topic} (accepted={sorted(accepted_statuses)})'
         )
         deadline = asyncio.get_running_loop().time() + max(float(timeout_s), 0.0)
+        last_status = self._dual_vln_status
         while asyncio.get_running_loop().time() < deadline:
-            if self._dual_vln_status in accepted_statuses and self._dual_vln_status_wall_time > 0.0:
+            last_status = self._dual_vln_status
+            status_age = time.monotonic() - self._dual_vln_status_wall_time if self._dual_vln_status_wall_time > 0.0 else float('inf')
+            if (
+                self._dual_vln_status in accepted_statuses
+                and self._dual_vln_status_wall_time > 0.0
+                and status_age <= 2.5
+                and self._dual_vln_status_has_fresh_sensors(self._dual_vln_status_payload)
+            ):
                 self._logger.info(
                     f'InternNav status barrier passed with status={self._dual_vln_status}; publishing VLN navigation goal.'
                 )
@@ -698,8 +822,8 @@ class RobotManager(NodeInterface):
             await asyncio.sleep(0.1)
 
         self._logger.warn(
-            'Timed out waiting for InternNav backend_ready status before VLN navigation goal; '
-            f'last_status={self._dual_vln_status!r}. Proceeding to avoid hanging the eval.'
+            'Timed out waiting for fresh InternNav backend_ready status before VLN navigation goal; '
+            f'last_status={last_status!r}. Proceeding to avoid hanging the eval.'
         )
         return False
 
@@ -761,7 +885,11 @@ class RobotManager(NodeInterface):
         if self._cmd_vel_pub is None or self._is_goal_reached or self._nav_stop_ticks > 0:
             return
         if self._direct_dual_vln_last_status_twist is not None:
-            self._cmd_vel_pub.publish(self._direct_dual_vln_last_status_twist)
+            if self._direct_dual_vln_pose_inside_map_bounds():
+                self._cmd_vel_pub.publish(self._direct_dual_vln_last_status_twist)
+            else:
+                self._publish_direct_dual_vln_stop()
+                return
         client = self._direct_dual_vln_client
         if client is None:
             return
@@ -782,6 +910,9 @@ class RobotManager(NodeInterface):
                 if twist is None:
                     return
                 self._direct_dual_vln_last_status_twist = twist
+                if not self._direct_dual_vln_pose_inside_map_bounds():
+                    self._publish_direct_dual_vln_stop()
+                    return
                 self._cmd_vel_pub.publish(twist)
             except Exception as exc:
                 self._logger.warn(f'direct dual_vln get_command bridge failed: {exc}')
@@ -811,6 +942,7 @@ class RobotManager(NodeInterface):
         finally:
             self._navigate_goal_handle = None
             self._navigate_result_future = None
+            self._active_navigation_goal_uuid = None
 
     async def _wait_for_rclpy_future(self, future, *, timeout_s: float = 5.0):
         waited_s = 0.0
@@ -828,6 +960,8 @@ class RobotManager(NodeInterface):
         if self._navigate_to_pose_client is None:
             self._logger.warn('navigate_to_pose action client is not initialized; goal will only be published for observers')
             return
+
+        self._active_navigation_goal_uuid = None
 
         bt_node_path = str(self.namespace('bt_navigator'))
         bt_wait_timeout_s = 60.0
@@ -864,10 +998,14 @@ class RobotManager(NodeInterface):
             self._logger.warn('navigate_to_pose action goal was rejected')
             self._navigate_goal_handle = None
             self._navigate_result_future = None
+            self._active_navigation_goal_uuid = None
             return
 
         self._navigate_goal_handle = goal_handle
         self._navigate_result_future = goal_handle.get_result_async()
+        self._active_navigation_goal_uuid = self._goal_uuid_tuple(getattr(goal_handle, 'goal_id', None))
+        if self._active_navigation_goal_uuid is None:
+            self._logger.warn('navigate_to_pose action goal accepted without a readable goal UUID; status filtering is disabled for this goal')
         self._logger.info('navigate_to_pose action goal accepted')
 
         def _done_callback(future):
@@ -1099,13 +1237,51 @@ class RobotManager(NodeInterface):
             self._cmd_vel_pub.publish(geometry_msgs.msg.Twist())
             self._nav_stop_ticks -= 1
 
+    @staticmethod
+    def _goal_uuid_tuple(goal_identifier) -> tuple[int, ...] | None:
+        if goal_identifier is None:
+            return None
+
+        goal_info = getattr(goal_identifier, 'goal_info', None)
+        if goal_info is not None:
+            return RobotManager._goal_uuid_tuple(getattr(goal_info, 'goal_id', None))
+
+        uuid_value = getattr(goal_identifier, 'uuid', None)
+        if uuid_value is None:
+            return None
+
+        if isinstance(uuid_value, (bytes, bytearray)):
+            return tuple(int(value) for value in uuid_value)
+
+        if isinstance(uuid_value, (list, tuple)):
+            try:
+                return tuple(int(value) for value in uuid_value)
+            except (TypeError, ValueError):
+                return None
+
+        return None
+
     def _goal_status_callback(self, data: action_msgs.msg.GoalStatusArray):
         """Callback for goal status updates.
 
         Args:
             data(action_msgs.msg.GoalStatusArray): The goal status data.
         """
-        last_goal = next(reversed(list(data.status_list)), None)
+        active_goal_uuid = self._active_navigation_goal_uuid
+        if active_goal_uuid is None:
+            return
+
+        last_goal = next(
+            (
+                goal_status
+                for goal_status in reversed(list(data.status_list))
+                if self._goal_uuid_tuple(goal_status) == active_goal_uuid
+            ),
+            None,
+        )
+        if last_goal is None:
+            return
+
         status = last_goal.status if last_goal is not None else None
         reached = (
             status == action_msgs.msg.GoalStatus.STATUS_SUCCEEDED
@@ -1120,6 +1296,7 @@ class RobotManager(NodeInterface):
             # On any terminal nav status (succeeded, aborted, canceled):
             # publish an immediate zero and arm the timer to keep publishing
             # zeros for 1.5s to flush any stale velocity from the pipeline.
+            self._active_navigation_goal_uuid = None
             self._stop_direct_dual_vln_command_bridge()
             if self._cmd_vel_pub is not None:
                 self._cmd_vel_pub.publish(geometry_msgs.msg.Twist())
