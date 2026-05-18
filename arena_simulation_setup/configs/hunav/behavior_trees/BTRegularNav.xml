@@ -23,7 +23,10 @@
                 </Inverter>
                 <RegularNav agent_id="{id}" time_step="{dt}" />
             </Sequence>
-            <UpdateGoal agent_id="{id}" />
+            <Sequence name="UpdateGoalAndContinue">
+                <UpdateGoal agent_id="{id}" />
+                <RegularNav agent_id="{id}" time_step="{dt}" />
+            </Sequence>
         </Fallback>
     </BehaviorTree>
 
