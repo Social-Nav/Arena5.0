@@ -218,24 +218,24 @@ def test_discrete_turn_mapping_supports_inverted_effective_labels():
     params = {'max_linear': 1.0, 'max_angular': 2.0, 'invert_discrete_turns': True}
     linear_x, angular_z, status, debug = _action_to_command(2, params)
     assert status == 'discrete_turn_right'
-    assert linear_x == 0.0
+    assert linear_x > 0.0
     assert angular_z < 0.0
     assert debug['native_action_label'] == 'turn_left'
     assert debug['effective_action_label'] == 'turn_right'
     assert debug['invert_discrete_turns'] is True
-    assert debug['arc_turn'] is False
+    assert debug['arc_turn'] is True
 
 
 def test_discrete_turn_mapping_default_preserves_native_effective_labels():
     params = {'max_linear': 1.0, 'max_angular': 2.0, 'invert_discrete_turns': False}
     linear_x, angular_z, status, debug = _action_to_command(2, params)
     assert status == 'discrete_turn_left'
-    assert linear_x == 0.0
+    assert linear_x > 0.0
     assert angular_z > 0.0
     assert debug['native_action_label'] == 'turn_left'
     assert debug['effective_action_label'] == 'turn_left'
     assert debug['invert_discrete_turns'] is False
-    assert debug['arc_turn'] is False
+    assert debug['arc_turn'] is True
 
 
 def test_trajectory_output_uses_internnav_continuous_subgoal_interface():
@@ -295,7 +295,7 @@ def test_discrete_policy_forces_action_mapping_for_ablation():
     })
 
     assert decision.status == 'discrete_turn_left'
-    assert decision.linear_x == 0.0
+    assert decision.linear_x > 0.0
     assert decision.angular_z > 0.0
     assert decision.debug['selected_output_mode'] == 'discrete'
     assert decision.debug['model_output_policy'] == 'discrete'

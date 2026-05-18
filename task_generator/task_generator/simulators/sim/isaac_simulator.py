@@ -230,7 +230,11 @@ from tf2_ros import TransformBroadcaster
 
 rclpy.init()
 node = Node('{safe_name}_isaac_fallback_sensors')
-node.set_parameters([Parameter('use_sim_time', Parameter.Type.BOOL, True)])
+# This process is the bootstrap odom/TF publisher used specifically when Isaac
+# simulation time may be paused or not advancing yet.  Keep it on wall time so
+# its timer still fires and the odom->base transform exists before Nav2
+# lifecycle activation and goal publication.
+node.set_parameters([Parameter('use_sim_time', Parameter.Type.BOOL, False)])
 PUBLISH_FALLBACK_ODOM_TF = {str(publish_fallback_odom_tf)}
 # Never publish synthetic fallback camera frames on the real head_camera or
 # top_down_camera topics.  Those topics are consumed by InternNav and the eval
@@ -426,13 +430,31 @@ rclpy.spin(node)
 """
 
         nodes = []
+        fallback_sensor_process = None
+        if publish_fallback_odom_tf:
+            fallback_env = os.environ.copy()
+            fallback_env.setdefault('ROS_LOCALHOST_ONLY', '0')
+            fallback_env.setdefault('ROS_AUTOMATIC_DISCOVERY_RANGE', 'SUBNET')
+            fallback_env.setdefault('RMW_IMPLEMENTATION', 'rmw_fastrtps_cpp')
+            fallback_sensor_process = subprocess.Popen(
+                ['/usr/bin/python3', '-c', fallback_sensor_code],
+                env=fallback_env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            self._logger.info(
+                f'Started Isaac fallback odom/TF publisher for {robot_name} '
+                f'on {odom_topic} (pid={fallback_sensor_process.pid})'
+            )
+
         if publish_fallback_odom_tf:
             nodes.extend([
             launch_ros.actions.Node(
                 package='tf2_ros',
                 executable='static_transform_publisher',
                 name=f'{safe_name}_map_to_raw_odom_tfpublisher',
-                arguments=['0', '0', '0', '0', '0', '0', 'map', 'odom'],
+                arguments=['0', '0', '0', '0', '0', '0', 'map', fq_odom_frame],
                 parameters=[{'use_sim_time': True}],
                 output='screen',
             ),
@@ -477,17 +499,6 @@ rclpy.spin(node)
                     arguments=['0.35', '0', '0.75', '0', '0', '0', fq_base_frame, fq_camera_frame],
                     parameters=[{'use_sim_time': True}],
                     output='screen',
-                ),
-                launch.actions.ExecuteProcess(
-                    cmd=[
-                        'bash', '-lc',
-                        'if [ -f /opt/ros/jazzy/setup.bash ]; then source /opt/ros/jazzy/setup.bash; else source /opt/ros/humble/setup.bash; fi; '
-                        'if [ -f /home/ubuntu/arena_jazzy_ws/install/setup.bash ]; then source /home/ubuntu/arena_jazzy_ws/install/setup.bash; '
-                        'elif [ -f /home/ubuntu/arena_jazzy_ws/install_humble_eval/setup.sh ]; then source /home/ubuntu/arena_jazzy_ws/install_humble_eval/setup.sh; fi; '
-                        'export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0} ROS_LOCALHOST_ONLY=0 ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET RMW_IMPLEMENTATION=rmw_fastrtps_cpp; '
-                        f'/usr/bin/python3 -c {shlex.quote(fallback_sensor_code)}',
-                    ],
-                    output='log',
                 ),
             ])
         await self.node.do_launch(launch.LaunchDescription(nodes))

@@ -1808,13 +1808,13 @@ def main() -> int:
             args.scenario_file = 'normal'
     runtime_adjustments = _apply_runtime_defaults(args)
     if args.internnav_invert_discrete_turns == 'auto':
-        # InternNav/InternVLA-N1's native discrete action ids use the model
-        # adapter's camera/action convention.  The model-output diagnostic run
-        # showed action=2 repeatedly while the ROS goal yaw error required a
-        # right correction, so the Arena/Isaac cmd_vel side must invert 2/3 by
-        # default.  Keep explicit true/false for reproducible A/B diagnostics.
-        resolved_invert_discrete_turns = True
-        invert_discrete_turns_source = 'auto_internnav_native_action_frame'
+        # After Ai2_Bot2's Isaac diff-drive / odom chain was fixed to execute
+        # commanded motion again, the earlier temporary Isaac+Ai2_Bot2 turn-sign
+        # inversion no longer matches observed motion.  Keep ``auto`` aligned
+        # with the latest validated A/B run: for this pair the native InternNav
+        # discrete turn directions should pass through unchanged.
+        resolved_invert_discrete_turns = False
+        invert_discrete_turns_source = 'auto_isaac_ai2_bot2_noinvert'
     else:
         resolved_invert_discrete_turns = args.internnav_invert_discrete_turns == 'true'
         invert_discrete_turns_source = 'cli'

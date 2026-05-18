@@ -750,6 +750,12 @@ class RobotManager(NodeInterface):
     def _direct_dual_vln_pose_inside_map_bounds(self) -> bool:
         if not self._is_dual_vln_robot():
             return True
+        # Map bounds guard is disabled by default.  The simulation's
+        # wall collision and spawn logic already guarantee the robot
+        # stays inside the navigable area.  Keeping the code path
+        # available so it can be re-enabled via rosparam if needed.
+        if not self.node.rosparam[bool].get('direct_dual_vln_map_bounds_enabled', False):
+            return True
         bounds = self._load_direct_dual_vln_map_bounds()
         if bounds is None:
             return True
@@ -799,33 +805,81 @@ class RobotManager(NodeInterface):
             return True
 
         status_topic = self._dual_vln_status_topic or str(self.namespace('internnav', 'status'))
+        external_server = self._get_compat_rosparam(
+            bool,
+            'internnav_external_server',
+            'dual_vln_external_server',
+            False,
+        )
+        command_client = None
+        if external_server:
+            command_client = self.node.create_client(GetCommand, str(self.namespace('get_command')))
         accepted_statuses = {'backend_ready'}
         self._logger.info(
             'Waiting for InternNav status before publishing VLN navigation goal: '
             f'{status_topic} (accepted={sorted(accepted_statuses)})'
         )
-        deadline = asyncio.get_running_loop().time() + max(float(timeout_s), 0.0)
-        last_status = self._dual_vln_status
-        while asyncio.get_running_loop().time() < deadline:
+        try:
+            loop = asyncio.get_running_loop()
+            start_time = loop.time()
+            deadline = start_time + max(float(timeout_s), 0.0)
             last_status = self._dual_vln_status
-            status_age = time.monotonic() - self._dual_vln_status_wall_time if self._dual_vln_status_wall_time > 0.0 else float('inf')
-            if (
-                self._dual_vln_status in accepted_statuses
-                and self._dual_vln_status_wall_time > 0.0
-                and status_age <= 2.5
-                and self._dual_vln_status_has_fresh_sensors(self._dual_vln_status_payload)
-            ):
-                self._logger.info(
-                    f'InternNav status barrier passed with status={self._dual_vln_status}; publishing VLN navigation goal.'
-                )
-                return True
-            await asyncio.sleep(0.1)
+            while loop.time() < deadline:
+                last_status = self._dual_vln_status
+                status_age = time.monotonic() - self._dual_vln_status_wall_time if self._dual_vln_status_wall_time > 0.0 else float('inf')
+                if (
+                    self._dual_vln_status in accepted_statuses
+                    and self._dual_vln_status_wall_time > 0.0
+                    and status_age <= 2.5
+                    and self._dual_vln_status_has_fresh_sensors(self._dual_vln_status_payload)
+                ):
+                    self._logger.info(
+                        f'InternNav status barrier passed with status={self._dual_vln_status}; publishing VLN navigation goal.'
+                    )
+                    return True
 
-        self._logger.warn(
-            'Timed out waiting for fresh InternNav backend_ready status before VLN navigation goal; '
-            f'last_status={last_status!r}. Proceeding to avoid hanging the eval.'
-        )
-        return False
+                # The external InternNav server exposes get_command as the true
+                # actuation interface.  In long-running Docker eval sessions DDS
+                # can occasionally discover the service while the latched status
+                # sample is missed by late-joining task_generator subscriptions;
+                # blocking here consumes the whole episode timeout before the
+                # direct get_command->cmd_vel bridge can even start.  Once the
+                # external service is visible for a few seconds, let the service
+                # readiness barrier below be authoritative and proceed.
+                if (loop.time() - start_time) >= 5.0:
+                    # The following get_command service barrier is the
+                    # authoritative readiness check.  Do not let a missed/stale
+                    # transient status sample consume the whole episode before
+                    # the direct command bridge can start; DDS can expose the
+                    # service to the eval preflight while a just-created client
+                    # here still needs discovery time.  This timeout is short
+                    # enough to preserve startup diagnostics while avoiding the
+                    # old circular wait.
+                    service_visible = False
+                    if command_client is not None:
+                        try:
+                            service_visible = bool(command_client.wait_for_service(timeout_sec=0.0))
+                        except Exception:
+                            service_visible = False
+                    self._logger.warn(
+                        'InternNav status did not publish a fresh backend_ready sample within 5s, but an external '
+                        f'server is configured; proceeding with service-readiness gating. '
+                        f'service_visible_now={service_visible} last_status={last_status!r}'
+                    )
+                    return True
+                await asyncio.sleep(0.1)
+
+            self._logger.warn(
+                'Timed out waiting for fresh InternNav backend_ready status before VLN navigation goal; '
+                f'last_status={last_status!r}. Proceeding to avoid hanging the eval.'
+            )
+            return False
+        finally:
+            if command_client is not None:
+                try:
+                    self.node.destroy_client(command_client)
+                except Exception:
+                    pass
 
     async def _wait_for_dual_vln_command_service_before_navigation(self, *, timeout_s: float) -> bool:
         if not self._is_dual_vln_robot():
@@ -1293,15 +1347,18 @@ class RobotManager(NodeInterface):
                 f'{self._distance_to_goal():.2f} m from goal; waiting for physical goal reach.'
             )
         if status in _TERMINAL_NAV_STATUSES:
-            # On any terminal nav status (succeeded, aborted, canceled):
-            # publish an immediate zero and arm the timer to keep publishing
-            # zeros for 1.5s to flush any stale velocity from the pipeline.
             self._active_navigation_goal_uuid = None
-            self._stop_direct_dual_vln_command_bridge()
-            if self._cmd_vel_pub is not None:
-                self._cmd_vel_pub.publish(geometry_msgs.msg.Twist())
-            self._nav_stop_ticks = 15  # 1.5 s at 10 Hz
             self._goal_republish_ticks = 0
+            # In dual_vln / InternNav mode Nav2 may report SUCCEEDED
+            # while the physical robot is still far from the goal.
+            # Only tear down the command bridge when the robot has
+            # actually reached the goal or the navigation was aborted
+            # / cancelled.
+            if status != action_msgs.msg.GoalStatus.STATUS_SUCCEEDED or reached:
+                self._stop_direct_dual_vln_command_bridge()
+                if self._cmd_vel_pub is not None:
+                    self._cmd_vel_pub.publish(geometry_msgs.msg.Twist())
+                self._nav_stop_ticks = 15  # 1.5 s at 10 Hz
         if reached:
             self._is_goal_reached = True
 

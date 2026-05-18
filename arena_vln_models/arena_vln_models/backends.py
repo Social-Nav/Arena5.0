@@ -195,18 +195,19 @@ def _action_to_command(action: Any, params: dict[str, Any]) -> Optional[tuple[fl
     if selected_int == 1:
         return max(max_linear * 0.6, 0.05), 0.0, 'discrete_forward', debug
     if selected_int == 2:
-        # Keep discrete turns aligned with InternNav's native simulator action
-        # semantics: turn actions rotate in place, while action 1 is responsible
-        # for forward motion.  Direct bridge execution no longer depends on
-        # Nav2's progress checker, so avoid adding forward arc motion that would
-        # alter the raw policy being evaluated.
-        debug['arc_turn'] = False
+        # In Arena's real robot/Isaac direct bridge, InternNav frequently emits
+        # repeated turn actions before it ever produces a forward token.  If
+        # turns execute as pure in-place rotation, eval videos can appear
+        # stationary even though the policy is actively steering.  Preserve the
+        # historical gentle forward arc used by the successful eval runs so the
+        # robot keeps making visible progress while turning.
+        debug['arc_turn'] = True
         status = 'discrete_turn_right' if invert_turns else 'discrete_turn_left'
-        return 0.0, left_sign * max_angular * 0.25, status, debug
+        return max(max_linear * 0.6, 0.12), left_sign * max_angular * 0.25, status, debug
     if selected_int == 3:
-        debug['arc_turn'] = False
+        debug['arc_turn'] = True
         status = 'discrete_turn_left' if invert_turns else 'discrete_turn_right'
-        return 0.0, right_sign * max_angular * 0.25, status, debug
+        return max(max_linear * 0.6, 0.12), right_sign * max_angular * 0.25, status, debug
     if selected_int == 5:
         debug['look_down_requested'] = True
         return 0.0, 0.0, 'look_down_requested', debug

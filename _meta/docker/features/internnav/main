@@ -229,7 +229,19 @@ launch(){
     model_output_policy="${ARENA_INTERNNAV_MODEL_OUTPUT_POLICY:-${ARENA_EVAL_INTERNNAV_MODEL_OUTPUT_POLICY:-trajectory}}"
     visualization_rate_hz="${ARENA_INTERNNAV_VISUALIZATION_RATE_HZ:-5.0}"
     enable_visualization="${ARENA_INTERNNAV_ENABLE_VISUALIZATION:-true}"
-    invert_discrete_turns="${ARENA_INTERNNAV_INVERT_DISCRETE_TURNS:-${ARENA_EVAL_INTERNNAV_INVERT_DISCRETE_TURNS:-true}}"
+    if [ -n "${ARENA_INTERNNAV_INVERT_DISCRETE_TURNS:-}" ]; then
+        invert_discrete_turns="$ARENA_INTERNNAV_INVERT_DISCRETE_TURNS"
+    elif [ -n "${ARENA_EVAL_INTERNNAV_INVERT_DISCRETE_TURNS:-}" ]; then
+        invert_discrete_turns="$ARENA_EVAL_INTERNNAV_INVERT_DISCRETE_TURNS"
+    elif [ "$robot" = "Ai2_Bot2" ]; then
+        # Keep the standalone external-server launcher aligned with the Jazzy
+        # internnav_eval runtime default validated on 2026-05-18: once the
+        # Ai2_Bot2 Isaac diff-drive / odom chain was fixed, native InternNav
+        # discrete turns should pass through unchanged for this robot.
+        invert_discrete_turns="false"
+    else
+        invert_discrete_turns="true"
+    fi
     inference_rate_hz="${ARENA_INTERNNAV_INFERENCE_RATE_HZ:-10.0}"
     inference_timeout_sec="${ARENA_INTERNNAV_INFERENCE_TIMEOUT_SEC:-120.0}"
     extra_ros_args="${ARENA_INTERNNAV_EXTRA_ROS_ARGS:-}"

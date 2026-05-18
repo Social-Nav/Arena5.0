@@ -1140,6 +1140,7 @@ class BaseModelSimServer(Node):
     def _on_get_command(self, request: GetCommand.Request, response: GetCommand.Response) -> GetCommand.Response:
         del request
         now = time.monotonic()
+        self.get_logger().info(f'{self.SERVER_LABEL} get_command request received')
 
         try:
             camera_gate_decision = self._camera_gate_decision()
@@ -1151,6 +1152,10 @@ class BaseModelSimServer(Node):
                 self._publish_status(camera_gate_decision)
                 self._publish_model_output(observation, camera_gate_decision, event_type='camera_gate')
                 response.twist = self._get_last_cmd()
+                self.get_logger().info(
+                    f'{self.SERVER_LABEL} get_command camera gate response: '
+                    f'linear={response.twist.linear.x:.3f} angular={response.twist.angular.z:.3f}'
+                )
                 return response
             observation = self._build_observation()
             if self._should_compute(now):
@@ -1191,6 +1196,10 @@ class BaseModelSimServer(Node):
             self._publish_model_output(None, decision, event_type='exception')
 
         response.twist = self._get_last_cmd()
+        self.get_logger().info(
+            f'{self.SERVER_LABEL} get_command response: '
+            f'linear={response.twist.linear.x:.3f} angular={response.twist.angular.z:.3f}'
+        )
         return response
 
 

@@ -236,7 +236,10 @@ def test_direct_dual_vln_status_twist_filters_invalid_payloads_and_keeps_valid_c
 
 
 def test_direct_dual_vln_bridge_stops_instead_of_publishing_when_pose_leaves_safe_bounds():
-    manager = _robot_manager_stub(rosparams={'direct_dual_vln_map_bounds_margin_m': 0.5})
+    manager = _robot_manager_stub(rosparams={
+        'direct_dual_vln_map_bounds_enabled': True,
+        'direct_dual_vln_map_bounds_margin_m': 0.5,
+    })
     manager._direct_dual_vln_map_bounds = (0.0, 2.0, 0.0, 2.0)
     manager._pose.position.x = 0.25
     manager._pose.position.y = 1.0
@@ -249,6 +252,21 @@ def test_direct_dual_vln_bridge_stops_instead_of_publishing_when_pose_leaves_saf
     assert manager._cmd_vel_pub.messages[0].angular.z == 0.0
     assert manager._direct_dual_vln_last_status_twist is None
     assert manager._logger.warnings
+
+
+def test_direct_dual_vln_bridge_ignores_bounds_guard_by_default():
+    manager = _robot_manager_stub(rosparams={})
+    manager._direct_dual_vln_map_bounds = (0.0, 2.0, 0.0, 2.0)
+    manager._pose.position.x = 0.25
+    manager._pose.position.y = 1.0
+    manager._update_direct_dual_vln_status_twist({'status': 'internnav_command', 'linear_x': 0.36, 'angular_z': -0.375})
+
+    manager._publish_direct_dual_vln_status_command({'status': 'internnav_command'})
+
+    # Default: bounds guard is disabled, so the command should be published
+    assert len(manager._cmd_vel_pub.messages) == 1
+    assert manager._cmd_vel_pub.messages[0].linear.x == 0.36
+    assert manager._cmd_vel_pub.messages[0].angular.z == -0.375
 
 
 def test_map_bounds_loader_reads_png_metadata_and_caches_bounds(monkeypatch, tmp_path):

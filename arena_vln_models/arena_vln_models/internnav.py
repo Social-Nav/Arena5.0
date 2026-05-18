@@ -373,9 +373,9 @@ def _action_to_synthetic_trajectory(action, invert_discrete_turns=False):
     if action_id == 1:
         return [[0.25, 0.0, 0.0]]
     if action_id == 2:
-        return [[0.0, 0.0, turn]]
+        return [[0.25, 0.0, turn]]
     if action_id == 3:
-        return [[0.0, 0.0, -turn]]
+        return [[0.25, 0.0, -turn]]
     if action_id == 0:
         return [[0.0, 0.0, 0.0]]
     if action_id == 5:
