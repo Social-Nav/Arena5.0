@@ -77,3 +77,9 @@ async def lazy_gazebo(**kwargs):
 async def lazy_isaac(**kwargs):
     from .isaac_simulator import IsaacSimulator
     return await IsaacSimulator.create(**kwargs)
+
+
+@SimulatorRegistry.register(Constants.SimSimulator.ISAAC_EVAL)
+async def lazy_isaac_eval(**kwargs):
+    from .isaac_eval_simulator import IsaacEvalSimulator
+    return await IsaacEvalSimulator.create(**kwargs)

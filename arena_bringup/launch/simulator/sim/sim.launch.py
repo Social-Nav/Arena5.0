@@ -71,6 +71,20 @@ def generate_launch_description():
         )
     )
 
+    launch_simulator.add(
+        'isaac_eval',
+        launch.actions.IncludeLaunchDescription(
+            launch.launch_description_sources.PythonLaunchDescriptionSource(
+                os.path.join(get_package_share_directory(
+                    'arena_bringup'), 'launch/simulator/sim/isaac/isaac.launch.py')
+            ),
+            launch_arguments={
+                'use_sim_time': use_sim_time.substitution,
+                'save_data': save_data.substitution,
+            }.items(),
+        )
+    )
+
     simulator = LaunchArgument(
         name='simulator',
         choices=launch_simulator.keys,

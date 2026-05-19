@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mode="${1:-bootstrap}"
+
+require_file(){
+    local path="$1"
+    [ -e "$path" ] || {
+        echo "Missing required file: $path" >&2
+        exit 1
+    }
+}
+
+require_symlink(){
+    local path="$1"
+    [ -L "$path" ] || {
+        echo "Expected symlink-install artifact, but got regular file: $path" >&2
+        exit 1
+    }
+}
+
+installed_feature(){
+    local feature="$1"
+    grep -qx "$feature" "${INSTALLED:-/dev/null}" 2>/dev/null
+}
+
+python_import_smoke(){
+    local python_bin="${ARENA_VENV_DIR:-${ARENA_DIR}/.venv}/bin/python"
+    require_file "$python_bin"
+    "$python_bin" - <<'PY'
+import importlib
+
+required = [
+    'arena_simulation_setup',
+    'task_generator',
+    'arena_vln_models',
+]
+
+optional = [
+    ('arena_isaac', 'ARENA_VALIDATE_IMPORT_ISAAC'),
+]
+
+for module in required:
+    importlib.import_module(module)
+
+import os
+for module, gate in optional:
+    if os.environ.get(gate, '').strip().lower() in {'1', 'true', 'yes', 'on'}:
+        importlib.import_module(module)
+
+print('Arena bootstrap import smoke passed.')
+PY
+}
+
+bootstrap_validate(){
+    require_file "${ARENA_WS_DIR}/install/local_setup.bash"
+    require_file "${ARENA_DIR}/pyproject.toml"
+    require_file "${ARENA_VENV_DIR}/.installed"
+
+    local symlink_probe="${ARENA_WS_DIR}/install/arena_simulation_setup/share/arena_simulation_setup/package.xml"
+    if [ -e "$symlink_probe" ]; then
+        require_symlink "$symlink_probe"
+    fi
+
+    if installed_feature isaac; then
+        export ARENA_VALIDATE_IMPORT_ISAAC=1
+    fi
+
+    python_import_smoke
+    echo "Arena bootstrap validation passed."
+}
+
+case "$mode" in
+    bootstrap)
+        bootstrap_validate
+        ;;
+    *)
+        echo "Unknown validation mode: $mode" >&2
+        exit 1
+        ;;
+esac

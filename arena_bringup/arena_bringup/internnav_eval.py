@@ -303,6 +303,114 @@ def _run_ros_list_command(env: dict[str, str], args: list[str], timeout_sec: flo
         }
 
 
+def _run_external_rclpy_discovery_probe(
+    env: dict[str, str],
+    *,
+    expected_service: str,
+    expected_status_topic: str,
+    timeout_sec: float,
+) -> dict:
+    python_bin = _eval_python_executable(env)
+    probe_code = r'''
+import json
+import sys
+import time
+
+import rclpy
+from rclpy.node import Node
+
+expected_service = sys.argv[1]
+expected_status_topic = sys.argv[2]
+timeout_sec = float(sys.argv[3])
+
+rclpy.init(args=None)
+node = Node('internnav_eval_external_preflight_probe')
+deadline = time.monotonic() + max(timeout_sec, 0.0)
+attempts = 0
+services = []
+topics = []
+publisher_count = 0
+checks = {
+    'service_visible': False,
+    'status_topic_visible': False,
+}
+
+try:
+    while True:
+        attempts += 1
+        rclpy.spin_once(node, timeout_sec=0.05)
+        services = sorted(name for name, _types in node.get_service_names_and_types())
+        topics = sorted(name for name, _types in node.get_topic_names_and_types())
+        publisher_count = int(node.count_publishers(expected_status_topic) or 0)
+        checks = {
+            'service_visible': expected_service in services,
+            'status_topic_visible': expected_status_topic in topics and publisher_count > 0,
+        }
+        if all(checks.values()) or time.monotonic() >= deadline:
+            break
+        time.sleep(min(0.5, max(deadline - time.monotonic(), 0.0)))
+finally:
+    node.destroy_node()
+    rclpy.shutdown()
+
+print(json.dumps({
+    'attempts': attempts,
+    'checks': checks,
+    'status_topic_publisher_count': publisher_count,
+    'services': services,
+    'topics': topics,
+}))
+'''
+
+    started = time.monotonic()
+    try:
+        result = subprocess.run(
+            [python_bin, '-c', probe_code, expected_service, expected_status_topic, str(timeout_sec)],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=max(float(timeout_sec), 0.1) + 5.0,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout.decode(errors='replace') if isinstance(exc.stdout, bytes) else (exc.stdout or '')
+        stderr = exc.stderr.decode(errors='replace') if isinstance(exc.stderr, bytes) else (exc.stderr or '')
+        return {
+            'command': [python_bin, '-c', '<rclpy_external_preflight_probe>', expected_service, expected_status_topic, str(timeout_sec)],
+            'returncode': None,
+            'stdout': _truncate_preflight_output(stdout),
+            'stderr': _truncate_preflight_output(stderr),
+            'duration_sec': time.monotonic() - started,
+            'timed_out': True,
+            'probe_error': 'timeout',
+        }
+    except Exception as exc:
+        return {
+            'command': [python_bin, '-c', '<rclpy_external_preflight_probe>', expected_service, expected_status_topic, str(timeout_sec)],
+            'returncode': None,
+            'stdout': '',
+            'stderr': repr(exc),
+            'duration_sec': time.monotonic() - started,
+            'timed_out': False,
+            'probe_error': repr(exc),
+        }
+
+    payload = None
+    try:
+        payload = json.loads(result.stdout.strip() or '{}')
+    except Exception:
+        payload = None
+
+    return {
+        'command': [python_bin, '-c', '<rclpy_external_preflight_probe>', expected_service, expected_status_topic, str(timeout_sec)],
+        'returncode': result.returncode,
+        'stdout': _truncate_preflight_output(result.stdout),
+        'stderr': _truncate_preflight_output(result.stderr),
+        'duration_sec': time.monotonic() - started,
+        'timed_out': False,
+        'payload': payload,
+    }
+
+
 def _listed_names(command_result: dict) -> set[str]:
     return {
         line.strip()
@@ -330,38 +438,23 @@ def _run_external_internnav_preflight(
     expected_status_topic: str,
     timeout_sec: float,
 ) -> dict:
-    deadline = time.monotonic() + max(float(timeout_sec), 0.0)
-    service_result: dict | None = None
-    topic_result: dict | None = None
-    topic_info_result: dict | None = None
-    checks = {
-        'service_visible': False,
-        'status_topic_visible': False,
+    probe_result = _run_external_rclpy_discovery_probe(
+        env,
+        expected_service=expected_service,
+        expected_status_topic=expected_status_topic,
+        timeout_sec=timeout_sec,
+    )
+    payload = probe_result.get('payload') if isinstance(probe_result.get('payload'), dict) else {}
+    services = payload.get('services') if isinstance(payload.get('services'), list) else []
+    topics = payload.get('topics') if isinstance(payload.get('topics'), list) else []
+    checks = payload.get('checks') if isinstance(payload.get('checks'), dict) else {
+        'service_visible': expected_service in services,
+        'status_topic_visible': expected_status_topic in topics,
     }
-    status_topic_publisher_count: int | None = None
-    attempts = 0
-
-    while True:
-        attempts += 1
-        remaining = max(deadline - time.monotonic(), 0.0)
-        command_timeout = min(max(remaining, 0.1), 2.0)
-        service_result = _run_ros_list_command(env, ['ros2', 'service', 'list'], command_timeout)
-        remaining = max(deadline - time.monotonic(), 0.0)
-        command_timeout = min(max(remaining, 0.1), 2.0)
-        topic_result = _run_ros_list_command(env, ['ros2', 'topic', 'list'], command_timeout)
-        remaining = max(deadline - time.monotonic(), 0.0)
-        command_timeout = min(max(remaining, 0.1), 2.0)
-        topic_info_result = _run_ros_list_command(env, ['ros2', 'topic', 'info', expected_status_topic], command_timeout)
-        services = _listed_names(service_result)
-        topics = _listed_names(topic_result)
-        status_topic_publisher_count = _topic_publisher_count(topic_info_result)
-        checks = {
-            'service_visible': expected_service in services,
-            'status_topic_visible': expected_status_topic in topics and (status_topic_publisher_count or 0) > 0,
-        }
-        if all(checks.values()) or time.monotonic() >= deadline:
-            break
-        time.sleep(min(0.5, max(deadline - time.monotonic(), 0.0)))
+    attempts = int(payload.get('attempts') or 1)
+    status_topic_publisher_count = payload.get('status_topic_publisher_count')
+    if status_topic_publisher_count is None and checks.get('status_topic_visible'):
+        status_topic_publisher_count = 1
 
     missing = [name for name, passed in checks.items() if not passed]
     return {
@@ -373,9 +466,39 @@ def _run_external_internnav_preflight(
         'status_topic_publisher_count': status_topic_publisher_count,
         'checks': checks,
         'missing_checks': missing,
-        'service_list': service_result,
-        'topic_list': topic_result,
-        'topic_info': topic_info_result,
+        'service_list': {
+            'backend': 'rclpy_discovery_probe',
+            'command': probe_result.get('command'),
+            'returncode': probe_result.get('returncode'),
+            'stdout': probe_result.get('stdout'),
+            'stderr': probe_result.get('stderr'),
+            'duration_sec': probe_result.get('duration_sec'),
+            'timed_out': probe_result.get('timed_out'),
+            'observed_count': len(services),
+            'sample': services[:50],
+        },
+        'topic_list': {
+            'backend': 'rclpy_discovery_probe',
+            'command': probe_result.get('command'),
+            'returncode': probe_result.get('returncode'),
+            'stdout': probe_result.get('stdout'),
+            'stderr': probe_result.get('stderr'),
+            'duration_sec': probe_result.get('duration_sec'),
+            'timed_out': probe_result.get('timed_out'),
+            'observed_count': len(topics),
+            'sample': topics[:50],
+        },
+        'topic_info': {
+            'backend': 'rclpy_discovery_probe',
+            'command': probe_result.get('command'),
+            'returncode': probe_result.get('returncode'),
+            'stdout': probe_result.get('stdout'),
+            'stderr': probe_result.get('stderr'),
+            'duration_sec': probe_result.get('duration_sec'),
+            'timed_out': probe_result.get('timed_out'),
+            'publisher_count': status_topic_publisher_count,
+            'probe_error': probe_result.get('probe_error'),
+        },
     }
 
 
@@ -1634,6 +1757,8 @@ def _classify_end_reason(*, finished_observed: bool, launch_returncode: int | No
     if isinstance(internnav_status, dict):
         status = str(internnav_status.get('status', ''))
         degraded = bool(internnav_status.get('degraded', False))
+        debug = internnav_status.get('debug', {}) if isinstance(internnav_status.get('debug'), dict) else {}
+        missing_inputs = debug.get('missing_inputs') if isinstance(debug.get('missing_inputs'), list) else []
         if status in {
             'adapter_exception',
             'backend_unavailable',
@@ -1648,10 +1773,12 @@ def _classify_end_reason(*, finished_observed: bool, launch_returncode: int | No
         }:
             return 'adapter_failure'
         if degraded and status in {'waiting_for_camera', 'stale_camera'}:
+            if any(name in {'tf', 'odom', 'camera_info', 'rgb', 'depth'} for name in missing_inputs):
+                return 'required_inputs_not_ready'
             return 'camera_not_ready'
         if degraded and status in {'inference_timeout', 'exception'}:
             return 'infrastructure_exception'
-        if internnav_status.get('debug', {}).get('safe_stop'):
+        if debug.get('safe_stop'):
             return 'safe_stop'
 
     if finished_observed:
@@ -1698,7 +1825,7 @@ def _terminate_process_tree(proc: subprocess.Popen, *, grace_period_sec: float =
 
 def main() -> int:
     parser = argparse.ArgumentParser(description='Run a reproducible Arena InternNav eval.')
-    parser.add_argument('--sim', default='isaac')
+    parser.add_argument('--sim', default='isaac_eval')
     parser.add_argument('--human', default='hunav')
     parser.add_argument('--world', default='map_empty')
     parser.add_argument('--robot', default='jackal')

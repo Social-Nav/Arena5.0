@@ -6,6 +6,8 @@ export ARENA_BRANCH=${ARENA_BRANCH:-jazzy}
 export ARENA_ROS_DISTRO=${ARENA_ROS_DISTRO:-jazzy}
 
 declare -a ARENA_OPTIONAL_FEATURES=()
+ARENA_CLEAN_INSTALL=${ARENA_CLEAN_INSTALL:-1}
+ARENA_VALIDATE_BOOTSTRAP=${ARENA_VALIDATE_BOOTSTRAP:-1}
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -29,6 +31,14 @@ while [[ $# -gt 0 ]]; do
             ARENA_OPTIONAL_FEATURES+=("$2")
             shift 2
         ;;
+        --no-clean-install)
+            ARENA_CLEAN_INSTALL=0
+            shift
+        ;;
+        --skip-bootstrap-validation)
+            ARENA_VALIDATE_BOOTSTRAP=0
+            shift
+        ;;
         --help|-h)
             cat <<'EOF'
 Usage: install.sh [options]
@@ -38,6 +48,8 @@ Options:
   --install-internnav     Install the InternNav model runtime feature after bootstrap.
   --install-training      Install the training feature after bootstrap.
   --install-feature NAME  Install an arbitrary Arena feature after bootstrap.
+  --no-clean-install      Reuse existing build/install/.venv state instead of forcing a clean bootstrap.
+  --skip-bootstrap-validation  Skip post-bootstrap validation checks.
 EOF
             exit 0
         ;;
@@ -81,16 +93,30 @@ fi
 ln -rsf "$ARENA_WS_DIR/src/Arena/_meta/docker/source" ./arena
 ln -rsf "$ARENA_WS_DIR/src/Arena/_meta/tools/Arena.code-workspace" ./ws-arena.code-workspace
 
+if [ "$ARENA_CLEAN_INSTALL" = 1 ]; then
+    echo 'Enforcing clean Arena bootstrap (build/install/log/.venv reset)'
+    rm -rf "$ARENA_WS_DIR/build" "$ARENA_WS_DIR/install" "$ARENA_WS_DIR/log"
+    rm -rf "$ARENA_WS_DIR/src/Arena/.venv"
+fi
+
 echo 'Building Arena...'
 cd $ARENA_WS_DIR
-printf 'exit\n' | source arena
+bash -lc "source \"$ARENA_WS_DIR/arena\" >/dev/null && arena build"
+
+if [ "$ARENA_VALIDATE_BOOTSTRAP" = 1 ]; then
+    bash -lc "source \"$ARENA_WS_DIR/arena\" >/dev/null && arena validate bootstrap"
+fi
 
 if [ ${#ARENA_OPTIONAL_FEATURES[@]} -gt 0 ]; then
     echo 'Installing optional Arena features...'
     for feature in "${ARENA_OPTIONAL_FEATURES[@]}"; do
         echo "  - $feature"
-        "$ARENA_WS_DIR/arena" -c "arena feature $feature install"
+        bash -lc "source \"$ARENA_WS_DIR/arena\" >/dev/null && arena feature '$feature' install"
     done
+fi
+
+if [ "$ARENA_VALIDATE_BOOTSTRAP" = 1 ]; then
+    bash -lc "source \"$ARENA_WS_DIR/arena\" >/dev/null && arena validate bootstrap"
 fi
 
 echo 'Installed Arena'

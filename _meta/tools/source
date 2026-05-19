@@ -36,6 +36,7 @@ export TOOLS_DIR="$ARENA_DIR/_meta/tools"
 export ARENA_ASSETS_DIR="$ARENA_DIR/_assets/"
 export ARENA_ASSETS_DIR_LOCAL="$ARENA_ASSETS_DIR/_local"
 export ARENA_VENV_DIR="${ARENA_VENV_DIR:-$ARENA_DIR/.venv}"
+export ARENA_ENFORCE_CLEAN_INSTALL="${ARENA_ENFORCE_CLEAN_INSTALL:-1}"
 
 export ARENA_ROS_DISTRO="${ARENA_ROS_DISTRO:-jazzy}"
 
@@ -65,6 +66,16 @@ resolve_arena_feature(){
     return 0
 }
 export -f resolve_arena_feature
+
+arena_python_env_needs_sync(){
+    local stamp="$ARENA_VENV_DIR/.installed"
+    [ -f "$stamp" ] || return 0
+    while IFS= read -r dependency_file; do
+        [ "$dependency_file" -nt "$stamp" ] && return 0
+    done < <(find "$ARENA_DIR" -path "$ARENA_VENV_DIR" -prune -o \( -name pyproject.toml -o -name uv.lock -o -name setup.py -o -name package.xml \) -print)
+    return 1
+}
+export -f arena_python_env_needs_sync
 
 export ARENA_MODELS_FORMATS="yaml,png,jpg,mdl"
 
@@ -105,9 +116,14 @@ if [ -z ${ARENA_SOURCED+x} ] ; then
     
     # python env
     pushd "$ARENA_DIR" > /dev/null || return 1
-        if [ ! -f "$ARENA_VENV_DIR/.installed" ]; then
-            uv venv "$ARENA_VENV_DIR" --allow-existing && \
-            UV_PROJECT_ENVIRONMENT="$ARENA_VENV_DIR" uv sync --inexact --project . && \
+        if arena_python_env_needs_sync; then
+            if ! uv venv "$ARENA_VENV_DIR" --allow-existing || \
+               ! UV_PROJECT_ENVIRONMENT="$ARENA_VENV_DIR" uv sync --inexact --project .
+            then
+                echo "Failed to synchronize Arena Python environment at $ARENA_VENV_DIR" >&2
+                popd > /dev/null || true
+                return 1
+            fi
             touch "$ARENA_VENV_DIR/.installed"
         fi
 
@@ -183,8 +199,16 @@ if [ -z ${ARENA_SOURCED+x} ] ; then
                     result=1
                 fi
             ;;
+            validate)
+                "${TOOLS_DIR}/validate_bootstrap" "$@"
+                result=$?
+            ;;
+            smoke)
+                "${TOOLS_DIR}/smoke_isaac_eval" "$@"
+                result=$?
+            ;;
             *)
-                echo 'Usage: arena <build|update|launch|deactivate|feature> [args...]'
+                echo 'Usage: arena <build|update|launch|deactivate|feature|validate|smoke> [args...]'
                 result=1
             ;;
         esac

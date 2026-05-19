@@ -304,6 +304,12 @@ class Task(_TaskRegistry, NodeInterface, Props_):
         if callable(marker):
             marker()
 
+
+    async def wait_navigation_ready(self, timeout_s: float) -> None:
+        waiter = getattr(self.__tm_robots, 'wait_navigation_ready', None)
+        if callable(waiter):
+            await waiter(timeout_s)
+
     @property
     async def is_done(self) -> bool:
         """

@@ -175,6 +175,19 @@ except Exception as exc:
     print(json.dumps(summary, ensure_ascii=False))
 PY
 
+    "$py" - <<'PY'
+import importlib
+
+for module in (
+    'arena_vln_models',
+    'arena_vln_models.backends',
+    'arena_vln_models.internnav',
+):
+    importlib.import_module(module)
+
+print('InternNav runtime import smoke passed.')
+PY
+
     if [ "$(id -u)" = "0" ] && id arena >/dev/null 2>&1; then
         chown -R "$(id -u arena):$(id -g arena)" "$venv" /home/arena/.cache 2>/dev/null || true
     fi

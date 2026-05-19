@@ -290,6 +290,12 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
 
         await self._simulator.after_reset_task()
 
+        wait_navigation_ready = getattr(self._task, 'wait_navigation_ready', None)
+        if callable(wait_navigation_ready):
+            await wait_navigation_ready(
+                timeout_s=max(0.0, self.rosparam[float].get('episode_navigation_ready_timeout_sec', 180.0))
+            )
+
         episode_start_delay_sec = max(0.0, self.rosparam[float].get('episode_start_delay_sec', 0.0))
         if episode_start_delay_sec > 0.0:
             self.get_logger().info(

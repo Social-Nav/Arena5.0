@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCENE_USD_PATH="${1:-${ARENA_SMOKE_SCENE_USD_PATH:-${ARENA_SMOKE_USD_PATH:-}}}"
+ROBOT_USD_PATH="${2:-${ARENA_SMOKE_ROBOT_USD_PATH:-}}"
+ROBOT_NAME="${ARENA_SMOKE_ROBOT_NAME:-Ai2_Bot2}"
+ROBOT_NAMESPACE="${ARENA_SMOKE_ROBOT_NAMESPACE:-/task_generator_node/${ROBOT_NAME}}"
+SCENE_PRIM_PATH="${ARENA_SMOKE_SCENE_PRIM_PATH:-/World/Scene}"
+SPAWN_SERVICE="${ARENA_SMOKE_SPAWN_USD_SERVICE:-/isaac/SpawnUsdRobot}"
+SERVICE_TIMEOUT_SEC="${ARENA_SMOKE_SERVICE_TIMEOUT_SEC:-120}"
+TOPIC_TIMEOUT_SEC="${ARENA_SMOKE_TOPIC_TIMEOUT_SEC:-45}"
+
+if [ -z "$SCENE_USD_PATH" ]; then
+    echo "Usage: smoke_isaac_eval <scene_usd_path> [robot_usd_path]" >&2
+    echo "Or set ARENA_SMOKE_SCENE_USD_PATH / ARENA_SMOKE_ROBOT_USD_PATH in the environment." >&2
+    exit 1
+fi
+
+wait_for_service(){
+    local service_name="$1"
+    timeout "${SERVICE_TIMEOUT_SEC}s" bash -lc '
+        while true; do
+            if ros2 service list 2>/dev/null | grep -Fxq "'"$service_name"'"; then
+                exit 0
+            fi
+            sleep 1
+        done
+    '
+}
+
+wait_for_topic_once(){
+    local topic_name="$1"
+    timeout "${TOPIC_TIMEOUT_SEC}s" ros2 topic echo --once "$topic_name" >/dev/null
+}
+
+echo "Waiting for Isaac services..."
+wait_for_service /isaac/LoadUsdScene
+wait_for_service "$SPAWN_SERVICE"
+
+echo "Loading USD scene: $SCENE_USD_PATH"
+timeout "${SERVICE_TIMEOUT_SEC}s" ros2 service call /isaac/LoadUsdScene isaacsim_msgs/srv/LoadUsdScene "{usd_path: '$SCENE_USD_PATH', scene_prim_path: '$SCENE_PRIM_PATH', scale: 1.0, position: [0.0, 0.0, 0.0], orientation: [0.0, 0.0, 0.0, 1.0], add_colliders: true, disable_collision_cooking: true}" >/dev/null
+
+if [ -n "$ROBOT_USD_PATH" ]; then
+    echo "Spawning smoke robot via $SPAWN_SERVICE"
+    timeout "${SERVICE_TIMEOUT_SEC}s" ros2 service call "$SPAWN_SERVICE" isaacsim_msgs/srv/SpawnUsdRobot "{name: 'Robots/${ROBOT_NAME}', usd_path: '$ROBOT_USD_PATH', robot_namespace: '${ROBOT_NAMESPACE#/}', base_frame: 'base_link', pose: {position: {x: 0.0, y: 0.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}" >/dev/null || true
+fi
+
+echo "Waiting for odom/camera/TF smoke topics..."
+wait_for_topic_once /tf
+wait_for_topic_once "${ROBOT_NAMESPACE}/odom"
+wait_for_topic_once "${ROBOT_NAMESPACE}/head_camera/camera_info"
+
+echo "Isaac eval smoke passed for ${ROBOT_NAMESPACE}."

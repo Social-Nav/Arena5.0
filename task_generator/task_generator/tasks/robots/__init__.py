@@ -37,6 +37,13 @@ class TM_Robots(TaskMode):
         self._last_reset = self._PROPS.clock.clock.sec
         self._last_reset_wall = time.monotonic()
 
+
+    async def wait_navigation_ready(self, timeout_s: float) -> None:
+        deadline = time.monotonic() + max(float(timeout_s), 0.0)
+        for robot_manager in self._PROPS.robots.values():
+            remaining = max(deadline - time.monotonic(), 0.0)
+            await robot_manager.wait_for_pending_goal(remaining)
+
     async def set_position(self, pose: Pose):
         """
         Set the position of all robots.

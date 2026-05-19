@@ -13,6 +13,13 @@ setup(
         ('share/' + package_name, ['package.xml']),
     ],
     install_requires=['setuptools', 'numpy', 'Pillow'],
+    extras_require={
+        'internnav': [
+            'PyYAML',
+            'torch',
+            'transformers',
+        ],
+    },
     tests_require=['pytest'],
     zip_safe=True,
     maintainer='dev',

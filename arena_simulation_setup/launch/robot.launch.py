@@ -205,6 +205,9 @@ def generate_launch_description():
             'rgb_topic': internnav_rgb_topic.substitution,
             'depth_topic': internnav_depth_topic.substitution,
             'camera_info_topic': internnav_camera_info_topic.substitution,
+            'base_frame': frame.substitution,
+            'odom_frame': 'odom',
+            'global_frame': 'map',
             'adapter_target': internnav_adapter_target.substitution,
             'require_real_backend': launch_ros.parameter_descriptions.ParameterValue(
                 internnav_require_real_backend.substitution, value_type=bool

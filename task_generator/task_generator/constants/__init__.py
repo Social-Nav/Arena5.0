@@ -14,6 +14,7 @@ class Constants:
         GAZEBO = "gazebo"
         UNITY = "unity"
         ISAAC = "isaac"
+        ISAAC_EVAL = "isaac_eval"
 
     class ArenaType(Enum):
         TRAINING = "training"

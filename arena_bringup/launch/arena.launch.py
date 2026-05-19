@@ -70,7 +70,7 @@ def generate_launch_description():
     human = LaunchArgument(
         name='human',
         description='human simulator to use',
-        default_value=PythonExpression([str({"dummy": "dummy", "gazebo": "hunav", "isaac": "hunav"}), '.get("', sim.substitution, '", "dummy")']),
+        default_value=PythonExpression([str({"dummy": "dummy", "gazebo": "hunav", "isaac": "hunav", "isaac_eval": "hunav"}), '.get("', sim.substitution, '", "dummy")']),
     )
     complexity = LaunchArgument(
         name='complexity',

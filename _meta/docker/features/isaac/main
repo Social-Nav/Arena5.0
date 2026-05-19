@@ -24,6 +24,7 @@ install(){
 
     arena update
     arena build
+    arena validate bootstrap
     update
 
     echo "Installed $name successfully."

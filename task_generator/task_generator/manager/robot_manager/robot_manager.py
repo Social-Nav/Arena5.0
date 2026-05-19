@@ -452,32 +452,22 @@ class RobotManager(NodeInterface):
         wait_for_world_geometry_ready = getattr(self.node, 'wait_for_world_geometry_ready', None)
         if callable(wait_for_world_geometry_ready):
             if not await wait_for_world_geometry_ready(timeout_s=90.0):
-                self._logger.warn(
-                    "World geometry did not report ready before goal publish; proceeding to avoid hanging the eval."
-                )
-
-        wait_for_episode_entities_ready = getattr(self.node, 'wait_for_episode_entities_ready', None)
-        if callable(wait_for_episode_entities_ready):
-            if not await wait_for_episode_entities_ready(timeout_s=120.0):
-                self._logger.warn(
-                    "Episode entities did not report ready before goal publish; proceeding to avoid hanging the eval."
-                )
+                raise RuntimeError('World geometry did not report ready before goal publish.')
 
         if not await self._wait_for_sim_tick(timeout_s=1.5):
-            self._logger.warn(
-                "Simulation time did not advance before goal publish; nav may use stale pose."
-            )
+            raise RuntimeError('Simulation time did not advance before goal publish.')
 
         if start_target is not None and not await self._wait_for_pose_sync(start_target, timeout_s=2.0):
-            self._logger.warn(
-                "Odometry did not reach reset start pose before goal publish; proceeding anyway."
-            )
+            raise RuntimeError('Odometry did not reach reset start pose before goal publish.')
 
         self._reset_navigation_readiness_state()
         self._ensure_dual_vln_status_subscription()
-        await self._wait_for_camera_ready_before_navigation(timeout_s=90.0)
-        await self._wait_for_dual_vln_status_before_navigation(timeout_s=120.0)
-        await self._wait_for_dual_vln_command_service_before_navigation(timeout_s=180.0)
+        if not await self._wait_for_camera_ready_before_navigation(timeout_s=90.0):
+            raise RuntimeError('Timed out waiting for real camera topics before publishing VLN navigation goal.')
+        if not await self._wait_for_dual_vln_status_before_navigation(timeout_s=120.0):
+            raise RuntimeError('Timed out waiting for InternNav backend_ready status with fresh real inputs.')
+        if not await self._wait_for_dual_vln_command_service_before_navigation(timeout_s=180.0):
+            raise RuntimeError('Timed out waiting for dual_vln get_command service before publishing navigation goal.')
 
         self._logger.info(
             f"Publishing goal once: x={goal.position.x}, y={goal.position.y}, orientation={goal.orientation.to_yaw()}"
@@ -635,19 +625,28 @@ class RobotManager(NodeInterface):
     def _dual_vln_status_has_fresh_sensors(self, payload: dict) -> bool:
         debug = payload.get('debug') if isinstance(payload.get('debug'), dict) else {}
         ages = debug.get('sensor_ages_sec') if isinstance(debug.get('sensor_ages_sec'), dict) else {}
+        topics = debug.get('topics') if isinstance(debug.get('topics'), dict) else {}
+        missing_inputs = set(debug.get('missing_inputs') or []) if isinstance(debug.get('missing_inputs'), list) else set()
+        if debug.get('tf_ready') is False:
+            return False
         stale_after = debug.get('stale_after_sec', 2.0)
         try:
             stale_after = float(stale_after)
         except (TypeError, ValueError):
             stale_after = 2.0
-        if stale_after <= 0.0:
-            return True
-
-        for key in ('rgb', 'depth'):
+        required_keys = [
+            key for key in ('rgb', 'depth', 'camera_info', 'odom')
+            if str(topics.get(key, '') or '').strip()
+        ]
+        if not required_keys:
+            required_keys = ['rgb', 'depth', 'odom']
+        for key in required_keys:
+            if key in missing_inputs:
+                return False
             value = ages.get(key)
             if not isinstance(value, (float, int)):
                 return False
-            if float(value) > stale_after:
+            if stale_after > 0.0 and float(value) > stale_after:
                 return False
         return True
 
@@ -904,6 +903,23 @@ class RobotManager(NodeInterface):
                 self.node.destroy_client(client)
             except Exception:
                 pass
+
+
+    async def wait_for_pending_goal(self, timeout_s: float) -> bool:
+        task = self._publish_goal_task
+        if task is None:
+            return True
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=max(float(timeout_s), 0.0))
+            return True
+        except asyncio.TimeoutError as exc:
+            raise RuntimeError(
+                f'Timed out waiting for navigation goal readiness for robot {self.name}. '
+                'Required TF/odom/camera inputs did not become ready in time.'
+            ) from exc
+        finally:
+            if self._publish_goal_task is task and task.done():
+                self._publish_goal_task = None
 
     def _start_direct_dual_vln_command_bridge(self) -> None:
         """Poll dual_vln get_command and publish its Twist directly.

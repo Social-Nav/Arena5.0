@@ -84,7 +84,42 @@ USER root
 RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
 # Install runtime Python dependencies directly into Isaac's internal site-packages to ensure they persist
-RUN /isaac-sim/python.sh -m pip install cattrs pyyaml pandas
+RUN /isaac-sim/python.sh -m pip install \
+    aiofiles \
+    attrs \
+    cattrs \
+    imageio \
+    numpy \
+    pandas \
+    pillow \
+    pydantic \
+    pyyaml \
+    requests \
+    scipy \
+    shapely \
+    typing_extensions && \
+    /isaac-sim/python.sh - <<'PY'
+import importlib
+
+for module in (
+    'aiofiles',
+    'attrs',
+    'cattrs',
+    'imageio',
+    'numpy',
+    'pandas',
+    'PIL',
+    'pydantic',
+    'requests',
+    'scipy',
+    'shapely',
+    'typing_extensions',
+    'yaml',
+):
+    importlib.import_module(module)
+
+print('Isaac runtime Python dependency smoke check passed.')
+PY
 
 # Copy the libpython3.11 library from builder (missing in Isaac 5.1.0 base)
 COPY --from=builder /usr/lib/x86_64-linux-gnu/libpython3.11.so.1.0 /usr/lib/x86_64-linux-gnu/

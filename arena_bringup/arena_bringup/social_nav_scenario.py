@@ -248,7 +248,7 @@ class SocialNavScenario:
         humans = self.data.get('humans') if isinstance(self.data.get('humans'), dict) else {}
         scenario_name = self.native_scenario_name()
         argv = [
-            '--sim', 'isaac',
+            '--sim', 'isaac_eval',
             '--human', str(humans.get('simulator') or 'hunav'),
             '--world', self.world_name,
             '--robot', self.robot_name,

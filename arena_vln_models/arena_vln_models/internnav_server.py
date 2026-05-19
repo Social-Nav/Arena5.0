@@ -37,9 +37,11 @@ from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.time import Time
 from sensor_msgs.msg import CameraInfo, Image
 from rosnav_rl_msgs.srv import GetCommand
 from std_msgs.msg import String
+from tf2_ros import Buffer, TransformListener
 
 from arena_vln_models.backends import ModelSimDecision, ModelSimObservation, Pose2D, create_model_backend
 from arena_vln_models.visualization import image_msg_to_numpy, numpy_to_image_msg, render_debug_overlay
@@ -130,6 +132,9 @@ class BaseModelSimServer(Node):
         self.declare_parameter('rgb_topic', '')
         self.declare_parameter('depth_topic', '')
         self.declare_parameter('camera_info_topic', '')
+        self.declare_parameter('base_frame', 'base_link')
+        self.declare_parameter('odom_frame', 'odom')
+        self.declare_parameter('global_frame', 'map')
         self.declare_parameter('enable_visualization', False)
         self.declare_parameter('visualization_topic', self.DEFAULT_VISUALIZATION_TOPIC)
         self.declare_parameter('action_visualization_topic', self.DEFAULT_ACTION_VISUALIZATION_TOPIC)
@@ -187,6 +192,8 @@ class BaseModelSimServer(Node):
         self._latest_depth_ts: float = 0.0
         self._camera_intrinsics: Optional[tuple[float, ...]] = None
         self._camera_info_ts: float = 0.0
+        self._required_readiness_topics: dict[str, str] = {'rgb': '', 'depth': '', 'camera_info': '', 'odom': ''}
+        self._required_tf_frames: dict[str, str] = {'base': '', 'odom': '', 'global': ''}
         self._camera_required: bool = False
         self._required_camera_topics: dict[str, str] = {'rgb': '', 'depth': '', 'camera_info': ''}
         self._initial_camera_timed_out: bool = False
@@ -194,6 +201,8 @@ class BaseModelSimServer(Node):
         self._trace_seq: int = 0
         self._model_output_seq: int = 0
         self._action_history: list[int] = []
+        self._tf_buffer = Buffer()
+        self._tf_listener = TransformListener(self._tf_buffer, self, spin_thread=True)
 
         mode, mode_source = _resolve_string(
             self.get_parameter('mode').value,
@@ -373,6 +382,17 @@ class BaseModelSimServer(Node):
             'depth': depth_topic,
             'camera_info': camera_info_topic,
         }
+        self._required_readiness_topics = {
+            'rgb': rgb_topic,
+            'depth': depth_topic,
+            'camera_info': camera_info_topic,
+            'odom': str(self.get_parameter('odom_topic').value or '').strip(),
+        }
+        self._required_tf_frames = {
+            'base': self._namespaced_frame(str(self.get_parameter('base_frame').value or 'base_link')),
+            'odom': self._namespaced_frame(str(self.get_parameter('odom_frame').value or 'odom')),
+            'global': str(self.get_parameter('global_frame').value or 'map').strip() or 'map',
+        }
         self._camera_required = self._requires_initial_camera(
             mode=mode,
             rgb_topic=rgb_topic,
@@ -484,7 +504,11 @@ class BaseModelSimServer(Node):
                 f'subgoal={self.get_parameter("subgoal_topic").value} '
                 f'instruction={self.get_parameter("instruction_topic").value} '
                 f'rgb={rgb_topic or "<disabled>"} depth={depth_topic or "<disabled>"} '
-                f'camera_info={camera_info_topic or "<disabled>"} look_down={self._params["look_down"]} '
+                f'camera_info={camera_info_topic or "<disabled>"} '
+                f'base_frame={self._required_tf_frames["base"] or "<disabled>"} '
+                f'odom_frame={self._required_tf_frames["odom"] or "<disabled>"} '
+                f'global_frame={self._required_tf_frames["global"] or "<disabled>"} '
+                f'look_down={self._params["look_down"]} '
                 f'visualization={self._visualization_enabled} trace={self._trace_path or "<disabled>"} '
                 f'action_visualization_topic={self.get_parameter("action_visualization_topic").value} '
                 f'model_output_topic={self.get_parameter("model_output_topic").value} '
@@ -493,7 +517,7 @@ class BaseModelSimServer(Node):
         )
         self.get_logger().info(f'{self.SERVER_LABEL} backend ready: {self._backend.describe()}')
         adapter_available = getattr(self._backend, '_adapter_callable', True) is not None
-        missing_inputs, stale_inputs = self._camera_input_issues(require_fresh=False)
+        missing_inputs, stale_inputs = self._required_input_issues(require_fresh=False)
         startup_status = 'backend_ready' if adapter_available else 'backend_unavailable'
         startup_degraded = not adapter_available
         if missing_inputs or stale_inputs:
@@ -515,6 +539,9 @@ class BaseModelSimServer(Node):
                 'stale_inputs': stale_inputs,
                 'sensor_ages_sec': self._camera_sensor_ages(),
                 'stale_after_sec': self._params['camera_stale_after_sec'],
+                'topics': self._required_readiness_topics,
+                'tf_frames': self._required_tf_frames,
+                'tf_ready': self._tf_tree_ready(),
             },
         )
         self._publish_status(self._last_decision)
@@ -552,12 +579,22 @@ class BaseModelSimServer(Node):
     ) -> None:
         del mode, rgb_topic, depth_topic, camera_info_topic, timeout_sec
 
+    def _namespaced_frame(self, frame_name: str) -> str:
+        normalized = str(frame_name or '').strip().strip('/')
+        if not normalized:
+            return ''
+        namespace = str(self.get_namespace() or '').strip().strip('/')
+        if not namespace or normalized.startswith(f'{namespace}/'):
+            return normalized
+        return f'{namespace}/{normalized}'
+
     def _camera_sensor_ages(self) -> dict[str, float | None]:
         now = time.monotonic()
         return {
             'rgb': (now - self._latest_rgb_ts) if self._latest_rgb_ts > 0.0 else None,
             'depth': (now - self._latest_depth_ts) if self._latest_depth_ts > 0.0 else None,
             'camera_info': (now - self._camera_info_ts) if self._camera_info_ts > 0.0 else None,
+            'odom': (now - self._last_odom_pose_ts) if self._last_odom_pose_ts > 0.0 else None,
         }
 
     def _camera_input_issues(self, *, require_fresh: bool) -> tuple[list[str], list[str]]:
@@ -570,14 +607,6 @@ class BaseModelSimServer(Node):
         stale: list[str] = []
         for key, topic in self._required_camera_topics.items():
             if not topic:
-                continue
-            # CameraInfo from Isaac Replicator is useful when available, but it
-            # is not required by the Arena InternNav adapter: core.py falls back
-            # to a deterministic pinhole intrinsic matrix from the RGB image
-            # shape.  Do not block the entire episode on this latched metadata
-            # stream; several Isaac USD/Replicator combinations publish RGB and
-            # depth correctly while CameraInfo is delayed or missing.
-            if key == 'camera_info':
                 continue
             value_present = False
             last_ts = 0.0
@@ -598,8 +627,43 @@ class BaseModelSimServer(Node):
                 stale.append(key)
         return missing, stale
 
+    def _odom_input_issues(self, *, require_fresh: bool) -> tuple[list[str], list[str]]:
+        odom_topic = str(self._required_readiness_topics.get('odom', '') or '').strip()
+        if not odom_topic:
+            return ['odom'], []
+
+        missing: list[str] = []
+        stale: list[str] = []
+        if self._last_odom_pose_ts <= 0.0 or self._pose is None:
+            missing.append('odom')
+            return missing, stale
+
+        stale_after_sec = max(float(self._params.get('camera_stale_after_sec', 0.0)), 0.0)
+        if require_fresh and stale_after_sec > 0.0 and (time.monotonic() - self._last_odom_pose_ts) > stale_after_sec:
+            stale.append('odom')
+        return missing, stale
+
+    def _tf_tree_ready(self) -> bool:
+        odom_frame = str(self._required_tf_frames.get('odom', '') or '').strip()
+        base_frame = str(self._required_tf_frames.get('base', '') or '').strip()
+        if not odom_frame or not base_frame:
+            return False
+        try:
+            return bool(self._tf_buffer.can_transform(odom_frame, base_frame, Time()))
+        except Exception:
+            return False
+
+    def _required_input_issues(self, *, require_fresh: bool) -> tuple[list[str], list[str]]:
+        missing, stale = self._camera_input_issues(require_fresh=require_fresh)
+        odom_missing, odom_stale = self._odom_input_issues(require_fresh=require_fresh)
+        missing.extend(odom_missing)
+        stale.extend(odom_stale)
+        if not self._tf_tree_ready():
+            missing.append('tf')
+        return missing, stale
+
     def _camera_gate_decision(self) -> ModelSimDecision | None:
-        missing, stale = self._camera_input_issues(require_fresh=True)
+        missing, stale = self._required_input_issues(require_fresh=True)
         if not missing and not stale:
             return None
 
@@ -615,7 +679,9 @@ class BaseModelSimServer(Node):
                 'stale_inputs': stale,
                 'sensor_ages_sec': self._camera_sensor_ages(),
                 'stale_after_sec': float(self._params.get('camera_stale_after_sec', 0.0)),
-                'topics': self._required_camera_topics,
+                'topics': self._required_readiness_topics,
+                'tf_frames': self._required_tf_frames,
+                'tf_ready': self._tf_tree_ready(),
             },
         )
 
@@ -635,7 +701,7 @@ class BaseModelSimServer(Node):
         adapter_available = getattr(self._backend, '_adapter_callable', True) is not None
         if not adapter_available:
             return
-        missing, stale = self._camera_input_issues(require_fresh=False)
+        missing, stale = self._required_input_issues(require_fresh=False)
         if missing or stale:
             return
         with self._state_lock:
@@ -657,6 +723,9 @@ class BaseModelSimServer(Node):
                 'adapter_target': self._params['adapter_target'],
                 'startup_camera_timeout_recovered': bool(self._initial_camera_timed_out),
                 'sensor_ages_sec': self._camera_sensor_ages(),
+                'topics': self._required_readiness_topics,
+                'tf_frames': self._required_tf_frames,
+                'tf_ready': self._tf_tree_ready(),
             },
         )
         self._set_last_decision(decision)
@@ -908,6 +977,8 @@ class BaseModelSimServer(Node):
             if selected_action_int is not None:
                 raw_model_output['discrete_action'] = selected_action_int
 
+        backend = getattr(self, '_backend', None)
+
         record = {
             'seq': self._model_output_seq,
             'stamp_wall_time': time.time(),
@@ -915,7 +986,7 @@ class BaseModelSimServer(Node):
             'namespace': self.get_namespace(),
             'wrapper': self.SERVER_LABEL,
             'model_instance': self.MODEL_INSTANCE,
-            'backend_type': getattr(self._backend, 'backend_type', ''),
+            'backend_type': getattr(backend, 'backend_type', ''),
             'event_type': event_type,
             'status': decision.status,
             'degraded': bool(decision.degraded),
@@ -1235,7 +1306,7 @@ class InternNavServer(BaseModelSimServer):
         return camera_topics_configured and internnav_like
 
     def _camera_missing_inputs(self) -> list[str]:
-        missing, _stale = self._camera_input_issues(require_fresh=False)
+        missing, _stale = self._required_input_issues(require_fresh=False)
         return missing
 
     def _wait_for_initial_camera_if_required(
@@ -1255,14 +1326,13 @@ class InternNavServer(BaseModelSimServer):
         ):
             return
 
-        # Do not let the startup camera barrier consume an entire short Arena
-        # episode.  The command path already gates on fresh RGB/depth before
-        # invoking InternNav, and the adapter can load without images, so use a
-        # short grace period and then continue loading the backend.
-        timeout_sec = min(max(float(timeout_sec), 0.0), 5.0)
+        timeout_sec = max(float(timeout_sec), 0.0)
         self.get_logger().info(
-            'Waiting for first real camera messages before loading InternNav adapter: '
-            f'rgb={rgb_topic}, depth={depth_topic}, camera_info={camera_info_topic}, timeout={timeout_sec:.1f}s'
+            'Waiting for real TF/odom/camera inputs before loading InternNav adapter: '
+            f'rgb={rgb_topic}, depth={depth_topic}, camera_info={camera_info_topic}, '
+            f'odom={self._required_readiness_topics.get("odom", "")}, '
+            f'tf={self._required_tf_frames.get("odom", "")}->{self._required_tf_frames.get("base", "")}, '
+            f'timeout={timeout_sec:.1f}s'
         )
         waiting = ModelSimDecision(
             status='waiting_for_camera',
@@ -1271,6 +1341,10 @@ class InternNavServer(BaseModelSimServer):
                 'rgb_topic': rgb_topic,
                 'depth_topic': depth_topic,
                 'camera_info_topic': camera_info_topic,
+                'odom_topic': self._required_readiness_topics.get('odom', ''),
+                'topics': self._required_readiness_topics,
+                'tf_frames': self._required_tf_frames,
+                'tf_ready': self._tf_tree_ready(),
                 'timeout_sec': timeout_sec,
             },
         )
@@ -1284,28 +1358,32 @@ class InternNavServer(BaseModelSimServer):
 
         if not missing:
             self._initial_camera_timed_out = False
-            self.get_logger().info('Initial camera readiness barrier passed; loading InternNav adapter now.')
+            self.get_logger().info('Initial TF/odom/camera readiness barrier passed; loading InternNav adapter now.')
             return
 
         self._initial_camera_timed_out = True
-        self.get_logger().warn(
-            'Timed out waiting for initial camera messages before InternNav adapter load; missing '
+        failure = ModelSimDecision(
+            status='camera_timeout',
+            degraded=True,
+            debug={
+                'safe_stop': True,
+                'missing_inputs': missing,
+                'sensor_ages_sec': self._camera_sensor_ages(),
+                'topics': self._required_readiness_topics,
+                'tf_frames': self._required_tf_frames,
+                'tf_ready': self._tf_tree_ready(),
+                'timeout_sec': timeout_sec,
+            },
+        )
+        self._publish_status(failure)
+        self._publish_model_output(None, failure, event_type='startup_failure')
+        message = (
+            'Timed out waiting for required real TF/odom/camera inputs before InternNav adapter load; missing '
             + ', '.join(missing)
-            + '. Continuing so the eval can surface the failure explicitly.'
         )
-        self._publish_status(
-            ModelSimDecision(
-                status='camera_timeout',
-                degraded=True,
-                debug={
-                    'safe_stop': True,
-                    'missing_inputs': missing,
-                    'sensor_ages_sec': self._camera_sensor_ages(),
-                    'topics': self._required_camera_topics,
-                    'timeout_sec': timeout_sec,
-                },
-            )
-        )
+        if self._params['require_real_backend']:
+            raise RuntimeError(message)
+        self.get_logger().warn(message + '. Continuing in degraded mode because require_real_backend=false.')
 
 def main() -> None:
     rclpy.init()

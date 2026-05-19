@@ -14,15 +14,32 @@
 
   <exec_depend>arena_bringup</exec_depend>
   <exec_depend>arena_rclpy_mixins</exec_depend>
+  <exec_depend>arena_robots</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
   
+  <depend>joint_state_publisher</depend>
   <depend>topic_tools</depend>
+  <depend>launch</depend>
+  <depend>launch_ros</depend>
   
   <depend>jackal_description</depend>
   <depend>realsense2_description</depend>
   <depend>lms1xx</depend>
+  <depend>nav2_behaviors</depend>
+  <depend>nav2_bt_navigator</depend>
+  <depend>nav2_collision_monitor</depend>
+  <depend>nav2_common</depend>
+  <depend>nav2_controller</depend>
+  <depend>nav2_lifecycle_manager</depend>
+  <depend>nav2_planner</depend>
+  <depend>nav2_smoother</depend>
+  <depend>nav2_velocity_smoother</depend>
 
   <depend>rclpy</depend>
   <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>robot_state_publisher</depend>
+  <depend>std_srvs</depend>
   <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>
   <depend>nav2_waypoint_follower</depend>
