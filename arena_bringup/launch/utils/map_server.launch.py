@@ -54,7 +54,12 @@ def generate_launch_description():
                     launch.substitutions.LaunchConfiguration('yaml_filename'),
                     value_type=str,
                 ),
-                'use_sim_time': True,
+                # Keep map lifecycle services on wall time during Isaac eval
+                # startup.  Isaac may not publish /clock until after the task
+                # generator has loaded/activated the map, so sim-time lifecycle
+                # services can deadlock the readiness path before the simulator
+                # has a chance to tick.
+                'use_sim_time': False,
             }],
         ),
         launch_ros.actions.Node(
@@ -68,7 +73,7 @@ def generate_launch_description():
                 # startup race where lifecycle_manager sends ACTIVATE before the
                 # map server has completed CONFIGURE.
                 'autostart': False,
-                'use_sim_time': True,
+                'use_sim_time': False,
                 'bond_timeout': 0.0,
             }]
         ),

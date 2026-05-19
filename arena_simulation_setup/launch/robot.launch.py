@@ -241,8 +241,9 @@ def generate_launch_description():
             "'", local_planner.substitution, "' == 'dual_vln' and '",
             train_mode.substitution, "' == 'false' and '",
             internnav_external_server.substitution, "'.lower() != 'true' and '",
-            dual_vln_external_server.substitution, "'.lower() != 'true'",
-        ])
+            dual_vln_external_server.substitution, "'.lower() != 'true' and ",
+            "os.environ.get('ARENA_INTERNNAV_EXTERNAL_SERVER', '').strip().lower() not in {'1', 'true', 'yes', 'on'}",
+        ], ['os'])
     )
     internnav_server = launch_ros.actions.Node(
         package='arena_vln_models',

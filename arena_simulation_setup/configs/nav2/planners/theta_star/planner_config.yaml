@@ -1,7 +1,7 @@
 planner_plugins: ['ThetaStar']
 planner_plugins_dict:
   ThetaStar:
-    plugin: 'nav2_theta_star_planner::ThetaStarPlanner'
+    plugin: 'nav2_theta_star_planner/ThetaStarPlanner'
     use_final_approach_orientation: false
     allow_unknown: true
     tolerance: 0.5

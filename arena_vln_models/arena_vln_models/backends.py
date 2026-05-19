@@ -470,11 +470,25 @@ class HeuristicBackend(ModelSimBackend):
 
     def compute(self, observation: ModelSimObservation) -> ModelSimDecision:
         pose = observation.pose
-        # Use the fixed episode goal for fallback control while model inference
-        # is in progress. Chasing a moving path lookahead can produce loops with
-        # slow CPU inference cycles and stale command windows.
-        goal = observation.goal or observation.subgoal
-        target_source = 'goal' if observation.goal is not None else 'subgoal'
+        # Prefer the Nav2 path lookahead while the final episode goal is still
+        # far away.  The final goal can be across walls or around corners in
+        # hospital maps; steering directly toward it makes the heuristic rotate
+        # in place against an unreachable bearing.  Switch back to the fixed
+        # final goal near the destination so completion remains stable and does
+        # not chase a moving lookahead at the goal boundary.
+        final_goal = observation.goal
+        path_goal = observation.subgoal
+        goal = final_goal or path_goal
+        target_source = 'goal' if final_goal is not None else 'subgoal'
+        final_goal_distance = None
+        if pose is not None and final_goal is not None:
+            final_goal_distance = math.hypot(final_goal.x - pose.x, final_goal.y - pose.y)
+        if pose is not None and final_goal is not None and path_goal is not None:
+            final_goal_near_radius = max(float(self._params['goal_tolerance']) * 3.0, 1.0)
+            path_goal_distance = math.hypot(path_goal.x - pose.x, path_goal.y - pose.y)
+            if final_goal_distance > final_goal_near_radius and path_goal_distance > 1.0:
+                goal = path_goal
+                target_source = 'subgoal'
         if pose is None or goal is None:
             return ModelSimDecision(status='missing_pose_or_goal', degraded=True)
 
@@ -486,6 +500,16 @@ class HeuristicBackend(ModelSimBackend):
         goal_yaw_err = math.atan2(math.sin(goal.yaw - pose.yaw), math.cos(goal.yaw - pose.yaw))
         max_lin = float(self._params['max_linear'])
         max_ang = float(self._params['max_angular'])
+        # The direct InternNav bridge republishes the most recent command between
+        # service responses.  Holding a 1.0-1.5 rad/s pure-rotation command is
+        # unstable in Isaac at low effective update rates: the robot repeatedly
+        # overshoots the target bearing and appears to spin in place.  Keep the
+        # far-goal heuristic controller deliberately underdamped and arc-based so
+        # every command either makes translational progress or rotates slowly
+        # enough to be corrected by the next odom sample.
+        far_goal_max_ang = min(max_ang, 0.6)
+        pure_rotate_max_ang = min(max_ang, 0.25)
+        arc_yaw_limit = 2.4
         k_lin = float(self._params['k_lin'])
         k_ang = float(self._params['k_ang'])
         goal_tolerance = float(self._params['goal_tolerance'])
@@ -515,7 +539,7 @@ class HeuristicBackend(ModelSimBackend):
                 },
             )
 
-        angular_z = clamp(k_ang * yaw_err, -max_ang, max_ang)
+        angular_z = clamp(k_ang * yaw_err, -pure_rotate_max_ang, pure_rotate_max_ang)
         status = 'rotate_to_goal'
         # Keep fallback control convergent while the slow CPU InternNav adapter
         # is still running.  Pure path-lookahead arcs can orbit near the goal; a
@@ -523,16 +547,22 @@ class HeuristicBackend(ModelSimBackend):
         abs_yaw_err = abs(yaw_err)
         if abs(yaw_err) <= angle_tol:
             linear_x = clamp(max(min_lin, k_lin * dist), 0.0, max_lin)
-            angular_z = clamp(k_ang * yaw_err, -max_ang, max_ang)
+            angular_z = clamp(k_ang * yaw_err, -far_goal_max_ang, far_goal_max_ang)
             status = 'drive_to_goal'
             arc_turn = False
-        elif abs_yaw_err <= 0.50:
-            linear_x = clamp(max(min_lin, max_lin * 0.70), 0.0, max_lin)
-            angular_z = clamp(k_ang * yaw_err, -max_ang, max_ang)
+        elif abs_yaw_err <= arc_yaw_limit:
+            yaw_scale = clamp(1.0 - (abs_yaw_err / arc_yaw_limit), 0.0, 1.0)
+            linear_x = clamp(max(min_lin, max_lin * (0.15 + 0.55 * yaw_scale)), 0.0, max_lin)
+            angular_z = clamp(k_ang * yaw_err, -far_goal_max_ang, far_goal_max_ang)
+            status = 'arc_to_goal'
             arc_turn = True
         else:
             linear_x = 0.0
-            angular_z = clamp(k_ang * yaw_err, -max_ang, max_ang)
+            # Isaac Ai2_Bot2 is prone to lateral drift and bearing overshoot
+            # while holding pure angular commands.  Keep pure rotations slower
+            # than arc turns so a large initial heading error can settle into
+            # the arc/drive bands instead of orbiting around the start pose.
+            angular_z = clamp(k_ang * yaw_err, -pure_rotate_max_ang, pure_rotate_max_ang)
             arc_turn = False
 
         return ModelSimDecision(
@@ -545,6 +575,10 @@ class HeuristicBackend(ModelSimBackend):
                 'instruction_length': len(observation.instruction),
                 'target_source': target_source,
                 'arc_turn': arc_turn,
+                'effective_max_angular': far_goal_max_ang,
+                'pure_rotate_max_angular': pure_rotate_max_ang,
+                'arc_yaw_limit': arc_yaw_limit,
+                'final_goal_distance': final_goal_distance,
             },
         )
 

@@ -468,6 +468,14 @@ class BaseModelSimServer(Node):
             if source is not None:
                 self.get_logger().info(f'Using InternNav {label} override from {source}')
 
+        # Advertise the command service before the strict initial sensor wait so
+        # externally launched servers are discoverable by eval preflight while
+        # they are still waiting for the Arena/Isaac graph to publish real
+        # TF/odom/camera inputs.  The task_generator still gates goal release on
+        # a fresh backend_ready status, so service discovery alone cannot bypass
+        # real-input readiness.
+        self.create_service(GetCommand, 'get_command', self._on_get_command)
+
         self._wait_for_initial_camera_if_required(
             mode=mode,
             rgb_topic=rgb_topic,
@@ -485,8 +493,6 @@ class BaseModelSimServer(Node):
             self.get_logger().error(f"Failed to create backend for mode='{mode}': {exc}; falling back to heuristic")
             self._backend = create_model_backend(mode='heuristic', logger=self.get_logger(), params=self._params)
         self._fallback_backend = create_model_backend(mode='heuristic', logger=self.get_logger(), params=self._params)
-
-        self.create_service(GetCommand, 'get_command', self._on_get_command)
 
         self.get_logger().info(
             (
@@ -590,11 +596,12 @@ class BaseModelSimServer(Node):
 
     def _camera_sensor_ages(self) -> dict[str, float | None]:
         now = time.monotonic()
+        last_odom_pose_ts = float(getattr(self, '_last_odom_pose_ts', 0.0) or 0.0)
         return {
             'rgb': (now - self._latest_rgb_ts) if self._latest_rgb_ts > 0.0 else None,
             'depth': (now - self._latest_depth_ts) if self._latest_depth_ts > 0.0 else None,
             'camera_info': (now - self._camera_info_ts) if self._camera_info_ts > 0.0 else None,
-            'odom': (now - self._last_odom_pose_ts) if self._last_odom_pose_ts > 0.0 else None,
+            'odom': (now - last_odom_pose_ts) if last_odom_pose_ts > 0.0 else None,
         }
 
     def _camera_input_issues(self, *, require_fresh: bool) -> tuple[list[str], list[str]]:
@@ -652,6 +659,33 @@ class BaseModelSimServer(Node):
             return bool(self._tf_buffer.can_transform(odom_frame, base_frame, Time()))
         except Exception:
             return False
+
+    def _learn_tf_frames_from_odom(self, msg: Odometry) -> None:
+        """Use real odometry frame ids for TF readiness.
+
+        The InternNav node runs below a ROS namespace, but TF frame ids are data
+        fields and are not automatically remapped by ROS namespaces.  Isaac eval
+        odometry advertises frames like ``Ai2_Bot2/odom`` ->
+        ``Ai2_Bot2/base_footprint``.  If the wrapper synthesizes names from the
+        node namespace instead, it remains in safe-stop readiness despite real
+        TF/odom being available.  Once real odometry arrives, align the required
+        TF pair to the message header/child_frame_id.
+        """
+        odom_frame = str(getattr(msg.header, 'frame_id', '') or '').strip().strip('/')
+        base_frame = str(getattr(msg, 'child_frame_id', '') or '').strip().strip('/')
+        updated = False
+        if odom_frame and odom_frame != self._required_tf_frames.get('odom'):
+            self._required_tf_frames['odom'] = odom_frame
+            updated = True
+        if base_frame and base_frame != self._required_tf_frames.get('base'):
+            self._required_tf_frames['base'] = base_frame
+            updated = True
+        if updated:
+            self.get_logger().info(
+                f'{self.SERVER_LABEL} learned TF frames from odom: '
+                f'odom={self._required_tf_frames.get("odom") or "<unset>"} '
+                f'base={self._required_tf_frames.get("base") or "<unset>"}'
+            )
 
     def _required_input_issues(self, *, require_fresh: bool) -> tuple[list[str], list[str]]:
         missing, stale = self._camera_input_issues(require_fresh=require_fresh)
@@ -1161,6 +1195,7 @@ class BaseModelSimServer(Node):
         )
 
     def _on_odom(self, msg: Odometry) -> None:
+        self._learn_tf_frames_from_odom(msg)
         q = msg.pose.pose.orientation
         if not _finite_values(msg.pose.pose.position.x, msg.pose.pose.position.y, q.x, q.y, q.z, q.w):
             self.get_logger().warn('Ignoring non-finite odom pose update')
@@ -1303,7 +1338,7 @@ class InternNavServer(BaseModelSimServer):
             or 'internnav' in model_path_lower
             or 'internvla' in model_path_lower
         )
-        return camera_topics_configured and internnav_like
+        return camera_topics_configured and (internnav_like or bool(self._params.get('require_real_backend', False)))
 
     def _camera_missing_inputs(self) -> list[str]:
         missing, _stale = self._required_input_issues(require_fresh=False)

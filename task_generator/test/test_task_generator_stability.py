@@ -205,7 +205,7 @@ def test_dual_vln_status_sensor_freshness_accepts_only_fresh_rgb_and_depth():
     assert manager._dual_vln_status_has_fresh_sensors({
         'debug': {
             'stale_after_sec': 2.0,
-            'sensor_ages_sec': {'rgb': 0.1, 'depth': 0.2, 'camera_info': None},
+            'sensor_ages_sec': {'rgb': 0.1, 'depth': 0.2, 'odom': 0.1, 'camera_info': None},
         }
     }) is True
 
@@ -233,6 +233,19 @@ def test_direct_dual_vln_status_twist_filters_invalid_payloads_and_keeps_valid_c
     manager._update_direct_dual_vln_status_twist({'status': 'internnav_command', 'linear_x': 0.36, 'angular_z': -0.375})
     assert manager._direct_dual_vln_last_status_twist.linear.x == 0.36
     assert manager._direct_dual_vln_last_status_twist.angular.z == -0.375
+
+
+def test_direct_dual_vln_status_twist_accepts_heuristic_command_statuses():
+    manager = _robot_manager_stub()
+
+    manager._update_direct_dual_vln_status_twist({'status': 'arc_to_goal', 'linear_x': 0.16, 'angular_z': 0.6})
+    assert manager._direct_dual_vln_last_status_twist.linear.x == 0.16
+    assert manager._direct_dual_vln_last_status_twist.angular.z == 0.6
+
+    manager._publish_direct_dual_vln_status_command({'status': 'arc_to_goal', 'linear_x': 0.16, 'angular_z': 0.6})
+    assert len(manager._cmd_vel_pub.messages) == 1
+    assert manager._cmd_vel_pub.messages[0].linear.x == 0.16
+    assert manager._cmd_vel_pub.messages[0].angular.z == 0.6
 
 
 def test_direct_dual_vln_bridge_stops_instead_of_publishing_when_pose_leaves_safe_bounds():

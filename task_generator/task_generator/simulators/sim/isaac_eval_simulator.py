@@ -2,6 +2,7 @@ import asyncio
 import itertools
 import os
 import random
+import time
 import traceback
 import typing
 from collections.abc import Sequence
@@ -525,31 +526,77 @@ class IsaacEvalSimulator(IsaacSimulator):
 
     async def setup(self):
         self._logger.info('Setting up IsaacEvalSimulator service clients...')
-        futures: list[typing.Awaitable] = []
-        for client in self._clients.__dict__.values():
-            client = typing.cast(ClientWrapper, client)
-            self._logger.info(f'Initializing service client: {client.client.srv_name}')
-            futures.append(client.ensure(timeout_sec=120.0))
-
-        results = await asyncio.gather(*futures)
-        unavailable = [
-            typing.cast(ClientWrapper, client).client.srv_name
-            for client, available in zip(self._clients.__dict__.values(), results)
-            if not available
+        clients = [
+            typing.cast(ClientWrapper, client)
+            for client in self._clients.__dict__.values()
         ]
-        if unavailable:
-            raise RuntimeError(f"Isaac service(s) unavailable after 120s: {', '.join(unavailable)}")
+
+        # SpawnUsdRobot is the only Isaac service that exists under two names in
+        # the Humble eval setup.  The Isaac-side service wrapper registers the
+        # generated service as `/isaac/SpawnUsdRobot_srv`, while some newer
+        # Arena code paths use `/isaac/SpawnUsdRobot`.  Do not require the
+        # canonical name up front; otherwise the eval launcher can pass service
+        # discovery with a stale graph, fire-and-forget the request to the wrong
+        # endpoint, and then fail later because no real odom/TF/camera topics
+        # were ever produced.
+        canonical_spawn_service = self._clients.SpawnUsdRobot.client.srv_name
+        legacy_spawn_service = self._legacy_spawn_usd_robot.client.srv_name
+        required_services = {
+            client.client.srv_name
+            for client in clients
+            if client.client.srv_name != canonical_spawn_service
+        }
+        for service_name in sorted(required_services):
+            self._logger.info(f'Initializing service client: {service_name}')
+
+        # In the mixed Humble task-generator + Isaac Sim ROS bridge graph,
+        # rclpy Client.wait_for_service can remain blocked even after direct
+        # graph discovery reports the service.  Poll graph discovery here and
+        # let the concrete service calls below fail fast with their own bounded
+        # call_timeout if a server disappears.  This keeps eval startup bounded
+        # without introducing any dummy simulator state.
+        deadline = time.monotonic() + 120.0
+        available_services: set[str] = set()
+        while time.monotonic() < deadline:
+            available_services = {
+                name for name, _types in self.node.get_service_names_and_types()
+            }
+            unavailable = sorted(required_services - available_services)
+            spawn_available = (
+                canonical_spawn_service in available_services
+                or legacy_spawn_service in available_services
+            )
+            if not unavailable and spawn_available:
+                break
+            await asyncio.sleep(0.25)
+        else:
+            unavailable = sorted(required_services - available_services)
+
+        missing_services = list(unavailable)
+        if (
+            canonical_spawn_service not in available_services
+            and legacy_spawn_service not in available_services
+        ):
+            missing_services.append(
+                f"one of {canonical_spawn_service} or {legacy_spawn_service}"
+            )
+
+        if missing_services:
+            raise RuntimeError(f"Isaac service(s) unavailable after 120s: {', '.join(sorted(missing_services))}")
 
         spawn_service_override = os.environ.get('ARENA_ISAAC_USD_SPAWN_SERVICE', '').strip()
-        if spawn_service_override.endswith('_srv'):
-            if await self._legacy_spawn_usd_robot.ensure(timeout_sec=5.0):
+        if legacy_spawn_service in available_services:
+            if legacy_spawn_service in available_services:
                 self._spawn_usd_robot_client = self._legacy_spawn_usd_robot
-                self._logger.info('Using legacy SpawnUsdRobot_srv endpoint for eval compatibility.')
-            else:
-                self._logger.warning(
-                    'ARENA_ISAAC_USD_SPAWN_SERVICE requested legacy _srv endpoint, but it was unavailable; '
-                    'falling back to /isaac/SpawnUsdRobot.'
+                self._logger.info(
+                    f'Using legacy SpawnUsdRobot endpoint {legacy_spawn_service} for eval compatibility.'
                 )
+        elif spawn_service_override.endswith('_srv'):
+            raise RuntimeError(
+                f'ARENA_ISAAC_USD_SPAWN_SERVICE requested {legacy_spawn_service}, but it was unavailable.'
+            )
+        else:
+            self._spawn_usd_robot_client = self._clients.SpawnUsdRobot
 
         self.node.create_publisher(std_msgs.msg.String, '/isaac/add_pedestrians_topic', 10).publish(
             std_msgs.msg.String(data=self.node.service_namespace('arena_peds'))

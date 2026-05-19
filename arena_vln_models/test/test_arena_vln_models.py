@@ -371,6 +371,117 @@ def test_heuristic_backend_produces_forward_command():
     assert decision.linear_x > 0.0
 
 
+def test_heuristic_backend_caps_far_goal_rotation_and_arcs_forward():
+    params = {
+        'max_linear': 1.0,
+        'max_angular': 1.5,
+        'k_lin': 1.0,
+        'k_ang': 2.0,
+        'goal_tolerance': 0.35,
+        'angle_tolerance': 0.25,
+        'min_lin_when_aligned': 0.05,
+    }
+    decision = HeuristicBackend(None, params).compute(DualVLNObservation(
+        pose=Pose2D(0.0, 0.0, 0.0),
+        goal=Pose2D(1.0, 1.0, 0.0),
+        instruction='go diagonally',
+    ))
+
+    assert decision.status == 'arc_to_goal'
+    assert decision.linear_x > 0.0
+    assert abs(decision.angular_z) <= 0.6
+    assert decision.debug['arc_turn'] is True
+    assert decision.debug['effective_max_angular'] == 0.6
+
+
+def test_heuristic_backend_slows_large_pure_rotations():
+    params = {
+        'max_linear': 1.0,
+        'max_angular': 1.5,
+        'k_lin': 1.0,
+        'k_ang': 2.0,
+        'goal_tolerance': 0.35,
+        'angle_tolerance': 0.25,
+        'min_lin_when_aligned': 0.05,
+    }
+    decision = HeuristicBackend(None, params).compute(DualVLNObservation(
+        pose=Pose2D(0.0, 0.0, 0.0),
+        goal=Pose2D(-1.0, 0.0, 0.0),
+        instruction='turn around',
+    ))
+
+    assert decision.status == 'rotate_to_goal'
+    assert decision.linear_x == 0.0
+    assert abs(decision.angular_z) <= 0.25
+    assert decision.debug['arc_turn'] is False
+    assert decision.debug['pure_rotate_max_angular'] == 0.25
+
+
+def test_heuristic_backend_arcs_through_large_but_recoverable_heading_error():
+    params = {
+        'max_linear': 1.0,
+        'max_angular': 1.5,
+        'k_lin': 1.0,
+        'k_ang': 2.0,
+        'goal_tolerance': 0.35,
+        'angle_tolerance': 0.25,
+        'min_lin_when_aligned': 0.05,
+    }
+    decision = HeuristicBackend(None, params).compute(DualVLNObservation(
+        pose=Pose2D(0.0, 0.0, 0.0),
+        goal=Pose2D(0.0, 1.0, 0.0),
+        instruction='turn and drive',
+    ))
+
+    assert decision.status == 'arc_to_goal'
+    assert decision.linear_x > 0.0
+    assert abs(decision.angular_z) <= 0.6
+    assert decision.debug['arc_yaw_limit'] == 2.4
+
+
+def test_heuristic_backend_prefers_real_path_subgoal_when_final_goal_is_far():
+    params = {
+        'max_linear': 1.0,
+        'max_angular': 1.5,
+        'k_lin': 1.0,
+        'k_ang': 2.0,
+        'goal_tolerance': 0.35,
+        'angle_tolerance': 0.25,
+        'min_lin_when_aligned': 0.05,
+    }
+    decision = HeuristicBackend(None, params).compute(DualVLNObservation(
+        pose=Pose2D(0.0, 0.0, 0.0),
+        goal=Pose2D(10.0, 10.0, 0.0),
+        subgoal=Pose2D(1.2, 0.0, 0.0),
+        instruction='follow the path',
+    ))
+
+    assert decision.status == 'drive_to_goal'
+    assert decision.linear_x > 0.0
+    assert decision.debug['target_source'] == 'subgoal'
+    assert decision.debug['final_goal_distance'] > 1.0
+
+
+def test_heuristic_backend_does_not_chase_reached_subgoal():
+    params = {
+        'max_linear': 1.0,
+        'max_angular': 1.5,
+        'k_lin': 1.0,
+        'k_ang': 2.0,
+        'goal_tolerance': 0.35,
+        'angle_tolerance': 0.25,
+        'min_lin_when_aligned': 0.05,
+    }
+    decision = HeuristicBackend(None, params).compute(DualVLNObservation(
+        pose=Pose2D(0.0, 0.0, 0.0),
+        goal=Pose2D(10.0, 10.0, 0.0),
+        subgoal=Pose2D(0.5, 0.0, 0.0),
+        instruction='follow the path',
+    ))
+
+    assert decision.debug['target_source'] == 'goal'
+
+
 def test_visualization_image_round_trip_helpers():
     array = np.zeros((2, 3, 3), dtype=np.uint8)
     array[..., 1] = 128

@@ -307,6 +307,7 @@ def _run_external_rclpy_discovery_probe(
     env: dict[str, str],
     *,
     expected_service: str,
+    candidate_services: list[str] | None = None,
     expected_status_topic: str,
     timeout_sec: float,
 ) -> dict:
@@ -320,8 +321,9 @@ import rclpy
 from rclpy.node import Node
 
 expected_service = sys.argv[1]
-expected_status_topic = sys.argv[2]
-timeout_sec = float(sys.argv[3])
+candidate_services = [name for name in json.loads(sys.argv[2]) if name]
+expected_status_topic = sys.argv[3]
+timeout_sec = float(sys.argv[4])
 
 rclpy.init(args=None)
 node = Node('internnav_eval_external_preflight_probe')
@@ -330,6 +332,7 @@ attempts = 0
 services = []
 topics = []
 publisher_count = 0
+observed_service = ''
 checks = {
     'service_visible': False,
     'status_topic_visible': False,
@@ -342,8 +345,9 @@ try:
         services = sorted(name for name, _types in node.get_service_names_and_types())
         topics = sorted(name for name, _types in node.get_topic_names_and_types())
         publisher_count = int(node.count_publishers(expected_status_topic) or 0)
+        observed_service = next((name for name in candidate_services if name in services), '')
         checks = {
-            'service_visible': expected_service in services,
+            'service_visible': bool(observed_service),
             'status_topic_visible': expected_status_topic in topics and publisher_count > 0,
         }
         if all(checks.values()) or time.monotonic() >= deadline:
@@ -356,6 +360,8 @@ finally:
 print(json.dumps({
     'attempts': attempts,
     'checks': checks,
+    'candidate_services': candidate_services,
+    'observed_service': observed_service,
     'status_topic_publisher_count': publisher_count,
     'services': services,
     'topics': topics,
@@ -363,9 +369,11 @@ print(json.dumps({
 '''
 
     started = time.monotonic()
+    service_candidates = candidate_services or [expected_service]
+    encoded_candidates = json.dumps(service_candidates)
     try:
         result = subprocess.run(
-            [python_bin, '-c', probe_code, expected_service, expected_status_topic, str(timeout_sec)],
+            [python_bin, '-c', probe_code, expected_service, encoded_candidates, expected_status_topic, str(timeout_sec)],
             env=env,
             capture_output=True,
             text=True,
@@ -401,7 +409,7 @@ print(json.dumps({
         payload = None
 
     return {
-        'command': [python_bin, '-c', '<rclpy_external_preflight_probe>', expected_service, expected_status_topic, str(timeout_sec)],
+        'command': [python_bin, '-c', '<rclpy_external_preflight_probe>', expected_service, '<candidate_services>', expected_status_topic, str(timeout_sec)],
         'returncode': result.returncode,
         'stdout': _truncate_preflight_output(result.stdout),
         'stderr': _truncate_preflight_output(result.stderr),
@@ -435,12 +443,14 @@ def _run_external_internnav_preflight(
     env: dict[str, str],
     *,
     expected_service: str,
+    candidate_services: list[str] | None = None,
     expected_status_topic: str,
     timeout_sec: float,
 ) -> dict:
     probe_result = _run_external_rclpy_discovery_probe(
         env,
         expected_service=expected_service,
+        candidate_services=candidate_services,
         expected_status_topic=expected_status_topic,
         timeout_sec=timeout_sec,
     )
@@ -452,6 +462,8 @@ def _run_external_internnav_preflight(
         'status_topic_visible': expected_status_topic in topics,
     }
     attempts = int(payload.get('attempts') or 1)
+    observed_service = str(payload.get('observed_service') or '')
+    service_candidates = payload.get('candidate_services') if isinstance(payload.get('candidate_services'), list) else (candidate_services or [expected_service])
     status_topic_publisher_count = payload.get('status_topic_publisher_count')
     if status_topic_publisher_count is None and checks.get('status_topic_visible'):
         status_topic_publisher_count = 1
@@ -462,6 +474,8 @@ def _run_external_internnav_preflight(
         'timeout_sec': timeout_sec,
         'attempts': attempts,
         'expected_service': expected_service,
+        'candidate_services': service_candidates,
+        'observed_service': observed_service,
         'expected_status_topic': expected_status_topic,
         'status_topic_publisher_count': status_topic_publisher_count,
         'checks': checks,
@@ -502,6 +516,25 @@ def _run_external_internnav_preflight(
     }
 
 
+def _external_command_service_candidates(canonical_service: str, status_topic: str) -> list[str]:
+    candidates: list[str] = []
+
+    def add(name: str) -> None:
+        normalized = '/' + str(name or '').strip().strip('/')
+        if normalized != '/' and normalized not in candidates:
+            candidates.append(normalized)
+
+    add(canonical_service)
+    status = '/' + str(status_topic or '').strip().strip('/')
+    if status.endswith('/internnav/status'):
+        add(status[: -len('/internnav/status')] + '/get_command')
+    if status.endswith('/status'):
+        add(status[: -len('/status')] + '/get_command')
+    add('/get_command')
+    add('/internnav_server/get_command')
+    return candidates
+
+
 def _read_jsonl(path: str) -> list[dict]:
     if not path or not os.path.exists(path):
         return []
@@ -540,6 +573,7 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
     missing_rgb = 0
     missing_depth = 0
     goal_distances = []
+    final_goal_distances = []
     yaw_errors = []
     commands = []
     event_counts: dict[str, int] = {}
@@ -592,9 +626,12 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
             stop_count += 1
         goal = payload.get('goal') if isinstance(payload.get('goal'), dict) else {}
         dist = goal.get('goal_distance', debug.get('goal_distance'))
+        final_dist = debug.get('final_goal_distance')
         yaw = goal.get('yaw_error', debug.get('yaw_error'))
         if isinstance(dist, (float, int)):
             goal_distances.append(float(dist))
+        if isinstance(final_dist, (float, int)):
+            final_goal_distances.append(float(final_dist))
         if isinstance(yaw, (float, int)):
             yaw_errors.append(float(yaw))
             if abs(float(yaw)) > 0.25 and abs(wz) > 0.05:
@@ -624,6 +661,14 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
     last_distance = goal_distances[-1] if goal_distances else None
     min_distance = min(goal_distances) if goal_distances else None
     progress = (first_distance - last_distance) if first_distance is not None and last_distance is not None else None
+    first_final_distance = final_goal_distances[0] if final_goal_distances else None
+    last_final_distance = final_goal_distances[-1] if final_goal_distances else None
+    min_final_distance = min(final_goal_distances) if final_goal_distances else None
+    final_progress = (
+        first_final_distance - last_final_distance
+        if first_final_distance is not None and last_final_distance is not None
+        else None
+    )
     ratio_total = control_record_count or total
     rotate_ratio = rotate_count / ratio_total if ratio_total else 0.0
     forward_ratio = forward_count / ratio_total if ratio_total else 0.0
@@ -661,6 +706,12 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
             'last': last_distance,
             'min': min_distance,
             'progress_first_minus_last': progress,
+        },
+        'final_goal_distance': {
+            'first': first_final_distance,
+            'last': last_final_distance,
+            'min': min_final_distance,
+            'progress_first_minus_last': final_progress,
         },
         'fault_candidates': {
             'flags': flags,
@@ -1721,6 +1772,20 @@ def _apply_runtime_defaults(args) -> dict:
                 args.dual_vln_camera_info_topic = camera_info_topic
                 adjustments['dual_vln_camera_info_topic'] = camera_info_topic
 
+    if getattr(args, 'dual_vln_require_real_backend', False):
+        default_topics = _default_vision_topics(args.robot)
+        if default_topics is not None:
+            rgb_topic, depth_topic, camera_info_topic = default_topics
+            if not args.dual_vln_rgb_topic:
+                args.dual_vln_rgb_topic = rgb_topic
+                adjustments['dual_vln_rgb_topic'] = rgb_topic
+            if not args.dual_vln_depth_topic:
+                args.dual_vln_depth_topic = depth_topic
+                adjustments['dual_vln_depth_topic'] = depth_topic
+            if not args.dual_vln_camera_info_topic:
+                args.dual_vln_camera_info_topic = camera_info_topic
+                adjustments['dual_vln_camera_info_topic'] = camera_info_topic
+
     if not getattr(args, 'eval_video_sim_top_down_topic', ''):
         sim_top_down_topic = _default_eval_video_sim_top_down_topic(args.robot)
         if sim_top_down_topic:
@@ -1743,17 +1808,37 @@ def _apply_runtime_defaults(args) -> dict:
         or str(getattr(args, 'dual_vln_adapter_target', '')).strip()
         or str(getattr(args, 'dual_vln_mode', '')).strip().lower() == 'internnav'
     )
+    model_inference_requested = bool(
+        str(getattr(args, 'dual_vln_adapter_target', '')).strip()
+        or str(getattr(args, 'dual_vln_mode', '')).strip().lower()
+        in {'internnav', 'model', 'torchscript', 'adapter', 'python', 'python_adapter'}
+    )
     if real_backend_requested and args.dual_vln_inference_timeout_sec <= 0.2:
         args.dual_vln_inference_timeout_sec = 120.0
         adjustments['dual_vln_inference_timeout_sec'] = 120.0
-    if device_name == 'cpu' and args.dual_vln_inference_rate_hz >= 10.0:
+    if model_inference_requested and device_name == 'cpu' and args.dual_vln_inference_rate_hz >= 10.0:
         args.dual_vln_inference_rate_hz = 0.5
         adjustments['dual_vln_inference_rate_hz'] = 0.5
 
     return adjustments
 
 
-def _classify_end_reason(*, finished_observed: bool, launch_returncode: int | None, timed_out: bool, internnav_status):
+def _classify_end_reason(
+    *,
+    finished_observed: bool,
+    launch_returncode: int | None,
+    timed_out: bool,
+    internnav_status,
+    internnav_diagnostic_summary=None,
+):
+    if finished_observed and not timed_out and launch_returncode in (None, 0):
+        if isinstance(internnav_diagnostic_summary, dict):
+            final_distance = internnav_diagnostic_summary.get('final_goal_distance')
+            if isinstance(final_distance, dict):
+                min_final = final_distance.get('min')
+                if isinstance(min_final, (float, int)) and float(min_final) > 0.75:
+                    return 'finished_without_goal_reached'
+        return 'finished'
     if isinstance(internnav_status, dict):
         status = str(internnav_status.get('status', ''))
         degraded = bool(internnav_status.get('degraded', False))
@@ -1879,6 +1964,7 @@ def main() -> int:
     parser.add_argument('--internnav-look-down', '--dual-vln-look-down', dest='dual_vln_look_down', action='store_true')
     parser.add_argument('--internnav-enable-visualization', '--dual-vln-enable-visualization', dest='dual_vln_enable_visualization', action='store_true')
     parser.add_argument('--internnav-external-server', '--dual-vln-external-server', dest='internnav_external_server', action='store_true')
+    parser.add_argument('--internnav-command-service', '--dual-vln-command-service', dest='dual_vln_command_service', default='')
     parser.add_argument('--internnav-visualization-topic', '--dual-vln-visualization-topic', dest='dual_vln_visualization_topic', default='internnav/debug_image')
     parser.add_argument('--internnav-action-visualization-topic', '--dual-vln-action-visualization-topic', dest='dual_vln_action_visualization_topic', default='internnav/action_image')
     parser.add_argument('--internnav-visualization-rate-hz', '--dual-vln-visualization-rate-hz', dest='dual_vln_visualization_rate_hz', type=float, default=5.0)
@@ -1986,7 +2072,7 @@ def main() -> int:
     robot_odom_topic = _robot_topic(args.task_reset_topic, args.robot, 'odom')
     robot_goal_topic = _robot_topic(args.task_reset_topic, args.robot, 'episode_goal_pose')
     robot_scan_topic = _robot_topic(args.task_reset_topic, args.robot, 'scan')
-    robot_command_service = _robot_topic(args.task_reset_topic, args.robot, 'get_command')
+    robot_command_service = str(args.dual_vln_command_service or '').strip() or _robot_topic(args.task_reset_topic, args.robot, 'get_command')
     robot_scenario_reset_topic = _scenario_reset_topic(args.task_reset_topic, args.robot)
     map_yaml_path = _world_map_yaml_path(sim_setup_share, args.world)
 
@@ -2050,6 +2136,10 @@ def main() -> int:
         launch_cmd.append(f'dual_vln_adapter_target:={args.dual_vln_adapter_target}')
     if args.dual_vln_model_output_policy:
         launch_cmd.append(f'dual_vln_model_output_policy:={args.dual_vln_model_output_policy}')
+    if args.dual_vln_command_service:
+        launch_cmd.append(f'dual_vln_command_service:={args.dual_vln_command_service}')
+    if args.dual_vln_status_topic:
+        launch_cmd.append(f'dual_vln_status_topic:={args.dual_vln_status_topic}')
     if args.dual_vln_look_down:
         launch_cmd.append('dual_vln_look_down:=true')
     if args.vln_instruction_file:
@@ -2246,9 +2336,11 @@ def main() -> int:
         env['ARENA_PYTHON'] = str(args.dual_vln_python_executable)
 
     if args.internnav_external_server and not args.skip_external_server_preflight:
+        command_service_candidates = _external_command_service_candidates(robot_command_service, args.dual_vln_status_topic)
         external_preflight = _run_external_internnav_preflight(
             env,
             expected_service=robot_command_service,
+            candidate_services=command_service_candidates,
             expected_status_topic=args.dual_vln_status_topic,
             timeout_sec=args.external_server_preflight_timeout_sec,
         )
@@ -2267,6 +2359,15 @@ def main() -> int:
             )
             _write_yaml(manifest_path, manifest)
             return 2
+        observed_service = str(external_preflight.get('observed_service') or '').strip()
+        if observed_service and observed_service != robot_command_service:
+            args.dual_vln_command_service = observed_service
+            robot_command_service = observed_service
+            launch_cmd.append(f'dual_vln_command_service:={observed_service}')
+            manifest['parameters']['dual_vln_command_service'] = observed_service
+            postprocess_commands[0] = ' '.join(launch_cmd)
+            _write_text(postprocess_commands_path, '\n'.join(postprocess_commands) + '\n')
+            _write_yaml(manifest_path, manifest)
     elif args.internnav_external_server:
         manifest['result']['external_server_preflight'] = {
             'pass': None,
@@ -2395,6 +2496,7 @@ def main() -> int:
         launch_returncode=launch_returncode,
         timed_out=timed_out,
         internnav_status=dual_vln_status,
+        internnav_diagnostic_summary=internnav_diagnostic_summary,
     )
 
     manifest['artifacts']['internnav_status_present'] = dual_vln_status is not None

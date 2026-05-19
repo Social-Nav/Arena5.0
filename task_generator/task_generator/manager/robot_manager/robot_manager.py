@@ -148,6 +148,7 @@ class RobotManager(NodeInterface):
         self._camera_ready_seen: dict[str, bool] = {}
         self._camera_ready_seen_wall_time: dict[str, float] = {}
         self._dual_vln_status_topic: str | None = None
+        self._dual_vln_command_service: str | None = None
         self._dual_vln_status_subscription = None
         self._dual_vln_status: str = 'startup'
         self._dual_vln_status_wall_time: float = 0.0
@@ -354,15 +355,48 @@ class RobotManager(NodeInterface):
         """
         start = self.node.sim_time.to_msg()
         start_stamp = (start.sec, start.nanosec)
+        observed_clock_stamp = None
+
+        # `TimeNode.sim_time` is maintained by a shared /clock subscription on
+        # the task_generator node.  During Isaac eval startup the node can be
+        # busy launching robot subprocesses and serving reset coroutines; add a
+        # short-lived local /clock observer so this readiness gate is tied to the
+        # real simulator clock topic instead of a potentially stale cached value.
+        try:
+            import rosgraph_msgs.msg
+
+            def _on_clock(msg: rosgraph_msgs.msg.Clock) -> None:
+                nonlocal observed_clock_stamp
+                observed_clock_stamp = (msg.clock.sec, msg.clock.nanosec)
+
+            clock_sub = self.node.create_subscription(
+                rosgraph_msgs.msg.Clock,
+                '/clock',
+                _on_clock,
+                10,
+            )
+        except Exception as exc:
+            clock_sub = None
+            self._logger.warn(f'Unable to create temporary /clock readiness subscription: {exc}')
+
         period_s = 0.05
         waited_s = 0.0
 
-        while waited_s < timeout_s:
-            await asyncio.sleep(period_s)
-            now = self.node.sim_time.to_msg()
-            if (now.sec, now.nanosec) != start_stamp:
-                return True
-            waited_s += period_s
+        try:
+            while waited_s < timeout_s:
+                await asyncio.sleep(period_s)
+                now = self.node.sim_time.to_msg()
+                if (now.sec, now.nanosec) != start_stamp:
+                    return True
+                if observed_clock_stamp is not None and observed_clock_stamp != start_stamp:
+                    return True
+                waited_s += period_s
+        finally:
+            if clock_sub is not None:
+                try:
+                    self.node.destroy_subscription(clock_sub)
+                except Exception:
+                    pass
 
         return False
 
@@ -454,10 +488,10 @@ class RobotManager(NodeInterface):
             if not await wait_for_world_geometry_ready(timeout_s=90.0):
                 raise RuntimeError('World geometry did not report ready before goal publish.')
 
-        if not await self._wait_for_sim_tick(timeout_s=1.5):
+        if not await self._wait_for_sim_tick(timeout_s=120.0):
             raise RuntimeError('Simulation time did not advance before goal publish.')
 
-        if start_target is not None and not await self._wait_for_pose_sync(start_target, timeout_s=2.0):
+        if start_target is not None and not await self._wait_for_pose_sync(start_target, timeout_s=120.0):
             raise RuntimeError('Odometry did not reach reset start pose before goal publish.')
 
         self._reset_navigation_readiness_state()
@@ -595,7 +629,14 @@ class RobotManager(NodeInterface):
         if not self._is_dual_vln_robot():
             return
 
-        self._dual_vln_status_topic = str(self.namespace('internnav', 'status'))
+        configured_status_topic = self._get_compat_rosparam(
+            str,
+            'internnav_status_topic',
+            'dual_vln_status_topic',
+            '',
+            empty_is_missing=True,
+        )
+        self._dual_vln_status_topic = str(configured_status_topic or self.namespace('internnav', 'status'))
         status_qos = QoSProfile(depth=1)
         status_qos.reliability = ReliabilityPolicy.RELIABLE
         status_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
@@ -605,6 +646,27 @@ class RobotManager(NodeInterface):
             self._on_dual_vln_status,
             status_qos,
         )
+
+    def _dual_vln_command_service_name(self) -> str:
+        if self._dual_vln_command_service:
+            return self._dual_vln_command_service
+        configured = self._get_compat_rosparam(
+            str,
+            'internnav_command_service',
+            'dual_vln_command_service',
+            '',
+            empty_is_missing=True,
+        )
+        self._dual_vln_command_service = str(configured or self.namespace('get_command'))
+        return self._dual_vln_command_service
+
+    def _requires_real_internnav_backend(self) -> bool:
+        return bool(self._get_compat_rosparam(
+            bool,
+            'internnav_require_real_backend',
+            'dual_vln_require_real_backend',
+            False,
+        ))
 
     def _mark_camera_ready(self, key: str) -> None:
         if key in self._camera_ready_seen:
@@ -621,6 +683,38 @@ class RobotManager(NodeInterface):
         self._dual_vln_status_payload = payload
         self._update_direct_dual_vln_status_twist(payload)
         self._publish_direct_dual_vln_status_command(payload)
+
+    def _dual_vln_status_payload_is_command(self, payload: dict) -> bool:
+        """Return true when an InternNav status payload carries a Twist command.
+
+        Heuristic InternNav backends use semantic control statuses such as
+        ``drive_to_goal`` / ``arc_to_goal`` rather than the legacy generic
+        ``internnav_command`` status.  Treat the presence of finite velocity
+        fields as the command contract, while excluding readiness / waiting /
+        error states that may also include diagnostic zero values.
+        """
+        status = str(payload.get('status', '') or '')
+        non_command_statuses = {
+            'startup',
+            'backend_ready',
+            'waiting_for_camera',
+            'waiting_for_real_backend',
+            'camera_waiting',
+            'inference_in_progress',
+            'missing_pose_or_goal',
+            'goal_reached',
+            'error',
+        }
+        if status in non_command_statuses:
+            return False
+        if 'linear_x' not in payload or 'angular_z' not in payload:
+            return False
+        try:
+            linear_x = float(payload.get('linear_x', 0.0) or 0.0)
+            angular_z = float(payload.get('angular_z', 0.0) or 0.0)
+        except (TypeError, ValueError):
+            return False
+        return math.isfinite(linear_x) and math.isfinite(angular_z)
 
     def _dual_vln_status_has_fresh_sensors(self, payload: dict) -> bool:
         debug = payload.get('debug') if isinstance(payload.get('debug'), dict) else {}
@@ -651,7 +745,7 @@ class RobotManager(NodeInterface):
         return True
 
     def _update_direct_dual_vln_status_twist(self, payload: dict) -> None:
-        if str(payload.get('status', '') or '') != 'internnav_command':
+        if not self._dual_vln_status_payload_is_command(payload) and str(payload.get('status', '') or '') != 'internnav_command':
             return
         try:
             linear_x = float(payload.get('linear_x', 0.0) or 0.0)
@@ -678,7 +772,7 @@ class RobotManager(NodeInterface):
             return
         if self._cmd_vel_pub is None or self._is_goal_reached or self._nav_stop_ticks > 0:
             return
-        if str(payload.get('status', '') or '') != 'internnav_command':
+        if not self._dual_vln_status_payload_is_command(payload) and str(payload.get('status', '') or '') != 'internnav_command':
             return
         twist = self._direct_dual_vln_last_status_twist
         if twist is None:
@@ -795,7 +889,7 @@ class RobotManager(NodeInterface):
         self._logger.warn(
             'Timed out waiting for camera readiness before VLN navigation goal; missing '
             + ', '.join(last_missing)
-            + '. Proceeding to avoid hanging the eval.'
+            + '. Failing fast because real camera inputs are required.'
         )
         return False
 
@@ -812,7 +906,8 @@ class RobotManager(NodeInterface):
         )
         command_client = None
         if external_server:
-            command_client = self.node.create_client(GetCommand, str(self.namespace('get_command')))
+            command_client = self.node.create_client(GetCommand, self._dual_vln_command_service_name())
+        require_real_backend = self._requires_real_internnav_backend()
         accepted_statuses = {'backend_ready'}
         self._logger.info(
             'Waiting for InternNav status before publishing VLN navigation goal: '
@@ -845,7 +940,7 @@ class RobotManager(NodeInterface):
                 # direct get_command->cmd_vel bridge can even start.  Once the
                 # external service is visible for a few seconds, let the service
                 # readiness barrier below be authoritative and proceed.
-                if (loop.time() - start_time) >= 5.0:
+                if external_server and not require_real_backend and (loop.time() - start_time) >= 5.0:
                     # The following get_command service barrier is the
                     # authoritative readiness check.  Do not let a missed/stale
                     # transient status sample consume the whole episode before
@@ -870,7 +965,7 @@ class RobotManager(NodeInterface):
 
             self._logger.warn(
                 'Timed out waiting for fresh InternNav backend_ready status before VLN navigation goal; '
-                f'last_status={last_status!r}. Proceeding to avoid hanging the eval.'
+                f'last_status={last_status!r}. Failing fast because real backend status is required.'
             )
             return False
         finally:
@@ -884,7 +979,7 @@ class RobotManager(NodeInterface):
         if not self._is_dual_vln_robot():
             return True
 
-        service_name = str(self.namespace('get_command'))
+        service_name = self._dual_vln_command_service_name()
         client = self.node.create_client(GetCommand, service_name)
         try:
             self._logger.info(f'Waiting for dual_vln get_command service before publishing navigation goal: {service_name}')
@@ -895,7 +990,7 @@ class RobotManager(NodeInterface):
                     return True
                 await asyncio.sleep(0.1)
             self._logger.warn(
-                f'Timed out waiting for dual_vln get_command service {service_name}; proceeding to avoid hanging the eval.'
+                f'Timed out waiting for dual_vln get_command service {service_name}; failing fast.'
             )
             return False
         finally:
@@ -934,7 +1029,7 @@ class RobotManager(NodeInterface):
             return
         self._ensure_dual_vln_status_subscription()
         if self._direct_dual_vln_client is None:
-            self._direct_dual_vln_client = self.node.create_client(GetCommand, str(self.namespace('get_command')))
+            self._direct_dual_vln_client = self.node.create_client(GetCommand, self._dual_vln_command_service_name())
         self._direct_dual_vln_status_bridge_active = True
         if self._direct_dual_vln_timer is None:
             self._logger.info('Starting direct dual_vln get_command -> cmd_vel bridge')

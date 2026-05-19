@@ -258,6 +258,18 @@ def generate_launch_description():
         description='Use an externally launched InternNav/dual_vln_server instead of starting one in the Arena container'
     )
     dual_vln_external_server = declare_legacy_alias('dual_vln_external_server', internnav_external_server)
+    internnav_command_service = LaunchArgument(
+        name='internnav_command_service',
+        default_value='',
+        description='Optional external InternNav get_command service name. Defaults to the robot namespace service.'
+    )
+    dual_vln_command_service = declare_legacy_alias('dual_vln_command_service', internnav_command_service)
+    internnav_status_topic = LaunchArgument(
+        name='internnav_status_topic',
+        default_value='',
+        description='Optional external InternNav status topic. Defaults to the robot namespace status topic.'
+    )
+    dual_vln_status_topic = declare_legacy_alias('dual_vln_status_topic', internnav_status_topic)
     enable_collision_monitor = LaunchArgument(
         name='enable_collision_monitor',
         default_value='true',
@@ -472,6 +484,8 @@ def generate_launch_description():
                     **dual_vln_model_output_topic.dict,
                     **internnav_external_server.dict,
                     **dual_vln_external_server.dict,
+                    **dual_vln_command_service.dict,
+                    **dual_vln_status_topic.dict,
                     **enable_collision_monitor.dict,
                     **debug.dict,
                     **save_data.dict,
