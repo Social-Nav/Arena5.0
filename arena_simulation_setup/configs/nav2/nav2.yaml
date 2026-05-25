@@ -256,11 +256,11 @@ recoveries_server:
     cycle_frequency: 10.0
     recovery_plugins: ["spin", "back_up", "wait"]
     spin:
-      plugin: "nav2_behaviors/Spin"
+      plugin: "nav2_behaviors::Spin"
     back_up:
-      plugin: "nav2_behaviors/BackUp"
+      plugin: "nav2_behaviors::BackUp"
     wait:
-      plugin: "nav2_behaviors/Wait"
+      plugin: "nav2_behaviors::Wait"
     global_frame: map
     robot_base_frame: ${frame:-}${robot_base_frame:-base_link}
     transform_timeout: 0.0
@@ -277,11 +277,11 @@ behavior_server:
     cycle_frequency: 10.0
     behavior_plugins: ["spin", "backup", "wait"]
     spin:
-      plugin: "nav2_behaviors/Spin"
+      plugin: "nav2_behaviors::Spin"
     backup:
-      plugin: "nav2_behaviors/BackUp"
+      plugin: "nav2_behaviors::BackUp"
     wait:
-      plugin: "nav2_behaviors/Wait"
+      plugin: "nav2_behaviors::Wait"
     global_frame: map
     robot_base_frame: ${frame:-}${robot_base_frame:-base_link}
     transform_timeout: 0.0

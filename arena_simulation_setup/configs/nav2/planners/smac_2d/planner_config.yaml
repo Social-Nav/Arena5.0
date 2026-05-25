@@ -1,7 +1,7 @@
 planner_plugins: ['GridBased']
 planner_plugins_dict:
   GridBased:
-    plugin: 'nav2_smac_planner/SmacPlanner2D'
+    plugin: 'nav2_smac_planner::SmacPlanner2D'
     tolerance: 0.125
     downsample_costmap: false
     downsampling_factor: 1

@@ -257,20 +257,7 @@ class IsaacEvalSimulator(IsaacSimulator):
                     self._logger.info(
                         f"Moving spawned USD robot '{robot.name}' to reset pose via EditPrims"
                     )
-                    top_down_pose = geometry_msgs.msg.Pose()
-                    robot_pose_msg = robot.pose.to_msg()
-                    top_down_pose.position.x = robot_pose_msg.position.x
-                    top_down_pose.position.y = robot_pose_msg.position.y
-                    top_down_pose.position.z = 8.0
-                    top_down_pose.orientation.w = 1.0
-                    safe_robot_prim = str(self._NS_ROBOT(robot.sim_path)).strip('/').replace('/', '_')
-                    if not safe_robot_prim.startswith('World_'):
-                        safe_robot_prim = f'World_{safe_robot_prim}'
-                    top_down_camera_name = f'vln_top_down_camera_{safe_robot_prim}'
-                    return all(await self._move_entities([
-                        (self._NS_ROBOT(robot.sim_path), robot.pose),
-                        (top_down_camera_name, top_down_pose),
-                    ]))
+                    return await self._move_entity(self._NS_ROBOT(robot.sim_path), robot.pose)
 
                 return await self._move_entity(self._NS_ROBOT(robot.sim_path), robot.pose)
             except Exception as exc:

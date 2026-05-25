@@ -25,7 +25,7 @@ planner_plugins:
   - GridBased
 planner_plugins_dict:
   GridBased:
-    plugin: "nav2_navfn_planner/NavfnPlanner"
+    plugin: "nav2_navfn_planner::NavfnPlanner"
     tolerance: 1.0 # original: 0.5
     use_astar: false
     allow_unknown: true
