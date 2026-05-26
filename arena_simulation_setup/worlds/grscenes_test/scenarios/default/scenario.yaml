@@ -1,9 +1,11 @@
 # Generated from topdown pixel waypoints
 
 robots:
-  - start: [2.0, -4.0, 3.14]      
-    goal:  [-3.0, -1.0, 3.14]
+  - start: [1.2, -1.0, -1.57]
+    goal:  [-1.0, -7.0, 0.0]
 
+# - start: [4.0, -3.5, 3.14]      
+#     goal:  [-3.0, -1.0, 0.0]
 dynamic:
 - name: hunav_1
   model: female_adult_business_02

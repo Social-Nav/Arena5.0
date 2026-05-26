@@ -1,6 +1,8 @@
 observation_sources_string: "scan" # massive bullshit, costmaps still need string param
 observation_sources:
   - scan
+collision_monitor_sources:
+  - scan
 observation_sources_dict:
   scan:
     topic: /front/scan

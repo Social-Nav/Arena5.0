@@ -42,8 +42,8 @@ def generate_launch_description():
     )
     local_planner = LaunchArgument(
         name='local_planner',
-        default_value='dwb',
-        description='local planner type [teb, dwa, mpc, rlca, arena, rosnav, cohan]'
+        default_value='social_mpc',
+        description='local planner type [teb, dwa, mpc, rlca, arena, rosnav, cohan, social_mpc]'
     )
     global_planner = LaunchArgument(
         name='global_planner',
