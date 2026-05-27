@@ -3,12 +3,14 @@ import os
 from arena_bringup.future import PythonExpression
 from arena_bringup.substitutions import (
     LaunchArgument,
+    SelectAction,
     YAMLFileSubstitution,
     YAMLMergeSubstitution,
     YAMLReplaceSubstitution,
     YAMLRetrieveSubstitution,
 )
 from launch.actions import GroupAction
+from launch.conditions import IfCondition
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.actions import Node, SetRemap
 from launch_ros.descriptions import ParameterFile
@@ -294,6 +296,16 @@ def generate_launch_description():
         Node(
             package='nav2_collision_monitor', executable='collision_monitor', name='collision_monitor',
             output='screen', parameters=[nav2_configured_params]
+        ),
+        Node(
+            package='obstacle_distance',
+            executable='obstacle_distance_node',
+            name='obstacle_distance',
+            output='screen',
+            parameters=[{'costmap_topic': 'local_costmap/costmap'}],
+            condition=IfCondition(
+                PythonExpression(["'", local_planner.substitution, "' == 'social_mpc'"])
+            ),
         ),
         Node(
             package='nav2_lifecycle_manager', executable='lifecycle_manager', name='lifecycle_manager_navigation',

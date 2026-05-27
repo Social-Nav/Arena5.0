@@ -14,10 +14,10 @@ controller_plugins_dict:
     min_speed_theta: 0.0
     acc_lim_x: 0.8
     acc_lim_y: 0.0
-    acc_lim_theta: 1.6
+    acc_lim_theta: 4.0
     decel_lim_x: -1.2
     decel_lim_y: 0.0
-    decel_lim_theta: -2.0
+    decel_lim_theta: -4.0
     vx_samples: 24
     vy_samples: 5
     vtheta_samples: 48

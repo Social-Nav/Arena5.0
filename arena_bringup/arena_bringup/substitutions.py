@@ -231,7 +231,62 @@ class YAMLMergeSubstitution(launch.Substitution):
                 yaml_path.perform_load(context)
             )
 
+        _apply_model_scale(combined)
+
         return YAMLFileSubstitution.from_dict(combined).perform(context)
+
+
+def _apply_model_scale(d: dict) -> None:
+    """If `d` contains a top-level numeric `scale` field != 1.0, multiply
+    geometry-related entries in-place by that factor. No-op otherwise.
+
+    Touched keys: `robot_radius`, `z_offset`, `footprint` (string of
+    `[[x,y],...]`), and every `sensor_frame_transforms[*]` x/y/z.
+    """
+    try:
+        s = float(d.get('scale', 1.0))
+    except (TypeError, ValueError):
+        return
+    if s == 1.0:
+        return
+
+    if 'robot_radius' in d:
+        try:
+            d['robot_radius'] = float(d['robot_radius']) * s
+        except (TypeError, ValueError):
+            pass
+    if 'z_offset' in d:
+        try:
+            d['z_offset'] = float(d['z_offset']) * s
+        except (TypeError, ValueError):
+            pass
+    fp = d.get('footprint')
+    if isinstance(fp, str):
+        try:
+            import ast
+            verts = ast.literal_eval(fp)
+            if isinstance(verts, list) and all(
+                isinstance(v, (list, tuple)) and len(v) == 2 for v in verts
+            ):
+                scaled = [[float(v[0]) * s, float(v[1]) * s] for v in verts]
+                d['footprint'] = (
+                    '[ '
+                    + ', '.join(f'[{x}, {y}]' for x, y in scaled)
+                    + ' ]'
+                )
+        except (ValueError, SyntaxError):
+            pass
+    tfs = d.get('sensor_frame_transforms')
+    if isinstance(tfs, list):
+        for tf in tfs:
+            if not isinstance(tf, dict):
+                continue
+            for k in ('x', 'y', 'z'):
+                if k in tf:
+                    try:
+                        tf[k] = float(tf[k]) * s
+                    except (TypeError, ValueError):
+                        pass
 
 
 class _YAMLReplacer:
