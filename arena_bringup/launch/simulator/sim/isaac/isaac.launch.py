@@ -95,7 +95,7 @@ def generate_launch_description():
         f'export LD_LIBRARY_PATH=\'{isaac_ld_library_path}\':"${{LD_LIBRARY_PATH}}"; '
         'export RMW_IMPLEMENTATION=rmw_fastrtps_cpp; '
         'export ARENA_ISAAC_HEADLESS="${ARENA_ISAAC_HEADLESS:-1}"; '
-        'export ARENA_ISAAC_RENDERER="${ARENA_ISAAC_RENDERER:-RTXLinear}"; '
+        'export ARENA_ISAAC_RENDERER="${ARENA_ISAAC_RENDERER:-RayTracedLighting}"; '
         'export ARENA_DISABLE_ISAAC_ODOM_GRAPH="${ARENA_DISABLE_ISAAC_ODOM_GRAPH:-0}"; '
         'export ARENA_SPAWN_USD_ROBOT_ENABLE_ISAAC_ODOM_GRAPH="${ARENA_SPAWN_USD_ROBOT_ENABLE_ISAAC_ODOM_GRAPH:-1}"; '
         'python3 /home/ubuntu/arena_jazzy_ws/src/Arena/arena_isaac/arena_isaac/arena_isaac/run_isaacsim.py '
