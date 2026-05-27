@@ -319,6 +319,7 @@ import time
 
 import rclpy
 from rclpy.node import Node
+from rosnav_rl_msgs.srv import GetCommand
 
 expected_service = sys.argv[1]
 candidate_services = [name for name in json.loads(sys.argv[2]) if name]
@@ -333,9 +334,11 @@ services = []
 topics = []
 publisher_count = 0
 observed_service = ''
+service_response_ok = False
 checks = {
     'service_visible': False,
     'status_topic_visible': False,
+    'service_responds': False,
 }
 
 try:
@@ -346,9 +349,29 @@ try:
         topics = sorted(name for name, _types in node.get_topic_names_and_types())
         publisher_count = int(node.count_publishers(expected_status_topic) or 0)
         observed_service = next((name for name in candidate_services if name in services), '')
+        service_response_ok = False
+        if observed_service:
+            try:
+                client = node.create_client(GetCommand, observed_service)
+                if client.wait_for_service(timeout_sec=0.0):
+                    future = client.call_async(GetCommand.Request())
+                    call_deadline = time.monotonic() + 1.0
+                    while time.monotonic() < call_deadline:
+                        rclpy.spin_once(node, timeout_sec=0.05)
+                        if future.done():
+                            try:
+                                response = future.result()
+                                service_response_ok = response is not None and getattr(response, 'twist', None) is not None
+                            except Exception:
+                                service_response_ok = False
+                            break
+                node.destroy_client(client)
+            except Exception:
+                service_response_ok = False
         checks = {
             'service_visible': bool(observed_service),
             'status_topic_visible': expected_status_topic in topics and publisher_count > 0,
+            'service_responds': service_response_ok,
         }
         if all(checks.values()) or time.monotonic() >= deadline:
             break
@@ -362,6 +385,7 @@ print(json.dumps({
     'checks': checks,
     'candidate_services': candidate_services,
     'observed_service': observed_service,
+    'service_response_ok': service_response_ok,
     'status_topic_publisher_count': publisher_count,
     'services': services,
     'topics': topics,
@@ -403,10 +427,20 @@ print(json.dumps({
         }
 
     payload = None
-    try:
-        payload = json.loads(result.stdout.strip() or '{}')
-    except Exception:
-        payload = None
+    stdout_text = str(result.stdout or '')
+    stdout_lines = [line.strip() for line in stdout_text.splitlines() if line.strip()]
+    json_candidates = []
+    if stdout_text.strip():
+        json_candidates.append(stdout_text.strip())
+    json_candidates.extend(reversed(stdout_lines))
+    for candidate in json_candidates:
+        if not candidate.startswith('{'):
+            continue
+        try:
+            payload = json.loads(candidate)
+            break
+        except Exception:
+            continue
 
     return {
         'command': [python_bin, '-c', '<rclpy_external_preflight_probe>', expected_service, '<candidate_services>', expected_status_topic, str(timeout_sec)],
@@ -460,6 +494,7 @@ def _run_external_internnav_preflight(
     checks = payload.get('checks') if isinstance(payload.get('checks'), dict) else {
         'service_visible': expected_service in services,
         'status_topic_visible': expected_status_topic in topics,
+        'service_responds': False,
     }
     attempts = int(payload.get('attempts') or 1)
     observed_service = str(payload.get('observed_service') or '')
@@ -577,7 +612,6 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
     yaw_errors = []
     commands = []
     event_counts: dict[str, int] = {}
-    invert_discrete_turns_values = set()
     for rec in records:
         event_type = str(rec.get('event_type', 'model_result'))
         event_counts[event_type] = event_counts.get(event_type, 0) + 1
@@ -603,10 +637,6 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
         action = action_info.get('selected')
         if action is None:
             action = debug.get('selected_action')
-        if 'invert_discrete_turns' in action_info:
-            invert_discrete_turns_values.add(bool(action_info.get('invert_discrete_turns')))
-        elif 'invert_discrete_turns' in debug:
-            invert_discrete_turns_values.add(bool(debug.get('invert_discrete_turns')))
         if action is None:
             no_action_status_counts[status] = no_action_status_counts.get(status, 0) + 1
         else:
@@ -693,7 +723,6 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
         'action_counts': action_counts,
         'no_action_status_counts': no_action_status_counts,
         'status_counts': statuses,
-        'invert_discrete_turns_values': sorted(invert_discrete_turns_values),
         'command_stats': {
             'rotate_count': rotate_count,
             'rotate_ratio': rotate_ratio,
@@ -1730,6 +1759,16 @@ def _apply_runtime_defaults(args) -> dict:
     if env_python and not getattr(args, 'dual_vln_python_executable', ''):
         args.dual_vln_python_executable = env_python
         adjustments['dual_vln_python_executable'] = f'{env_python} ({env_python_name})'
+    elif getattr(args, 'dual_vln_python_executable', ''):
+        configured_python = str(getattr(args, 'dual_vln_python_executable', '')).strip()
+        if configured_python and not os.path.exists(configured_python):
+            if env_python and os.path.exists(env_python):
+                args.dual_vln_python_executable = env_python
+                adjustments['dual_vln_python_executable'] = (
+                    f'{env_python} ({env_python_name}; replaced missing configured path {configured_python})'
+                )
+            else:
+                adjustments['dual_vln_python_executable_missing'] = configured_python
 
     if getattr(args, 'dual_vln_status_topic', '') in {
         '/task_generator_node/dual_vln/status',
@@ -1969,15 +2008,6 @@ def main() -> int:
     parser.add_argument('--internnav-action-visualization-topic', '--dual-vln-action-visualization-topic', dest='dual_vln_action_visualization_topic', default='internnav/action_image')
     parser.add_argument('--internnav-visualization-rate-hz', '--dual-vln-visualization-rate-hz', dest='dual_vln_visualization_rate_hz', type=float, default=5.0)
     parser.add_argument('--internnav-model-output-topic', '--dual-vln-model-output-topic', dest='dual_vln_model_output_topic', default='internnav/model_output')
-    parser.add_argument(
-        '--internnav-invert-discrete-turns',
-        choices=('auto', 'true', 'false'),
-        default='auto',
-        help=(
-            'Control discrete turn sign correction. auto uses the latest validated runtime default; '
-            'true/false force the behavior for reproducible diagnostics.'
-        ),
-    )
     parser.add_argument('--save-eval-video', action='store_true')
     parser.add_argument('--eval-video-fps', type=float, default=10.0)
     parser.add_argument('--eval-video-top-down-size-px', type=int, default=640)
@@ -2020,17 +2050,6 @@ def main() -> int:
         if not args.scenario_file:
             args.scenario_file = 'normal'
     runtime_adjustments = _apply_runtime_defaults(args)
-    if args.internnav_invert_discrete_turns == 'auto':
-        # After Ai2_Bot2's Isaac diff-drive / odom chain was fixed to execute
-        # commanded motion again, the earlier temporary Isaac+Ai2_Bot2 turn-sign
-        # inversion no longer matches observed motion.  Keep ``auto`` aligned
-        # with the latest validated A/B run: for this pair the native InternNav
-        # discrete turn directions should pass through unchanged.
-        resolved_invert_discrete_turns = False
-        invert_discrete_turns_source = 'auto_isaac_ai2_bot2_noinvert'
-    else:
-        resolved_invert_discrete_turns = args.internnav_invert_discrete_turns == 'true'
-        invert_discrete_turns_source = 'cli'
 
     arena_eval_share = get_package_share_directory('arena_evaluation')
     bringup_share = get_package_share_directory('arena_bringup')
@@ -2104,7 +2123,12 @@ def main() -> int:
         f'timeout_wall_sec:={args.timeout_wall_sec}',
         f'headless:={args.headless}',
         f'log_level:={args.log_level}',
-        f'require_human_states_ready:={str(args.social_eval and args.human == "hunav").lower()}',
+        # HuNav pedestrian state publication is part of episode readiness for
+        # all Isaac/Gazebo eval runs that use the human simulator, not only the
+        # stricter social-metrics mode.  Otherwise task_reset can be released
+        # before pedestrians exist in the active episode, which matches the
+        # regression the user observed.
+        f'require_human_states_ready:={str(args.human == "hunav").lower()}',
         'human_states_ready_timeout_sec:=20.0',
         'episode_start_delay_sec:=1.0',
         f'vln_instruction:={args.vln_instruction}',
@@ -2234,9 +2258,6 @@ def main() -> int:
             'dual_vln_visualization_rate_hz': args.dual_vln_visualization_rate_hz,
             'dual_vln_model_output_topic': args.dual_vln_model_output_topic,
             'dual_vln_model_output_topic_resolved': robot_model_output_topic,
-            'internnav_invert_discrete_turns': args.internnav_invert_discrete_turns,
-            'internnav_invert_discrete_turns_resolved': resolved_invert_discrete_turns,
-            'internnav_invert_discrete_turns_source': invert_discrete_turns_source,
             'save_eval_video': args.save_eval_video,
             'eval_video_fps': args.eval_video_fps,
             'eval_video_top_down_size_px': args.eval_video_top_down_size_px,
@@ -2315,16 +2336,6 @@ def main() -> int:
     env['ARENA_EVAL_INTERNNAV_INFERENCE_TIMEOUT_SEC'] = str(args.dual_vln_inference_timeout_sec)
     env['ARENA_EVAL_INTERNNAV_TRACE_PATH'] = internnav_trace_path
     env['ARENA_INTERNNAV_EXTERNAL_SERVER'] = '1' if args.internnav_external_server else '0'
-    # Keep the resolved turn-sign policy explicit in the launched environment so
-    # external-server and in-process InternNav runs use the same reproducible
-    # interpretation.  CLI/env overrides still take precedence for diagnostics.
-    if args.internnav_invert_discrete_turns != 'auto':
-        env['ARENA_EVAL_INTERNNAV_INVERT_DISCRETE_TURNS'] = str(resolved_invert_discrete_turns).lower()
-    elif (
-        'ARENA_EVAL_INTERNNAV_INVERT_DISCRETE_TURNS' not in env
-        and 'ARENA_INTERNNAV_INVERT_DISCRETE_TURNS' not in env
-    ):
-        env['ARENA_EVAL_INTERNNAV_INVERT_DISCRETE_TURNS'] = str(resolved_invert_discrete_turns).lower()
     if args.dual_vln_python_executable:
         # The InternNav adapter itself looks for these variables when deciding
         # whether to launch the heavy model in a separate Python environment.

@@ -9,6 +9,7 @@ import builtin_interfaces.msg
 import rosgraph_msgs.msg
 import rclpy.node
 import rclpy.time
+from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 
 try:
     from typing import Self
@@ -142,6 +143,14 @@ class Time:
         return self.sec + self.nanosec / 1e9
 
 
+_CLOCK_QOS = QoSProfile(
+    history=QoSHistoryPolicy.KEEP_LAST,
+    depth=1,
+    reliability=QoSReliabilityPolicy.BEST_EFFORT,
+    durability=QoSDurabilityPolicy.VOLATILE,
+)
+
+
 class TimeNode(rclpy.node.Node):
     """Mixin class to provide clock utilities for rclpy nodes.
     """
@@ -152,7 +161,7 @@ class TimeNode(rclpy.node.Node):
             rosgraph_msgs.msg.Clock,
             '/clock',
             self.__clock_callback,
-            10,
+            _CLOCK_QOS,
         )
         self._sim_time: Time = Time()
 

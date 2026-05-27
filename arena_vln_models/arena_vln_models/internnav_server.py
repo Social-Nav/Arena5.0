@@ -166,11 +166,9 @@ class BaseModelSimServer(Node):
         self.declare_parameter('angle_tolerance', 0.25)
         self.declare_parameter('min_lin_when_aligned', 0.05)
         self.declare_parameter('trace_path', '')
-        # InternNav/InternVLA-N1 emits discrete action ids in the native agent's
-        # camera/action convention.  In Isaac/ROS cmd_vel, action 2 must be
-        # executed as a right arc and action 3 as a left arc; keep the parameter
-        # explicit so diagnostics can still force the legacy mapping when needed.
-        self.declare_parameter('invert_discrete_turns', True)
+        # Discrete action → Twist mapping is hard-coded in backends._action_to_command().
+        # See that function for the ROS coordinate convention (REP 103) and the rationale
+        # for not making the turn sign configurable.
 
         self._pose: Optional[Pose2D] = None
         self._last_odom_pose_ts: float = 0.0
@@ -201,6 +199,9 @@ class BaseModelSimServer(Node):
         self._trace_seq: int = 0
         self._model_output_seq: int = 0
         self._action_history: list[int] = []
+        self._backend = None
+        self._backend_mode: str = ''
+        self._backend_init_error: str = ''
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self, spin_thread=True)
 
@@ -261,10 +262,6 @@ class BaseModelSimServer(Node):
             env_names=('ARENA_EVAL_INTERNNAV_TRACE_PATH', 'ARENA_INTERNNAV_TRACE_PATH'),
             allow_empty=True,
         )
-        invert_discrete_turns, invert_discrete_turns_source = _resolve_bool(
-            self.get_parameter('invert_discrete_turns').value,
-            env_names=('ARENA_EVAL_INTERNNAV_INVERT_DISCRETE_TURNS', 'ARENA_INTERNNAV_INVERT_DISCRETE_TURNS'),
-        )
         model_output_policy, model_output_policy_source = _resolve_string(
             self.get_parameter('model_output_policy').value,
             env_names=('ARENA_EVAL_INTERNNAV_MODEL_OUTPUT_POLICY', 'ARENA_INTERNNAV_MODEL_OUTPUT_POLICY'),
@@ -309,7 +306,6 @@ class BaseModelSimServer(Node):
             ('look_down', look_down, look_down_source),
             ('enable_visualization', enable_visualization, enable_visualization_source),
             ('trace_path', trace_path, trace_path_source),
-            ('invert_discrete_turns', invert_discrete_turns, invert_discrete_turns_source),
             ('model_output_policy', model_output_policy, model_output_policy_source),
             ('visualization_topic', visualization_topic, visualization_topic_source),
             ('action_visualization_topic', action_visualization_topic, action_visualization_topic_source),
@@ -341,7 +337,6 @@ class BaseModelSimServer(Node):
             'goal_tolerance': float(self.get_parameter('goal_tolerance').value),
             'angle_tolerance': float(self.get_parameter('angle_tolerance').value),
             'min_lin_when_aligned': float(self.get_parameter('min_lin_when_aligned').value),
-            'invert_discrete_turns': bool(invert_discrete_turns),
             'model_output_policy': model_output_policy,
         }
         self._trace_path = trace_path
@@ -353,23 +348,24 @@ class BaseModelSimServer(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
 
+        rgb_topic = rgb_topic
+        depth_topic = depth_topic
+        camera_info_topic = camera_info_topic
+        # Isaac eval publishes camera and odom streams from simulator-side bridges
+        # with BEST_EFFORT QoS. A default RELIABLE subscription is incompatible
+        # with those publishers and leaves InternNav stuck in the strict
+        # TF/odom/camera readiness barrier even while other BEST_EFFORT consumers
+        # (for example the eval video recorder) receive the same data.
+        sensor_qos = QoSProfile(depth=10)
+        sensor_qos.reliability = ReliabilityPolicy.BEST_EFFORT
+        sensor_qos.durability = DurabilityPolicy.VOLATILE
+
         self.create_subscription(PoseStamped, self.get_parameter('pose_topic').value, self._on_pose, 10)
-        self.create_subscription(Odometry, self.get_parameter('odom_topic').value, self._on_odom, 10)
+        self.create_subscription(Odometry, self.get_parameter('odom_topic').value, self._on_odom, sensor_qos)
         self.create_subscription(PoseStamped, self.get_parameter('goal_topic').value, self._on_goal, 10)
         self.create_subscription(PoseStamped, self.get_parameter('subgoal_topic').value, self._on_subgoal, 10)
         self.create_subscription(String, self.get_parameter('instruction_topic').value, self._on_instruction, instr_qos)
 
-        rgb_topic = rgb_topic
-        depth_topic = depth_topic
-        camera_info_topic = camera_info_topic
-        # Isaac Sim camera writers publish sensor streams with BEST_EFFORT QoS.
-        # A default RELIABLE subscription is incompatible with those publishers and
-        # leaves InternNav stuck in the initial waiting_for_camera barrier even
-        # while other BEST_EFFORT consumers (for example the eval video recorder)
-        # receive frames on the same topics.
-        sensor_qos = QoSProfile(depth=10)
-        sensor_qos.reliability = ReliabilityPolicy.BEST_EFFORT
-        sensor_qos.durability = DurabilityPolicy.VOLATILE
         if rgb_topic:
             self.create_subscription(Image, rgb_topic, self._on_rgb, sensor_qos)
         if depth_topic:
@@ -458,7 +454,6 @@ class BaseModelSimServer(Node):
             ('look_down', look_down_source),
             ('enable_visualization', enable_visualization_source),
             ('trace_path', trace_path_source),
-            ('invert_discrete_turns', invert_discrete_turns_source),
             ('model_output_policy', model_output_policy_source),
             ('visualization_topic', visualization_topic_source),
             ('action_visualization_topic', action_visualization_topic_source),
@@ -467,6 +462,9 @@ class BaseModelSimServer(Node):
         ):
             if source is not None:
                 self.get_logger().info(f'Using InternNav {label} override from {source}')
+
+        self._backend_mode = mode
+        self._fallback_backend = create_model_backend(mode='heuristic', logger=self.get_logger(), params=self._params)
 
         # Advertise the command service before the strict initial sensor wait so
         # externally launched servers are discoverable by eval preflight while
@@ -483,21 +481,14 @@ class BaseModelSimServer(Node):
             camera_info_topic=camera_info_topic,
             timeout_sec=self._params['camera_ready_timeout_sec'],
         )
-        try:
-            self._backend = create_model_backend(mode=mode, logger=self.get_logger(), params=self._params)
-        except Exception as exc:
-            if self._params['require_real_backend']:
-                raise RuntimeError(
-                    f"Failed to create required real backend for mode='{mode}': {exc}"
-                ) from exc
-            self.get_logger().error(f"Failed to create backend for mode='{mode}': {exc}; falling back to heuristic")
-            self._backend = create_model_backend(mode='heuristic', logger=self.get_logger(), params=self._params)
-        self._fallback_backend = create_model_backend(mode='heuristic', logger=self.get_logger(), params=self._params)
+        self._try_create_backend_if_possible()
+
+        backend = getattr(self, '_backend', None)
 
         self.get_logger().info(
             (
                 f'{self.SERVER_LABEL}_server started '
-                f'(mode={mode}, backend={self._backend.backend_type}, '
+                f'(mode={mode}, backend={getattr(backend, "backend_type", "<pending>")}, '
                 f'model_path={self._params["model_path"]}, device={self._params["device"]}, '
                 f'adapter_target={self._params["adapter_target"] or "<disabled>"}, '
                 f'require_real_backend={self._params["require_real_backend"]}, '
@@ -517,30 +508,30 @@ class BaseModelSimServer(Node):
                 f'look_down={self._params["look_down"]} '
                 f'visualization={self._visualization_enabled} trace={self._trace_path or "<disabled>"} '
                 f'action_visualization_topic={self.get_parameter("action_visualization_topic").value} '
-                f'model_output_topic={self.get_parameter("model_output_topic").value} '
-                f'invert_discrete_turns={self._params["invert_discrete_turns"]}'
+                f'model_output_topic={self.get_parameter("model_output_topic").value}'
             )
         )
-        self.get_logger().info(f'{self.SERVER_LABEL} backend ready: {self._backend.describe()}')
-        adapter_available = getattr(self._backend, '_adapter_callable', True) is not None
+        adapter_available = backend is not None and getattr(backend, '_adapter_callable', True) is not None
         missing_inputs, stale_inputs = self._required_input_issues(require_fresh=False)
         startup_status = 'backend_ready' if adapter_available else 'backend_unavailable'
         startup_degraded = not adapter_available
         if missing_inputs or stale_inputs:
             startup_status = 'camera_timeout' if self._initial_camera_timed_out else 'waiting_for_camera'
             startup_degraded = True
-            self._last_decision = ModelSimDecision(
+        self._last_decision = ModelSimDecision(
             status=startup_status,
             degraded=startup_degraded,
             debug={
-                'backend_type': self._backend.backend_type,
-                'backend_description': self._backend.describe(),
-                'uses_model_inference': bool(self._backend.uses_model_inference),
+                'backend_type': getattr(backend, 'backend_type', ''),
+                'backend_description': backend.describe() if backend is not None else '',
+                'uses_model_inference': bool(getattr(backend, 'uses_model_inference', False)),
                 'model_path': self._params['model_path'],
                 'device': self._params['device'],
                 'adapter_target': self._params['adapter_target'],
                 'require_real_backend': self._params['require_real_backend'],
                 'strict_device': self._params['strict_device'],
+                'backend_pending': backend is None,
+                'backend_init_error': self._backend_init_error,
                 'missing_inputs': missing_inputs,
                 'stale_inputs': stale_inputs,
                 'sensor_ages_sec': self._camera_sensor_ages(),
@@ -589,10 +580,13 @@ class BaseModelSimServer(Node):
         normalized = str(frame_name or '').strip().strip('/')
         if not normalized:
             return ''
-        namespace = str(self.get_namespace() or '').strip().strip('/')
-        if not namespace or normalized.startswith(f'{namespace}/'):
-            return normalized
-        return f'{namespace}/{normalized}'
+        # TF frame ids are data-plane identifiers, not ROS topic/service names.
+        # They must not be prefixed with the node namespace (for example,
+        # `/task_generator_node/Ai2_Bot2`) because the actual Isaac odom/TF tree
+        # uses robot frame ids such as `Ai2_Bot2/odom` -> `Ai2_Bot2/base_link`.
+        # Namespacing them here causes the readiness gate to wait for impossible
+        # frames until a later odom sample teaches the wrapper the real pair.
+        return normalized
 
     def _camera_sensor_ages(self) -> dict[str, float | None]:
         now = time.monotonic()
@@ -650,15 +644,59 @@ class BaseModelSimServer(Node):
             stale.append('odom')
         return missing, stale
 
-    def _tf_tree_ready(self) -> bool:
+    def _tf_readiness_details(self) -> dict[str, object]:
         odom_frame = str(self._required_tf_frames.get('odom', '') or '').strip()
         base_frame = str(self._required_tf_frames.get('base', '') or '').strip()
+        global_frame = str(self._required_tf_frames.get('global', '') or '').strip()
+
+        details: dict[str, object] = {
+            'odom_frame': odom_frame,
+            'base_frame': base_frame,
+            'global_frame': global_frame,
+            'odom_to_base_ready': False,
+            'global_to_odom_ready': False,
+            'global_to_base_ready': False,
+        }
+
         if not odom_frame or not base_frame:
-            return False
+            return details
+
         try:
-            return bool(self._tf_buffer.can_transform(odom_frame, base_frame, Time()))
+            odom_to_base_ready = bool(self._tf_buffer.can_transform(odom_frame, base_frame, Time()))
         except Exception:
-            return False
+            odom_to_base_ready = False
+        details['odom_to_base_ready'] = odom_to_base_ready
+
+        # The Isaac/Jazzy eval path depends on the complete global/map -> odom ->
+        # base chain, not just the local odom -> base edge.  If map/world is
+        # disconnected while odom -> base exists, reporting backend_ready here is
+        # a false positive: Nav2 behavior/planner nodes still fail with missing
+        # global-frame transforms even though the InternNav wrapper believes TF is
+        # ready.
+        if global_frame and global_frame != odom_frame:
+            try:
+                global_to_odom_ready = bool(self._tf_buffer.can_transform(global_frame, odom_frame, Time()))
+            except Exception:
+                global_to_odom_ready = False
+            try:
+                global_to_base_ready = bool(self._tf_buffer.can_transform(global_frame, base_frame, Time()))
+            except Exception:
+                global_to_base_ready = False
+        else:
+            global_to_odom_ready = odom_to_base_ready
+            global_to_base_ready = odom_to_base_ready
+
+        details['global_to_odom_ready'] = global_to_odom_ready
+        details['global_to_base_ready'] = global_to_base_ready
+        return details
+
+    def _tf_tree_ready(self) -> bool:
+        details = self._tf_readiness_details()
+        return bool(
+            details.get('odom_to_base_ready')
+            and details.get('global_to_odom_ready')
+            and details.get('global_to_base_ready')
+        )
 
     def _learn_tf_frames_from_odom(self, msg: Odometry) -> None:
         """Use real odometry frame ids for TF readiness.
@@ -715,9 +753,60 @@ class BaseModelSimServer(Node):
                 'stale_after_sec': float(self._params.get('camera_stale_after_sec', 0.0)),
                 'topics': self._required_readiness_topics,
                 'tf_frames': self._required_tf_frames,
+                'tf_checks': self._tf_readiness_details(),
                 'tf_ready': self._tf_tree_ready(),
             },
         )
+
+    def _backend_unavailable_decision(self) -> ModelSimDecision:
+        return ModelSimDecision(
+            status='backend_unavailable',
+            degraded=True,
+            debug={
+                'safe_stop': True,
+                'backend_pending': getattr(self, '_backend', None) is None,
+                'backend_init_error': self._backend_init_error,
+                'model_path': self._params['model_path'],
+                'device': self._params['device'],
+                'adapter_target': self._params['adapter_target'],
+                'topics': self._required_readiness_topics,
+                'tf_frames': self._required_tf_frames,
+                'tf_checks': self._tf_readiness_details(),
+                'tf_ready': self._tf_tree_ready(),
+                'sensor_ages_sec': self._camera_sensor_ages(),
+                'stale_after_sec': float(self._params.get('camera_stale_after_sec', 0.0)),
+            },
+        )
+
+    def _try_create_backend_if_possible(self) -> bool:
+        if getattr(self, '_backend', None) is not None:
+            return True
+
+        missing, stale = self._required_input_issues(require_fresh=False)
+        if self._params['require_real_backend'] and (missing or stale):
+            return False
+
+        mode = self._backend_mode or str(self._params.get('mode', 'heuristic'))
+        try:
+            backend = create_model_backend(mode=mode, logger=self.get_logger(), params=self._params)
+        except Exception as exc:
+            message = f"Failed to create required real backend for mode='{mode}': {exc}"
+            if self._params['require_real_backend']:
+                if message != self._backend_init_error:
+                    self.get_logger().error(message)
+                self._backend_init_error = message
+                return False
+
+            fallback_message = f"Failed to create backend for mode='{mode}': {exc}; falling back to heuristic"
+            if fallback_message != self._backend_init_error:
+                self.get_logger().error(fallback_message)
+            self._backend_init_error = fallback_message
+            backend = create_model_backend(mode='heuristic', logger=self.get_logger(), params=self._params)
+
+        self._backend = backend
+        self._backend_init_error = ''
+        self.get_logger().info(f'{self.SERVER_LABEL} backend ready: {backend.describe()}')
+        return True
 
     def _publish_readiness_status_if_ready(self) -> None:
         """Recover from a startup camera race once Isaac frames arrive.
@@ -730,7 +819,13 @@ class BaseModelSimServer(Node):
         a circular wait.  Publish ``backend_ready`` as soon as the subscribed
         RGB/depth streams are actually present.
         """
-        if not hasattr(self, '_backend'):
+        if getattr(self, '_backend', None) is None and not self._try_create_backend_if_possible():
+            missing, stale = self._required_input_issues(require_fresh=False)
+            if not missing and not stale:
+                decision = self._backend_unavailable_decision()
+                self._set_last_decision(decision)
+                self._publish_status(decision)
+                self._publish_model_output(None, decision, event_type='readiness')
             return
         adapter_available = getattr(self._backend, '_adapter_callable', True) is not None
         if not adapter_available:
@@ -755,10 +850,12 @@ class BaseModelSimServer(Node):
                 'model_path': self._params['model_path'],
                 'device': self._params['device'],
                 'adapter_target': self._params['adapter_target'],
+                'backend_init_error': self._backend_init_error,
                 'startup_camera_timeout_recovered': bool(self._initial_camera_timed_out),
                 'sensor_ages_sec': self._camera_sensor_ages(),
                 'topics': self._required_readiness_topics,
                 'tf_frames': self._required_tf_frames,
+                'tf_checks': self._tf_readiness_details(),
                 'tf_ready': self._tf_tree_ready(),
             },
         )
@@ -870,7 +967,6 @@ class BaseModelSimServer(Node):
                 'effective_label': debug.get('effective_action_label', debug.get('action_label')),
                 'converted_status': debug.get('converted_status'),
                 'arc_turn': bool(debug.get('arc_turn', False)),
-                'invert_discrete_turns': bool(debug.get('invert_discrete_turns', self._params.get('invert_discrete_turns', False))),
                 'history_tail': list(self._action_history[-24:]),
                 'remaining_action_queue': debug.get('remaining_action_queue'),
             },
@@ -921,7 +1017,6 @@ class BaseModelSimServer(Node):
         decision.debug.setdefault('sensor_ages_sec', self._camera_sensor_ages())
         decision.debug.setdefault('stale_after_sec', float(self._params.get('camera_stale_after_sec', 0.0)))
         decision.debug['action_history_tail'] = list(self._action_history[-12:])
-        decision.debug.setdefault('invert_discrete_turns', bool(self._params.get('invert_discrete_turns', False)))
 
     def _cached_model_decision_while_computing(self, observation: ModelSimObservation) -> ModelSimDecision | None:
         with self._state_lock:
@@ -1037,7 +1132,6 @@ class BaseModelSimServer(Node):
                 'effective_label': debug.get('effective_action_label', debug.get('action_label')),
                 'converted_status': debug.get('converted_status'),
                 'arc_turn': bool(debug.get('arc_turn', False)),
-                'invert_discrete_turns': bool(debug.get('invert_discrete_turns', self._params.get('invert_discrete_turns', False))),
                 'history_tail': list(self._action_history[-24:]),
                 'remaining_action_queue': debug.get('remaining_action_queue'),
             },
@@ -1069,6 +1163,8 @@ class BaseModelSimServer(Node):
         self._model_output_publisher.publish(message)
 
     def _should_compute(self, now: float) -> bool:
+        if getattr(self, '_backend', None) is None:
+            return False
         if self._backend.uses_model_inference:
             rate_hz = self._params['inference_rate_hz']
             period = (1.0 / rate_hz) if rate_hz > 0 else self._params['command_timeout_sec']
@@ -1162,7 +1258,7 @@ class BaseModelSimServer(Node):
                 self._latest_rgb,
                 observation,
                 decision,
-                backend_name=self._backend.backend_type,
+                backend_name=getattr(self._backend, 'backend_type', ''),
             )
             image_msg = numpy_to_image_msg(image, self._latest_rgb_msg)
             if self._visualization_publisher is not None:
@@ -1260,6 +1356,17 @@ class BaseModelSimServer(Node):
                 response.twist = self._get_last_cmd()
                 self.get_logger().info(
                     f'{self.SERVER_LABEL} get_command camera gate response: '
+                    f'linear={response.twist.linear.x:.3f} angular={response.twist.angular.z:.3f}'
+                )
+                return response
+            if getattr(self, '_backend', None) is None and not self._try_create_backend_if_possible():
+                decision = self._backend_unavailable_decision()
+                self._set_last_decision(decision)
+                self._publish_status(decision)
+                self._publish_model_output(None, decision, event_type='backend_unavailable')
+                response.twist = self._get_last_cmd()
+                self.get_logger().info(
+                    f'{self.SERVER_LABEL} get_command backend unavailable response: '
                     f'linear={response.twist.linear.x:.3f} angular={response.twist.angular.z:.3f}'
                 )
                 return response
@@ -1417,7 +1524,12 @@ class InternNavServer(BaseModelSimServer):
             + ', '.join(missing)
         )
         if self._params['require_real_backend']:
-            raise RuntimeError(message)
+            self.get_logger().error(
+                message
+                + '. Keeping the server alive in safe-stop mode so it can recover to backend_ready '
+                + 'once real TF/odom/camera inputs eventually arrive.'
+            )
+            return
         self.get_logger().warn(message + '. Continuing in degraded mode because require_real_backend=false.')
 
 def main() -> None:
@@ -1425,6 +1537,8 @@ def main() -> None:
     node = InternNavServer()
     try:
         rclpy.spin(node)
+    except rclpy.executors.ExternalShutdownException:
+        pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        rclpy.try_shutdown()

@@ -194,6 +194,18 @@ def generate_launch_description():
     )
 
     # Launch the InternNav wrapper when using the dual_vln local planner instance
+    internnav_base_frame = PythonExpression([
+        '(',
+        '"', frame.substitution, '"',
+        ' + ',
+        '("base_footprint" if "', robot.substitution, '".strip().lower() == "linkhou_s2" else "base_link")',
+        ')',
+    ])
+    internnav_odom_frame = PythonExpression([
+        '(',
+        '"', frame.substitution, 'odom"',
+        ')',
+    ])
     internnav_server_parameters = [
         {
             'namespace': namespace.substitution,
@@ -205,8 +217,8 @@ def generate_launch_description():
             'rgb_topic': internnav_rgb_topic.substitution,
             'depth_topic': internnav_depth_topic.substitution,
             'camera_info_topic': internnav_camera_info_topic.substitution,
-            'base_frame': frame.substitution,
-            'odom_frame': 'odom',
+            'base_frame': internnav_base_frame,
+            'odom_frame': internnav_odom_frame,
             'global_frame': 'map',
             'adapter_target': internnav_adapter_target.substitution,
             'require_real_backend': launch_ros.parameter_descriptions.ParameterValue(

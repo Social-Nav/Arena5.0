@@ -224,7 +224,7 @@ source_fn(){
 }
 
 launch(){
-    local robot namespace mode model_path device rgb_topic depth_topic camera_info_topic instruction_topic trace_path status_topic visualization_topic action_visualization_topic model_output_topic model_output_policy visualization_rate_hz enable_visualization invert_discrete_turns inference_rate_hz inference_timeout_sec extra_ros_args
+    local robot namespace mode model_path device rgb_topic depth_topic camera_info_topic instruction_topic trace_path status_topic visualization_topic action_visualization_topic model_output_topic model_output_policy visualization_rate_hz enable_visualization inference_rate_hz inference_timeout_sec camera_ready_timeout_sec extra_ros_args
     robot="${ARENA_INTERNNAV_ROBOT:-Ai2_Bot2}"
     namespace="${ARENA_INTERNNAV_NAMESPACE:-/task_generator_node/$robot}"
     mode="${ARENA_INTERNNAV_MODE:-internnav}"
@@ -242,21 +242,9 @@ launch(){
     model_output_policy="${ARENA_INTERNNAV_MODEL_OUTPUT_POLICY:-${ARENA_EVAL_INTERNNAV_MODEL_OUTPUT_POLICY:-trajectory}}"
     visualization_rate_hz="${ARENA_INTERNNAV_VISUALIZATION_RATE_HZ:-5.0}"
     enable_visualization="${ARENA_INTERNNAV_ENABLE_VISUALIZATION:-true}"
-    if [ -n "${ARENA_INTERNNAV_INVERT_DISCRETE_TURNS:-}" ]; then
-        invert_discrete_turns="$ARENA_INTERNNAV_INVERT_DISCRETE_TURNS"
-    elif [ -n "${ARENA_EVAL_INTERNNAV_INVERT_DISCRETE_TURNS:-}" ]; then
-        invert_discrete_turns="$ARENA_EVAL_INTERNNAV_INVERT_DISCRETE_TURNS"
-    elif [ "$robot" = "Ai2_Bot2" ]; then
-        # Keep the standalone external-server launcher aligned with the Jazzy
-        # internnav_eval runtime default validated on 2026-05-18: once the
-        # Ai2_Bot2 Isaac diff-drive / odom chain was fixed, native InternNav
-        # discrete turns should pass through unchanged for this robot.
-        invert_discrete_turns="false"
-    else
-        invert_discrete_turns="true"
-    fi
     inference_rate_hz="${ARENA_INTERNNAV_INFERENCE_RATE_HZ:-10.0}"
     inference_timeout_sec="${ARENA_INTERNNAV_INFERENCE_TIMEOUT_SEC:-120.0}"
+    camera_ready_timeout_sec="${ARENA_INTERNNAV_CAMERA_READY_TIMEOUT_SEC:-480.0}"
     extra_ros_args="${ARENA_INTERNNAV_EXTRA_ROS_ARGS:-}"
 
     while [ $# -gt 0 ]; do
@@ -279,10 +267,9 @@ launch(){
             --visualization-rate-hz) visualization_rate_hz="$2"; shift 2 ;;
             --enable-visualization) enable_visualization="true"; shift ;;
             --disable-visualization) enable_visualization="false"; shift ;;
-            --invert-discrete-turns) invert_discrete_turns="true"; shift ;;
-            --no-invert-discrete-turns) invert_discrete_turns="false"; shift ;;
             --inference-rate-hz) inference_rate_hz="$2"; shift 2 ;;
             --inference-timeout-sec) inference_timeout_sec="$2"; shift 2 ;;
+            --camera-ready-timeout-sec) camera_ready_timeout_sec="$2"; shift 2 ;;
             --) shift; extra_ros_args="$*"; break ;;
             *) echo "Unknown launch option: $1" >&2; return 1 ;;
         esac
@@ -291,6 +278,7 @@ launch(){
     visualization_rate_hz="$(ros_double "$visualization_rate_hz")"
     inference_rate_hz="$(ros_double "$inference_rate_hz")"
     inference_timeout_sec="$(ros_double "$inference_timeout_sec")"
+    camera_ready_timeout_sec="$(ros_double "$camera_ready_timeout_sec")"
 
     arena_docker_compose up -d --remove-orphans --no-recreate internnav
     trap 'arena_docker_compose stop internnav || true' EXIT INT TERM
@@ -300,7 +288,7 @@ launch(){
     if [ -n "$trace_path" ]; then
         cmd="$cmd export ARENA_EVAL_INTERNNAV_TRACE_PATH='$trace_path';"
     fi
-    cmd="$cmd ros2 run arena_vln_models dual_vln_server --ros-args -r __ns:='$namespace' -r __node:=internnav_server -p namespace:='$namespace' -p mode:='$mode' -p model_path:='$model_path' -p device:='$device' -p goal_topic:=episode_goal_pose -p instruction_topic:='$instruction_topic' -p rgb_topic:='$rgb_topic' -p depth_topic:='$depth_topic' -p camera_info_topic:='$camera_info_topic' -p adapter_target:=arena_vln_models.internnav:load_internnav_adapter -p require_real_backend:=true -p strict_device:=false -p status_topic:='$status_topic' -p enable_visualization:='$enable_visualization' -p visualization_topic:='$visualization_topic' -p action_visualization_topic:='$action_visualization_topic' -p model_output_topic:='$model_output_topic' -p model_output_policy:='$model_output_policy' -p invert_discrete_turns:='$invert_discrete_turns' -p visualization_rate_hz:='$visualization_rate_hz' -p inference_rate_hz:='$inference_rate_hz' -p inference_timeout_sec:='$inference_timeout_sec' $extra_ros_args"
+    cmd="$cmd $(venv_path)/bin/python /opt/arena_ws/install/arena_vln_models/lib/arena_vln_models/dual_vln_server --ros-args -r __ns:='$namespace' -r __node:=internnav_server -p namespace:='$namespace' -p mode:='$mode' -p model_path:='$model_path' -p device:='$device' -p goal_topic:=episode_goal_pose -p instruction_topic:='$instruction_topic' -p rgb_topic:='$rgb_topic' -p depth_topic:='$depth_topic' -p camera_info_topic:='$camera_info_topic' -p adapter_target:=arena_vln_models.internnav:load_internnav_adapter -p require_real_backend:=true -p strict_device:=false -p camera_ready_timeout_sec:='$camera_ready_timeout_sec' -p status_topic:='$status_topic' -p enable_visualization:='$enable_visualization' -p visualization_topic:='$visualization_topic' -p action_visualization_topic:='$action_visualization_topic' -p model_output_topic:='$model_output_topic' -p model_output_policy:='$model_output_policy' -p visualization_rate_hz:='$visualization_rate_hz' -p inference_rate_hz:='$inference_rate_hz' -p inference_timeout_sec:='$inference_timeout_sec' $extra_ros_args"
 
     arena_docker_compose exec -T internnav /entrypoint.sh bash -lc "$cmd"
 }
@@ -340,6 +328,7 @@ Launch options:
   --visualization-rate-hz HZ    Default: 5.0
   --inference-rate-hz HZ        Default: 10.0
   --inference-timeout-sec SEC   Default: 120.0
+  --camera-ready-timeout-sec SEC Default: 480.0
 EOF
 }
 

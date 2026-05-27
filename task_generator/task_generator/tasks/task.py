@@ -6,6 +6,7 @@ import rclpy
 import rclpy.publisher
 import rosgraph_msgs.msg as rosgraph_msgs
 import std_msgs.msg as std_msgs
+from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 from arena_rclpy_mixins.ROSParamServer import ROSParamServer
 from arena_rclpy_mixins.shared import DefaultParameter, Namespace
 
@@ -82,6 +83,14 @@ class _TaskRegistry(Namespaced):
             return loader
 
         return inner_wrapper
+
+
+_CLOCK_QOS = QoSProfile(
+    history=QoSHistoryPolicy.KEEP_LAST,
+    depth=1,
+    reliability=QoSReliabilityPolicy.BEST_EFFORT,
+    durability=QoSDurabilityPolicy.VOLATILE,
+)
 
 
 class Task(_TaskRegistry, NodeInterface, Props_):
@@ -165,7 +174,7 @@ class Task(_TaskRegistry, NodeInterface, Props_):
         self.__reset_end = self.node.create_publisher(std_msgs.Empty, 'reset_end', 1)
         self.__reset_mutex = False
 
-        self.node.create_subscription(rosgraph_msgs.Clock, '/clock', self._clock_callback, 10)
+        self.node.create_subscription(rosgraph_msgs.Clock, '/clock', self._clock_callback, _CLOCK_QOS)
         self.last_reset_time = 0
         self.clock = rosgraph_msgs.Clock()
 

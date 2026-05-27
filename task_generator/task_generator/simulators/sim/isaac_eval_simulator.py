@@ -1,6 +1,7 @@
 import asyncio
 import itertools
 import os
+import sys
 import random
 import time
 import traceback
@@ -87,6 +88,12 @@ class IsaacEvalSimulator(IsaacSimulator):
             "/isaac/SpawnUsdRobot_srv",
         )
         self._spawn_usd_robot_client = self._clients.SpawnUsdRobot
+        # Legacy _srv client for LoadUsdScene (same FastDDS workaround as SpawnUsdRobot)
+        self._legacy_load_usd_scene = self.node.create_client_wrapper(
+            LoadUsdScene,
+            "/isaac/LoadUsdScene_srv",
+        )
+        self._load_usd_scene_client = self._clients.LoadUsdScene
 
     async def _ensure_static_robot_state(
         self,
@@ -130,19 +137,38 @@ class IsaacEvalSimulator(IsaacSimulator):
                         robot_params.odom_frame,
                         publish_fallback_odom_tf=False,
                     )
-                    await self._spawn_usd_robot_client.call_fire_and_forget(
+                    # Wait for SpawnUsdRobot service to become available before calling.
+                    # Use a longer timeout for the service call itself which internally
+                    # waits for the service to become available via rclpy.
+                    response = await self._spawn_usd_robot_client.call_timeout(
                         SpawnUsdRobot.Request(
                             name=fq_name,
                             usd_path=str(model.path),
                             robot_namespace=str(self.node.service_namespace(robot.name)).lstrip('/'),
                             base_frame=robot_params.base_frame or '',
                             pose=robot.pose.to_msg(),
+                        ),
+                        timeout_sec=120.0,
+                    )
+                    if response is None:
+                        self._logger.error(
+                            f"SpawnUsdRobot failed for '{robot.name}' via {self._spawn_usd_robot_client.client.srv_name}; "
+                            'strict eval mode will not continue without a real robot spawn.'
                         )
-                    )
-                    self._logger.info(
-                        f"Requested USD robot spawn for '{robot.name}' via {self._spawn_usd_robot_client.client.srv_name}; "
-                        "strict eval mode will wait for real TF/odom/camera readiness before releasing the episode"
-                    )
+                        return False
+                    # The legacy _srv endpoint returns an empty path (fire-and-forget),
+                    # so an empty path is acceptable. Only fail if response is None.
+                    spawn_path = str(getattr(response, 'path', '') or '').strip()
+                    if spawn_path:
+                        self._logger.info(
+                            f"Spawned USD robot '{robot.name}' via {self._spawn_usd_robot_client.client.srv_name} at "
+                            f"{spawn_path}; strict eval mode will wait for real TF/odom/camera readiness before releasing the episode"
+                        )
+                    else:
+                        self._logger.info(
+                            f"SpawnUsdRobot request sent for '{robot.name}' via {self._spawn_usd_robot_client.client.srv_name} "
+                            f'(fire-and-forget endpoint; will wait for real TF/odom/camera readiness)'
+                        )
                     await asyncio.sleep(1.0)
                     self._spawned_usd_robots.add(robot.name)
                     await self._ensure_map_to_world_tf(robot.name)
@@ -160,7 +186,7 @@ class IsaacEvalSimulator(IsaacSimulator):
                         robot_params.odom_frame,
                         publish_fallback_odom_tf=False,
                     )
-                    await self._clients.SpawnUrdf.call_timeout(
+                    response = await self._clients.SpawnUrdf.call_timeout(
                         SpawnUrdf.Request(
                             name=fq_name,
                             urdf_path=str(model.path),
@@ -176,6 +202,11 @@ class IsaacEvalSimulator(IsaacSimulator):
                         ),
                         timeout_sec=5.0,
                     )
+                    if response is None or not str(getattr(response, 'path', '') or '').strip():
+                        self._logger.error(
+                            f"SpawnUrdf failed for '{robot.name}'; strict eval mode will not continue without a real robot spawn."
+                        )
+                        return False
 
                     base_frame = robot_params.base_frame
                     robot_prim_path = os.path.join('/World', fq_name, base_frame)
@@ -237,18 +268,10 @@ class IsaacEvalSimulator(IsaacSimulator):
             )
             return tuple(False for _ in obstacles)
 
-        response = await self._clients.SpawnPrims.call_timeout(
-            SpawnPrims.Request(prims=list(filter(None, prims))),
-            timeout_sec=20.0,
+        await self._clients.SpawnPrims.call_fire_and_forget(
+            SpawnPrims.Request(prims=list(filter(None, prims)))
         )
-        if response is None:
-            self._logger.warning(
-                'SpawnPrims returned no ROS response; assuming Isaac processed the request.'
-            )
-            return tuple(prim is not None for prim in prims)
-
-        response_iter = iter(response.ret)
-        return tuple((prim is not None) and next(response_iter) for prim in prims)
+        return tuple(prim is not None for prim in prims)
 
     async def robot_move(self, robots):
         async def move_robot(robot: Robot) -> bool:
@@ -423,9 +446,11 @@ class IsaacEvalSimulator(IsaacSimulator):
         return True
 
     async def _pause(self):
+        await super()._pause()
         return True
 
     async def _unpause(self):
+        await super()._unpause()
         return True
 
     async def pedestrian_spawn(self, pedestrians):
@@ -528,10 +553,11 @@ class IsaacEvalSimulator(IsaacSimulator):
         # were ever produced.
         canonical_spawn_service = self._clients.SpawnUsdRobot.client.srv_name
         legacy_spawn_service = self._legacy_spawn_usd_robot.client.srv_name
+        canonical_load_service = self._clients.LoadUsdScene.client.srv_name
         required_services = {
             client.client.srv_name
             for client in clients
-            if client.client.srv_name != canonical_spawn_service
+            if client.client.srv_name not in (canonical_spawn_service, canonical_load_service)
         }
         for service_name in sorted(required_services):
             self._logger.info(f'Initializing service client: {service_name}')
@@ -553,7 +579,11 @@ class IsaacEvalSimulator(IsaacSimulator):
                 canonical_spawn_service in available_services
                 or legacy_spawn_service in available_services
             )
-            if not unavailable and spawn_available:
+            load_available = (
+                canonical_load_service in available_services
+                or self._legacy_load_usd_scene.client.srv_name in available_services
+            )
+            if not unavailable and spawn_available and load_available:
                 break
             await asyncio.sleep(0.25)
         else:
@@ -567,23 +597,47 @@ class IsaacEvalSimulator(IsaacSimulator):
             missing_services.append(
                 f"one of {canonical_spawn_service} or {legacy_spawn_service}"
             )
+        legacy_load_service = self._legacy_load_usd_scene.client.srv_name
+        if (
+            canonical_load_service not in available_services
+            and legacy_load_service not in available_services
+        ):
+            missing_services.append(
+                f"one of {canonical_load_service} or {legacy_load_service}"
+            )
 
         if missing_services:
             raise RuntimeError(f"Isaac service(s) unavailable after 120s: {', '.join(sorted(missing_services))}")
 
         spawn_service_override = os.environ.get('ARENA_ISAAC_USD_SPAWN_SERVICE', '').strip()
+        # Prefer legacy _srv endpoint over canonical SpawnUsdRobot.
+        # The canonical /isaac/SpawnUsdRobot appears in graph queries but
+        # rclpy clients cannot connect to it (wait_for_service always fails).
+        # The legacy /isaac/SpawnUsdRobot_srv is the one that actually works.
         if legacy_spawn_service in available_services:
-            if legacy_spawn_service in available_services:
-                self._spawn_usd_robot_client = self._legacy_spawn_usd_robot
-                self._logger.info(
-                    f'Using legacy SpawnUsdRobot endpoint {legacy_spawn_service} for eval compatibility.'
-                )
+            self._spawn_usd_robot_client = self._legacy_spawn_usd_robot
+            self._logger.info(
+                f'Using legacy SpawnUsdRobot endpoint {legacy_spawn_service} for eval compatibility.'
+            )
+        elif canonical_spawn_service in available_services:
+            self._spawn_usd_robot_client = self._legacy_spawn_usd_robot
+            self._logger.info(
+                f'Using legacy SpawnUsdRobot endpoint {legacy_spawn_service} for eval compatibility.'
+            )
         elif spawn_service_override.endswith('_srv'):
             raise RuntimeError(
                 f'ARENA_ISAAC_USD_SPAWN_SERVICE requested {legacy_spawn_service}, but it was unavailable.'
             )
         else:
             self._spawn_usd_robot_client = self._clients.SpawnUsdRobot
+
+        # Prefer legacy _srv endpoint for LoadUsdScene (same FastDDS workaround).
+        legacy_load_service = self._legacy_load_usd_scene.client.srv_name
+        if legacy_load_service in available_services:
+            self._load_usd_scene_client = self._legacy_load_usd_scene
+            self._logger.info(
+                f'Using legacy LoadUsdScene endpoint {legacy_load_service} for eval compatibility.'
+            )
 
         self.node.create_publisher(std_msgs.msg.String, '/isaac/add_pedestrians_topic', 10).publish(
             std_msgs.msg.String(data=self.node.service_namespace('arena_peds'))
@@ -602,25 +656,131 @@ class IsaacEvalSimulator(IsaacSimulator):
         disable_collision_cooking: bool = True,
     ) -> bool:
         self._logger.info(f'Loading USD scene: {usd_path}')
-        req = LoadUsdScene.Request()
-        req.usd_path = usd_path
-        req.scene_prim_path = scene_prim_path
-        req.scale = float(scale)
-        req.position = position or [0.0, 0.0, 0.0]
-        req.orientation = orientation or [0.0, 0.0, 0.0, 1.0]
-        req.add_colliders = add_colliders
-        req.disable_collision_cooking = disable_collision_cooking
+        timeout_sec = max(float(os.environ.get('ARENA_ISAAC_LOAD_USD_TIMEOUT_SEC', '1800.0')), 1.0)
 
+        # Workaround: the task_generator's rclpy context cannot reliably send
+        # service requests to Isaac Sim across Docker containers due to a
+        # FastDDS participant-level routing issue.  The `ros2 service call`
+        # CLI works because it creates a fresh DDS participant.  Use a
+        # subprocess to call the service with a clean rclpy context.
         try:
-            response = await self._clients.LoadUsdScene.call_timeout(req, timeout_sec=600.0)
-            if response is None:
-                self._logger.error('LoadUsdScene service timed out')
-                return False
-            if response.success:
-                self._logger.info(f'USD scene loaded: {response.scene_prim_path}')
-                return True
-            self._logger.error(f'Failed to load USD scene: {response.message}')
-            return False
+            success = await self._load_usd_scene_subprocess(
+                usd_path=usd_path,
+                scene_prim_path=scene_prim_path,
+                scale=scale,
+                position=position,
+                orientation=orientation,
+                add_colliders=add_colliders,
+                disable_collision_cooking=disable_collision_cooking,
+                timeout_sec=timeout_sec,
+            )
+            if success:
+                self._logger.info(f'USD scene loaded via subprocess: {usd_path}')
+            else:
+                self._logger.error(f'Failed to load USD scene via subprocess: {usd_path}')
+            return success
         except Exception as exc:
             self._logger.error(f'Exception loading USD scene: {exc}\n{traceback.format_exc()}')
             return False
+
+    async def _load_usd_scene_subprocess(
+        self,
+        usd_path: str,
+        scene_prim_path: str = '/World/Scene',
+        scale: float = 1.0,
+        position: list | None = None,
+        orientation: list | None = None,
+        add_colliders: bool = True,
+        disable_collision_cooking: bool = True,
+        timeout_sec: float = 1800.0,
+    ) -> bool:
+        """Call LoadUsdScene via subprocess to get a fresh DDS participant."""
+        import asyncio
+        pos = position or [0.0, 0.0, 0.0]
+        ori = orientation or [0.0, 0.0, 0.0, 1.0]
+        srv_name = self._load_usd_scene_client.client.srv_name
+
+        script = (
+            "import rclpy, time, os, sys, json\n"
+            "os.environ.setdefault('ROS_DOMAIN_ID', '1')\n"
+            "os.environ.setdefault('RMW_IMPLEMENTATION', 'rmw_fastrtps_cpp')\n"
+            "os.environ.setdefault('ROS_AUTOMATIC_DISCOVERY_RANGE', 'SUBNET')\n"
+            "os.environ.setdefault('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4')\n"
+            "from isaacsim_msgs.srv import LoadUsdScene\n"
+            "rclpy.init()\n"
+            f"node = rclpy.create_node('load_usd_scene_subprocess')\n"
+            f"client = node.create_client(LoadUsdScene, '{srv_name}')\n"
+            "if not client.wait_for_service(timeout_sec=30.0):\n"
+            "    print(json.dumps({'success': False, 'message': 'Service unavailable'}), flush=True)\n"
+            "    node.destroy_node()\n"
+            "    rclpy.shutdown()\n"
+            "    sys.exit(1)\n"
+            "req = LoadUsdScene.Request()\n"
+            f"req.usd_path = {usd_path!r}\n"
+            f"req.scene_prim_path = {scene_prim_path!r}\n"
+            f"req.scale = {float(scale)}\n"
+            f"req.position = {list(pos)!r}\n"
+            f"req.orientation = {list(ori)!r}\n"
+            f"req.add_colliders = {bool(add_colliders)}\n"
+            f"req.disable_collision_cooking = {bool(disable_collision_cooking)}\n"
+            "future = client.call_async(req)\n"
+            f"deadline = time.monotonic() + {float(timeout_sec)}\n"
+            "while time.monotonic() < deadline and not future.done():\n"
+            "    rclpy.spin_once(node, timeout_sec=0.5)\n"
+            "if future.done():\n"
+            "    r = future.result()\n"
+            "    print(json.dumps({'success': r.success, 'message': r.message, 'scene_prim_path': r.scene_prim_path}), flush=True)\n"
+            "else:\n"
+            "    print(json.dumps({'success': False, 'message': 'Timeout'}), flush=True)\n"
+            "node.destroy_node()\n"
+            "rclpy.shutdown()\n"
+        )
+
+        self._logger.info(f'Calling LoadUsdScene via subprocess (srv={srv_name}, timeout={timeout_sec:.0f}s)')
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable, '-c', script,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec + 30.0)
+        except asyncio.TimeoutError:
+            proc.kill()
+            self._logger.error(f'LoadUsdScene subprocess timed out after {timeout_sec:.0f}s')
+            return False
+
+        stdout_text = stdout.decode('utf-8', errors='replace').strip()
+        stderr_text = stderr.decode('utf-8', errors='replace').strip()
+
+        if stderr_text:
+            self._logger.debug(f'LoadUsdScene subprocess stderr: {stderr_text[-500:]}')
+
+        if not stdout_text:
+            self._logger.error(f'LoadUsdScene subprocess returned no output (rc={proc.returncode})')
+            return False
+
+        # Parse the last line of stdout as JSON
+        for line in reversed(stdout_text.split('\n')):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                import json
+                result = json.loads(line)
+                success = result.get('success', False)
+                msg = result.get('message', '')
+                prim = result.get('scene_prim_path', '')
+                if success:
+                    self._logger.info(f'LoadUsdScene succeeded: prim={prim}')
+                else:
+                    # Scene already loaded is not a fatal error
+                    if 'already exists' in msg:
+                        self._logger.info(f'LoadUsdScene: scene prim already exists ({prim}), treating as success')
+                        return True
+                    self._logger.error(f'LoadUsdScene failed: {msg}')
+                return bool(success)
+            except (json.JSONDecodeError, ValueError):
+                continue
+
+        self._logger.error(f'LoadUsdScene subprocess: could not parse output: {stdout_text[:200]}')
+        return False

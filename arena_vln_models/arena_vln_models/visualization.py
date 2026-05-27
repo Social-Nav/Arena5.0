@@ -203,115 +203,25 @@ def render_debug_overlay(
     draw = ImageDraw.Draw(canvas)
     width, height = canvas.size
 
-    goal_distance = decision.debug.get('goal_distance')
-    yaw_error = decision.debug.get('yaw_error')
-    infer_time = decision.debug.get('infer_time_sec')
-    availability = observation.metadata or {}
-    instruction_lines = _wrap_line('instruction: ', observation.instruction[:220], max(width // 12, 28))
-
-    text_lines = [
-        f'backend: {backend_name}',
-        f'status: {decision.status}',
-        f'cmd_vel: vx={decision.linear_x:.3f} wz={decision.angular_z:.3f}',
-        f'degraded: {decision.degraded}',
-        _format_scalar('goal_distance', goal_distance) if isinstance(goal_distance, (float, int)) else 'goal_distance: n/a',
-        _format_scalar('yaw_error', yaw_error) if isinstance(yaw_error, (float, int)) else 'yaw_error: n/a',
-        _format_scalar('infer_time_sec', infer_time, precision=4)
-        if isinstance(infer_time, (float, int))
-        else 'infer_time_sec: n/a',
-        (
-            'modalities: '
-            f"rgb={'yes' if availability.get('rgb_available') else 'no'} "
-            f"depth={'yes' if availability.get('depth_available') else 'no'} "
-            f"camera_info={'yes' if availability.get('camera_info_available') else 'no'}"
-        ),
-        f'look_down: {bool(decision.debug.get("look_down", observation.look_down))}',
-    ]
-
     selected_action = decision.debug.get('selected_action')
     action_label = decision.debug.get('action_label')
     native_action_label = decision.debug.get('native_action_label', action_label)
     effective_action_label = decision.debug.get('effective_action_label', action_label)
+    action_parts = []
     if selected_action is not None:
-        action_text = f'action: {selected_action} native={native_action_label or "n/a"}'
-        if effective_action_label != native_action_label:
-            action_text += f' effective={effective_action_label}'
-        if decision.debug.get('invert_discrete_turns'):
-            action_text += ' invert=true'
-        text_lines.append(action_text)
-    history_tail = decision.debug.get('action_history_tail')
-    if history_tail not in (None, ''):
-        text_lines.extend(_wrap_line('action_history: ', str(history_tail), max(width // 12, 24)))
-    sensor_ages = decision.debug.get('sensor_ages_sec')
-    if isinstance(sensor_ages, dict):
-        age_parts = []
-        stale_after = decision.debug.get('stale_after_sec') or availability.get('stale_after_sec') or 0.0
-        try:
-            stale_after = float(stale_after)
-        except (TypeError, ValueError):
-            stale_after = 0.0
-        for key in ('rgb', 'depth', 'camera_info'):
-            age = sensor_ages.get(key)
-            if isinstance(age, (float, int)):
-                marker = ' stale' if stale_after > 0.0 and float(age) > stale_after else ''
-                age_parts.append(f'{key}={float(age):.2f}s{marker}')
-            else:
-                age_parts.append(f'{key}=n/a')
-        text_lines.extend(_wrap_line('freshness: ', ' '.join(age_parts), max(width // 12, 24)))
-
-    for key in (
-        'adapter_target',
-        'shim_mode',
-        'camera_frame_id',
-        'remaining_action_queue',
-        'failure_reason',
-        'shim_reason',
-    ):
-        value = decision.debug.get(key)
-        if value is None and key == 'camera_frame_id':
-            value = observation.camera_frame_id
-        if value not in (None, ''):
-            text_lines.extend(_wrap_line(f'{key}: ', str(value), max(width // 12, 24)))
-
-    trajectory_preview = decision.debug.get('trajectory_first_step', decision.debug.get('trajectory_preview'))
-    if trajectory_preview not in (None, ''):
-        text_lines.extend(_wrap_line('trajectory: ', str(trajectory_preview), max(width // 12, 24)))
-
-    target_pixel_text = decision.debug.get('target_pixel') or decision.debug.get('subgoal_pixel') or decision.debug.get('goal_pixel')
-    if target_pixel_text not in (None, ''):
-        text_lines.append(f'target_pixel: {target_pixel_text}')
-
-    text_lines.extend(instruction_lines)
+        action_parts.append(str(selected_action))
+    display_label = effective_action_label or native_action_label or action_label
+    if display_label not in (None, ''):
+        action_parts.append(str(display_label))
+    elif abs(float(decision.linear_x)) < 1e-6 and abs(float(decision.angular_z)) < 1e-6:
+        action_parts.append('stop')
+    action_text = 'action: ' + (' | '.join(action_parts) if action_parts else 'n/a')
 
     line_height = 18
-    panel_height = min(max(140, 18 + line_height * len(text_lines)), max(140, height - 16))
-    draw.rectangle([(8, 8), (width - 8, panel_height)], fill=(0, 0, 0), outline=(0, 255, 0), width=2)
-
-    y = 16
-    for line in text_lines:
-        draw.text((18, y), line, fill=(255, 255, 255))
-        y += line_height
-
-    target_pixel = _coerce_point(
-        decision.debug.get('target_pixel')
-        or decision.debug.get('subgoal_pixel')
-        or decision.debug.get('goal_pixel')
-    )
-    if target_pixel is not None:
-        _draw_marker(draw, target_pixel, (255, 64, 64), 'target')
-
-    trajectory_pixels = _coerce_points(decision.debug.get('trajectory_pixels') or decision.debug.get('path_pixels'))
-    waypoint_pixels = _coerce_points(decision.debug.get('waypoint_pixels'))
-    path_pixels = trajectory_pixels or waypoint_pixels
-    if path_pixels:
-        _draw_path(draw, path_pixels, (64, 255, 255), 'trajectory' if trajectory_pixels else 'waypoints')
-
-    if trajectory_pixels and waypoint_pixels:
-        _draw_path(draw, waypoint_pixels, (64, 128, 255), 'waypoints')
-
-    overlay_points = _coerce_points(decision.debug.get('overlay_points'))
-    if overlay_points:
-        _draw_path(draw, overlay_points, (255, 255, 64), 'points')
+    panel_height = 18 + line_height + 12
+    panel_width = min(width - 16, max(150, 18 + len(action_text) * 8))
+    draw.rectangle([(8, 8), (8 + panel_width, panel_height)], fill=(0, 0, 0), outline=(0, 255, 0), width=2)
+    draw.text((18, 18), action_text, fill=(255, 255, 255))
 
     center = (width // 2, height - 36)
     draw.ellipse((center[0] - 7, center[1] - 7, center[0] + 7, center[1] + 7), fill=(255, 255, 255))
@@ -346,15 +256,5 @@ def render_debug_overlay(
         float(decision.angular_z),
         arrow_color,
     )
-
-    if isinstance(yaw_error, (float, int)):
-        # Goal bearing in image coordinates: straight up is aligned with the robot,
-        # positive yaw_error is to the robot's left.
-        goal_heading = -math.pi / 2.0 - float(yaw_error)
-        goal_end = (
-            int(center[0] + math.cos(goal_heading) * 58),
-            int(center[1] + math.sin(goal_heading) * 58),
-        )
-        _draw_arrow(draw, center, goal_end, (255, 255, 64), width=3, label='goal')
 
     return np.asarray(canvas)

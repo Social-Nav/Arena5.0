@@ -297,8 +297,6 @@ class InternNavSubprocessAdapter:
                 str(int(params.get('internnav_plan_step_gap', os.environ.get('ARENA_INTERNNAV_PLAN_STEP_GAP', 12)))),
                 '--model-output-policy',
                 output_policy,
-                '--invert-discrete-turns',
-                str(bool(params.get('invert_discrete_turns', False))).lower(),
             ],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -319,9 +317,16 @@ class InternNavSubprocessAdapter:
             raise RuntimeError(f'InternNav subprocess did not become ready: {ready}')
 
     def _log(self, level: str, message: str) -> None:
-        fn = getattr(self._logger, level, None) if self._logger is not None else None
-        if callable(fn):
-            fn(message)
+        if self._logger is None:
+            return
+        if level == 'debug':
+            self._logger.debug(message)
+        elif level == 'info':
+            self._logger.info(message)
+        elif level in ('warn', 'warning'):
+            self._logger.warn(message)
+        elif level == 'error':
+            self._logger.error(message)
 
     def _drain_stderr(self) -> None:
         stream = getattr(self._proc, 'stderr', None)
@@ -356,7 +361,14 @@ def _jsonable(value):
         return _jsonable(value.tolist())
     return str(value)
 
-def _action_to_synthetic_trajectory(action, invert_discrete_turns=False):
+def _action_to_synthetic_trajectory(action):
+    """Convert a discrete action id to a synthetic trajectory waypoint.
+
+    ROS coordinate convention (REP 103): +yaw = counter-clockwise = LEFT turn.
+    This mapping is intentionally hard-coded to match the trajectory policy's
+    passthrough yaw sign — a mismatched sign between discrete and trajectory
+    policies was the root cause of yaw_sign_mismatch_ratio reaching 0.73–0.96.
+    """
     try:
         action_id = int(action)
     except Exception:
@@ -368,13 +380,13 @@ def _action_to_synthetic_trajectory(action, invert_discrete_turns=False):
     # output_trajectory -> cmd_vel converter instead of silently falling back to
     # action_list -> cmd_vel.
     turn = math.radians(15.0)
-    if invert_discrete_turns:
-        turn = -turn
     if action_id == 1:
         return [[0.25, 0.0, 0.0]]
     if action_id == 2:
+        # action 2 = native "turn_left" → +yaw (ROS CCW / left)
         return [[0.25, 0.0, turn]]
     if action_id == 3:
+        # action 3 = native "turn_right" → -yaw (ROS CW / right)
         return [[0.25, 0.0, -turn]]
     if action_id == 0:
         return [[0.0, 0.0, 0.0]]
@@ -382,7 +394,7 @@ def _action_to_synthetic_trajectory(action, invert_discrete_turns=False):
         return [[0.0, 0.0, 0.0]]
     return None
 
-def _normalize_output(output, policy='trajectory', invert_discrete_turns=False):
+def _normalize_output(output, policy='trajectory'):
     if isinstance(output, dict):
         result = dict(output)
     elif isinstance(output, (int, np.integer)):
@@ -417,13 +429,11 @@ def _normalize_output(output, policy='trajectory', invert_discrete_turns=False):
         if result.get('output_trajectory') is None and result.get('discrete_action') is not None:
             synthetic = _action_to_synthetic_trajectory(
                 result.get('discrete_action'),
-                invert_discrete_turns=bool(invert_discrete_turns),
             )
             if synthetic is not None:
                 result['output_trajectory'] = synthetic
                 result['debug']['trajectory_synthesized_from_discrete_action'] = True
                 result['debug']['trajectory_synthesis_reason'] = 'model_returned_symbolic_action_without_output_trajectory'
-                result['debug']['trajectory_synthesis_invert_discrete_turns'] = bool(invert_discrete_turns)
     return _jsonable(result)
 
 parser = argparse.ArgumentParser()
@@ -434,7 +444,6 @@ parser.add_argument('--resize-h', type=int, default=448)
 parser.add_argument('--num-history', type=int, default=4)
 parser.add_argument('--plan-step-gap', type=int, default=4)
 parser.add_argument('--model-output-policy', default='trajectory')
-parser.add_argument('--invert-discrete-turns', default='false')
 args = parser.parse_args()
 
 try:
@@ -510,7 +519,6 @@ for line in sys.stdin:
         result = _normalize_output(
             output,
             policy=args.model_output_policy,
-            invert_discrete_turns=str(args.invert_discrete_turns).strip().lower() in {'1', 'true', 'yes', 'on'},
         )
         result.setdefault('debug', {})
         result['debug']['subprocess_runtime_device'] = getattr(agent_args, 'device', '')
@@ -671,15 +679,39 @@ class InternNavAdapter:
         logger = self._logger
         if logger is None:
             return
-        fn = getattr(logger, level, None)
-        if callable(fn):
-            fn(message)
+        if level == 'debug':
+            logger.debug(message)
+        elif level == 'info':
+            logger.info(message)
+        elif level in ('warn', 'warning'):
+            logger.warn(message)
+        elif level == 'error':
+            logger.error(message)
 
     def _load_backend_async(self) -> None:
         try:
             self._load_backend()
         finally:
             self._loading = False
+
+    def _internnav_work_dir(self) -> Path:
+        return Path(os.environ.get('ARENA_INTERNNAV_WORK_DIR', '/tmp/arena_internnav_work')).resolve()
+
+    def _normalize_adapter_save_dir(self) -> None:
+        if self._adapter is None:
+            return
+        save_dir = getattr(self._adapter, 'save_dir', None)
+        if not isinstance(save_dir, str) or not save_dir.strip():
+            return
+        work_dir = self._internnav_work_dir()
+        work_dir.mkdir(parents=True, exist_ok=True)
+        save_dir_path = Path(save_dir)
+        if not save_dir_path.is_absolute():
+            save_dir_path = (work_dir / save_dir_path).resolve()
+        save_dir_path.mkdir(parents=True, exist_ok=True)
+        self._adapter.save_dir = str(save_dir_path)
+        self._load_debug['work_dir'] = str(work_dir)
+        self._load_debug['save_dir'] = str(save_dir_path)
 
     def _load_backend(self) -> None:
         requested_model_path = str(self._params.get('model_path', '')).strip()
@@ -770,7 +802,15 @@ class InternNavAdapter:
                 num_history=int(self._params.get('internnav_num_history', os.environ.get('ARENA_INTERNNAV_NUM_HISTORY', 0))),
                 plan_step_gap=int(self._params.get('internnav_plan_step_gap', os.environ.get('ARENA_INTERNNAV_PLAN_STEP_GAP', 12))),
             )
-            self._adapter = agent_cls(args)
+            work_dir = self._internnav_work_dir()
+            work_dir.mkdir(parents=True, exist_ok=True)
+            previous_cwd = Path.cwd()
+            try:
+                os.chdir(work_dir)
+                self._adapter = agent_cls(args)
+            finally:
+                os.chdir(previous_cwd)
+            self._normalize_adapter_save_dir()
             self._mode = 'internnav_async_agent'
             self._fallback_reason = ''
             self._load_error = ''
@@ -823,9 +863,11 @@ class InternNavAdapter:
         if self._adapter is not None and hasattr(self._adapter, 'reset'):
             try:
                 self._adapter.reset()
+                self._normalize_adapter_save_dir()
             except TypeError:
                 try:
                     self._adapter.reset(None)
+                    self._normalize_adapter_save_dir()
                 except Exception:
                     pass
             except Exception as exc:

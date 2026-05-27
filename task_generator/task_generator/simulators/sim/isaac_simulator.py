@@ -103,6 +103,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
             SpawnElevators=self.node.create_client_wrapper(SpawnElevators, "/isaac/SpawnElevators"),
             PauseSimulation=self.node.create_client_wrapper(std_srvs.srv.Trigger, "/isaac/PauseSimulation"),
             UnpauseSimulation=self.node.create_client_wrapper(std_srvs.srv.Trigger, "/isaac/UnpauseSimulation"),
+            StepSimulation=self.node.create_client_wrapper(std_srvs.srv.Trigger, "/isaac/StepSimulation"),
         )
 
         # Publisher for external registration messages so IsaacSim's DoorManager
@@ -182,7 +183,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
                 if model.type == ModelType.USD:
                     assert model.path is not None, f"USD model {model.name} must have a valid file path"
 
-                    await self._clients.SpawnUsdRobot.call_timeout(
+                    response = await self._clients.SpawnUsdRobot.call_timeout(
                         SpawnUsdRobot.Request(
                             name=fq_name,
                             usd_path=str(model.path),
@@ -191,6 +192,9 @@ class IsaacSimulator(BaseSim, NodeInterface):
                             pose=robot.pose.to_msg(),
                         )
                     )
+                    if response is None or not str(getattr(response, 'path', '') or '').strip():
+                        self._logger.error(f"SpawnUsdRobot failed for '{robot.name}'; aborting robot spawn.")
+                        return False
 
                     self._logger.info(f"Spawned USD robot '{robot.name}' via SpawnUsdRobot")
                     await self._ensure_map_to_world_tf(robot.name)
@@ -199,7 +203,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
 
                 if model.type == ModelType.URDF:
                     assert model.path is not None, f"URDF model {model.name} must have a valid file path"
-                    await self._clients.SpawnUrdf.call_timeout(
+                    response = await self._clients.SpawnUrdf.call_timeout(
                         SpawnUrdf.Request(
                             name=fq_name,
                             urdf_path=str(model.path),
@@ -214,6 +218,9 @@ class IsaacSimulator(BaseSim, NodeInterface):
                             odom_topic=self.node.service_namespace(robot.name, 'odom'),
                         )
                     )
+                    if response is None or not str(getattr(response, 'path', '') or '').strip():
+                        self._logger.error(f"SpawnUrdf failed for '{robot.name}'; aborting robot spawn.")
+                        return False
 
                     base_frame = robot_params.base_frame
                     robot_prim_path = os.path.join("/World", fq_name, base_frame)
@@ -266,19 +273,17 @@ class IsaacSimulator(BaseSim, NodeInterface):
 
         req = SpawnPrims.Request()
         req.prims = list(filter(None, prims))
-        response = await self._clients.SpawnPrims.call_timeout(req)
-        if response is None:
+        if not req.prims:
             return tuple(False for _ in obstacles)
 
-        response_iter = iter(response.ret)
-
-        return tuple((a is not None) and next(response_iter) for a in prims)
+        await self._clients.SpawnPrims.call_fire_and_forget(req)
+        return tuple(prim is not None for prim in prims)
 
     async def obstacle_move(self, obstacles):
         return await self._move_entities([(self._NS_PRIM(o.sim_path), o.pose) for o in obstacles])
 
     async def pedestrian_move(self, pedestrians):
-        await self._clients.DeletePedestrians.call_timeout(
+        await self._clients.DeletePedestrians.call_fire_and_forget(
             DeletePrims.Request(names=[self._NS_PEDESTRIAN(p.sim_path) for p in pedestrians])
         )
         res = await self.pedestrian_spawn(pedestrians)
@@ -302,14 +307,13 @@ class IsaacSimulator(BaseSim, NodeInterface):
         return await asyncio.gather(*(self._delete_entity(self._NS_PRIM(o.sim_path)) for o in obstacles))
 
     async def pedestrian_delete(self, pedestrians):
-        res = await self._clients.DeletePedestrians.call_timeout(
+        if not pedestrians:
+            return tuple()
+
+        await self._clients.DeletePedestrians.call_fire_and_forget(
             DeletePrims.Request(names=[self._NS_PEDESTRIAN(p.sim_path) for p in pedestrians])
         )
-        if res is None:
-            ret = tuple(False for _ in pedestrians)
-        else:
-            ret = tuple(res.ret)
-        return ret
+        return tuple(True for _ in pedestrians)
 
     async def robot_delete(self, robots):
         return await asyncio.gather(*(self._delete_entity(self._NS_ROBOT(r.sim_path)) for r in robots))
@@ -323,6 +327,9 @@ class IsaacSimulator(BaseSim, NodeInterface):
     async def spawn_walls(self, walls):
         # return True
         self._logger.debug("Attempting to spawn walls")
+        if not walls:
+            self._logger.info("No walls requested; skipping wall spawn.")
+            return True
 
         async def create_segment(segment: WallSegment) -> Wall | None:
             end = segment.end.to_msg()
@@ -363,6 +370,9 @@ class IsaacSimulator(BaseSim, NodeInterface):
             return map(create_segment, segments), map(create_obstacle, obstacles)
 
         wall_futures = await asyncio.gather(*map(create_wall, walls))
+        if not wall_futures:
+            self._logger.info("No wall assets resolved; skipping wall spawn.")
+            return True
         segment_futures, obstacle_futures = zip(*wall_futures)
 
         walls_req = SpawnWalls.Request()
@@ -370,15 +380,20 @@ class IsaacSimulator(BaseSim, NodeInterface):
         walls_req.walls = list(filter(None, await asyncio.gather(*itertools.chain.from_iterable(segment_futures))))
         prims_req.prims = list(filter(None, await asyncio.gather(*itertools.chain.from_iterable(obstacle_futures))))
 
-        walls_res = await self._clients.SpawnWalls.call_timeout(walls_req)
-        prims_res = await self._clients.SpawnPrims.call_timeout(prims_req)
-        res = bool(walls_res) and all(walls_res.ret) and bool(prims_res) and all(prims_res.ret)
+        if walls_req.walls:
+            await self._clients.SpawnWalls.call_fire_and_forget(walls_req)
+        if prims_req.prims:
+            await self._clients.SpawnPrims.call_fire_and_forget(prims_req)
+        res = bool(walls_req.walls or prims_req.prims)
 
         self._logger.info("All walls spawned.")
         return res
 
     async def spawn_floors(self, floors) -> bool:
         self._logger.info("Attempting to spawn floors")
+        if not floors:
+            self._logger.info("No floors requested; skipping floor spawn.")
+            return True
 
         async def impl(floor: FloorDefinition) -> Floor | None:
             try:
@@ -396,13 +411,18 @@ class IsaacSimulator(BaseSim, NodeInterface):
 
         floors_req = SpawnFloors.Request()
         floors_req.floors = list(filter(None, await asyncio.gather(*map(impl, floors))))
-        floors_res = await self._clients.SpawnFloors.call_timeout(floors_req)
+        if floors_req.floors:
+            await self._clients.SpawnFloors.call_fire_and_forget(floors_req)
 
-        res = bool(floors_res) and all(floors_res.ret)
+        res = bool(floors_req.floors)
         self._logger.info("All floors spawned successfully.")
         return res
 
     async def spawn_doors(self, doors) -> bool:
+        if not doors:
+            self._logger.info("No doors requested; skipping door spawn.")
+            return True
+
         async def impl(door: DoorDefinition) -> Door | None:
             try:
                 end = door.end.to_msg()
@@ -421,13 +441,17 @@ class IsaacSimulator(BaseSim, NodeInterface):
 
         doors_req = SpawnDoors.Request()
         doors_req.doors = list(filter(None, await asyncio.gather(*map(impl, doors))))
-        doors_res = await self._clients.SpawnDoors.call_timeout(doors_req)
+        if doors_req.doors:
+            await self._clients.SpawnDoors.call_fire_and_forget(doors_req)
 
-        res = bool(doors_res) and all(doors_res.ret)
+        res = bool(doors_req.doors)
         self._logger.info("All doors spawned successfully.")
         return res
     async def spawn_elevators(self, elevators) -> bool:
         self._logger.debug(f"IsaacSimulator.spawn_elevators ENTRY, elevators: {elevators}")
+        if not elevators:
+            self._logger.info("No elevators requested; skipping elevator spawn.")
+            return True
         self._logger.debug(f"IsaacSimulator.spawn_elevators called with: {[e.name for e in elevators]}")
         for e in elevators:
             self._logger.debug(f"Elevator data: {e}")
@@ -456,8 +480,9 @@ class IsaacSimulator(BaseSim, NodeInterface):
                 return None
         
         req.elevators = list(filter(None, await asyncio.gather(*map(impl, elevators))))
-        elevators_res = await self._clients.SpawnElevators.call_timeout(req)
-        res = bool(elevators_res) and all(elevators_res.ret)
+        if req.elevators:
+            await self._clients.SpawnElevators.call_fire_and_forget(req)
+        res = bool(req.elevators)
         self._logger.debug("All elevators spawned successfully.")
         return res
 
@@ -469,11 +494,67 @@ class IsaacSimulator(BaseSim, NodeInterface):
         await self._unpause()
         return True
 
+    async def pause_simulation(self) -> bool:
+        try:
+            await self._pause()
+            return True
+        except Exception as exc:
+            self._logger.error(
+                f'Failed to pause Isaac simulation: {exc}\n{traceback.format_exc()}'
+            )
+            return False
+
+    async def unpause_simulation(self) -> bool:
+        try:
+            await self._unpause()
+            return True
+        except Exception as exc:
+            self._logger.error(
+                f'Failed to unpause Isaac simulation: {exc}\n{traceback.format_exc()}'
+            )
+            return False
+
     async def _pause(self):
-        await self._clients.PauseSimulation.call_timeout(std_srvs.srv.Trigger.Request())
+        response = await self._clients.PauseSimulation.call_timeout(
+            std_srvs.srv.Trigger.Request(),
+            timeout_sec=1.0,
+        )
+        if response is None:
+            self._logger.warning(
+                'PauseSimulation did not return within 1.0s; continuing after best-effort pause request '
+                'because Isaac may still have accepted the command even when the client future does not complete.'
+            )
+        await asyncio.sleep(0)
 
     async def _unpause(self):
-        await self._clients.UnpauseSimulation.call_timeout(std_srvs.srv.Trigger.Request())
+        response = await self._clients.UnpauseSimulation.call_timeout(
+            std_srvs.srv.Trigger.Request(),
+            timeout_sec=1.0,
+        )
+        if response is None:
+            self._logger.warning(
+                'UnpauseSimulation did not return within 1.0s; continuing after best-effort unpause request '
+                'because Isaac may still have accepted the command even when the client future does not complete.'
+            )
+        await asyncio.sleep(0)
+
+    async def step_simulation_once(self) -> bool:
+        try:
+            response = await self._clients.StepSimulation.call_timeout(
+                std_srvs.srv.Trigger.Request(),
+                timeout_sec=1.0,
+            )
+            if response is None:
+                self._logger.warning(
+                    'StepSimulation did not return within 1.0s; sending fire-and-forget step request and continuing.'
+                )
+                await self._clients.StepSimulation.call_fire_and_forget(std_srvs.srv.Trigger.Request())
+            return True
+        except Exception as exc:
+            self._logger.error(
+                f'Failed to request Isaac simulation step: {exc}\n{traceback.format_exc()}'
+            )
+            return False
 
     async def pedestrian_spawn(self, pedestrians):
 
@@ -518,9 +599,10 @@ class IsaacSimulator(BaseSim, NodeInterface):
 
         req = SpawnPedestrians.Request()
         req.pedestrians = list(filter(None, await asyncio.gather(*map(impl, pedestrians))))
-        res = await self._clients.SpawnPedestrians.call_timeout(req)
-        if res is None:
+        if not req.pedestrians:
             return tuple(False for _ in pedestrians)
+
+        await self._clients.SpawnPedestrians.call_fire_and_forget(req)
 
         await self.pedestrian_update(
             arena_people_msgs.msg.Pedestrians(pedestrians=[
@@ -528,13 +610,11 @@ class IsaacSimulator(BaseSim, NodeInterface):
                     name=ped.sim_path,
                     pose=ped.pose.to_msg(),
                 )
-                for status, ped
-                in zip(res.ret, pedestrians)
-                if status
+                for ped in pedestrians
             ])
         )
 
-        return res.ret
+        return tuple(True for _ in pedestrians)
 
     async def pedestrian_update(self, pedestrians):
 
@@ -548,9 +628,11 @@ class IsaacSimulator(BaseSim, NodeInterface):
         goals = list(filter(None, await asyncio.gather(*map(impl, pedestrians.pedestrians))))
         req = NavigatePedestrians.Request()
         req.goals = goals
-        res = await self._clients.NavigatePedestrians.call_timeout(req)
+        if not goals:
+            return tuple()
 
-        return tuple(a and b for a, b in zip(goals, res and res.ret or ()))
+        await self._clients.NavigatePedestrians.call_fire_and_forget(req)
+        return tuple(True for _ in goals)
 
     async def _delete_entity(self, name: str) -> bool:
         self._logger.debug(f"Attempting to delete prim {name}")
@@ -568,13 +650,10 @@ class IsaacSimulator(BaseSim, NodeInterface):
     async def _delete_pedestrians(self, prim_path):
         self._logger.info(f"Attempting to delete prim named {prim_path}")
 
-        res = await self._clients.DeletePedestrians.call_timeout(
+        await self._clients.DeletePedestrians.call_fire_and_forget(
             DeletePrims.Request(names=[prim_path])
         )
-        if res is None:
-            return False
-
-        return res.ret[0]
+        return True
 
     async def _move_entity(self, name: str, pose: Pose) -> bool:
         return (await self._move_entities([(name, pose)]))[0]
@@ -591,11 +670,11 @@ class IsaacSimulator(BaseSim, NodeInterface):
             pose=True,
         )
 
-        response = await self._clients.EditPrims.call_timeout(req)
-        if response is None:
-            return [False] * len(actions)
+        if not actions:
+            return []
 
-        return response.ret
+        await self._clients.EditPrims.call_fire_and_forget(req)
+        return [True] * len(actions)
 
     async def setup(self):
         """

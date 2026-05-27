@@ -171,24 +171,24 @@ def _action_to_command(action: Any, params: dict[str, Any]) -> Optional[tuple[fl
 
     max_linear = float(params['max_linear'])
     max_angular = float(params['max_angular'])
-    invert_turns = bool(params.get('invert_discrete_turns', False))
-    left_sign = -1.0 if invert_turns else 1.0
-    right_sign = 1.0 if invert_turns else -1.0
+    # ROS coordinate convention (REP 103): +angular_z = counter-clockwise = LEFT turn.
+    # InternNav native action ids: 2 = "turn_left", 3 = "turn_right" (in the model's
+    # camera frame).  The discrete→Twist mapping below is the validated, hard-coded
+    # conversion that matches the trajectory policy's passthrough yaw sign:
+    #   action 2 (native "turn_left")  → +angular_z (ROS left / CCW)
+    #   action 3 (native "turn_right") → -angular_z (ROS right / CW)
+    # This mapping is intentionally NOT configurable — a mismatched sign between
+    # discrete and trajectory policies was the root cause of yaw_sign_mismatch_ratio
+    # reaching 0.73–0.96 in earlier eval runs.
     native_label = {0: 'stop', 1: 'forward', 2: 'turn_left', 3: 'turn_right', 5: 'look_down'}.get(
         selected_int,
         'unsupported',
     )
-    effective_label = native_label
-    if selected_int == 2 and invert_turns:
-        effective_label = 'turn_right'
-    elif selected_int == 3 and invert_turns:
-        effective_label = 'turn_left'
     debug = {
         'selected_action': selected_int,
         'action_label': native_label,
         'native_action_label': native_label,
-        'effective_action_label': effective_label,
-        'invert_discrete_turns': invert_turns,
+        'effective_action_label': native_label,
     }
     if selected_int == 0:
         return 0.0, 0.0, 'discrete_stop', debug
@@ -202,12 +202,12 @@ def _action_to_command(action: Any, params: dict[str, Any]) -> Optional[tuple[fl
         # historical gentle forward arc used by the successful eval runs so the
         # robot keeps making visible progress while turning.
         debug['arc_turn'] = True
-        status = 'discrete_turn_right' if invert_turns else 'discrete_turn_left'
-        return max(max_linear * 0.6, 0.12), left_sign * max_angular * 0.25, status, debug
+        # action 2 = native "turn_left" → +angular_z (ROS CCW / left)
+        return max(max_linear * 0.6, 0.12), max_angular * 0.25, 'discrete_turn_left', debug
     if selected_int == 3:
         debug['arc_turn'] = True
-        status = 'discrete_turn_left' if invert_turns else 'discrete_turn_right'
-        return max(max_linear * 0.6, 0.12), right_sign * max_angular * 0.25, status, debug
+        # action 3 = native "turn_right" → -angular_z (ROS CW / right)
+        return max(max_linear * 0.6, 0.12), -max_angular * 0.25, 'discrete_turn_right', debug
     if selected_int == 5:
         debug['look_down_requested'] = True
         return 0.0, 0.0, 'look_down_requested', debug
@@ -311,13 +311,18 @@ class ModelSimBackend(ABC):
     def _log(self, level: str, message: str) -> None:
         if self._logger is None:
             return
-        log_fn = getattr(self._logger, level, None)
-        if callable(log_fn):
-            try:
-                log_fn(message)
-                return
-            except Exception:
-                pass
+        try:
+            if level == 'debug':
+                self._logger.debug(message)
+            elif level == 'info':
+                self._logger.info(message)
+            elif level in ('warn', 'warning'):
+                self._logger.warn(message)
+            elif level == 'error':
+                self._logger.error(message)
+            return
+        except Exception:
+            pass
         try:
             sys.stderr.write(f'[arena_vln_models:{level}] {message}\n')
             sys.stderr.flush()

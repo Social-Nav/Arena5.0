@@ -214,27 +214,15 @@ def test_python_adapter_backend_loads_canonical_target_only():
     assert decision.debug['adapter_target'] == 'arena_vln_models.internnav:load_internnav_adapter'
 
 
-def test_discrete_turn_mapping_supports_inverted_effective_labels():
-    params = {'max_linear': 1.0, 'max_angular': 2.0, 'invert_discrete_turns': True}
-    linear_x, angular_z, status, debug = _action_to_command(2, params)
-    assert status == 'discrete_turn_right'
-    assert linear_x > 0.0
-    assert angular_z < 0.0
-    assert debug['native_action_label'] == 'turn_left'
-    assert debug['effective_action_label'] == 'turn_right'
-    assert debug['invert_discrete_turns'] is True
-    assert debug['arc_turn'] is True
-
-
-def test_discrete_turn_mapping_default_preserves_native_effective_labels():
-    params = {'max_linear': 1.0, 'max_angular': 2.0, 'invert_discrete_turns': False}
+def test_discrete_turn_mapping_preserves_native_labels():
+    """action 2 (native "turn_left") → +angular_z (ROS left / CCW)."""
+    params = {'max_linear': 1.0, 'max_angular': 2.0}
     linear_x, angular_z, status, debug = _action_to_command(2, params)
     assert status == 'discrete_turn_left'
     assert linear_x > 0.0
     assert angular_z > 0.0
     assert debug['native_action_label'] == 'turn_left'
     assert debug['effective_action_label'] == 'turn_left'
-    assert debug['invert_discrete_turns'] is False
     assert debug['arc_turn'] is True
 
 
@@ -264,7 +252,6 @@ def test_trajectory_policy_prefers_trajectory_when_action_is_also_present():
         'max_linear': 0.5,
         'max_angular': 0.5,
         'model_output_policy': 'trajectory',
-        'invert_discrete_turns': False,
     }
 
     decision = backend._coerce_output({
@@ -286,7 +273,6 @@ def test_discrete_policy_forces_action_mapping_for_ablation():
         'max_linear': 0.5,
         'max_angular': 0.5,
         'model_output_policy': 'discrete',
-        'invert_discrete_turns': False,
     }
 
     decision = backend._coerce_output({
@@ -320,20 +306,19 @@ def test_internnav_server_normalizes_legacy_native_adapter_target():
 def test_internnav_cached_command_preserves_last_model_turn_direction():
     server = InternNavServer.__new__(InternNavServer)
     server._state_lock = threading.Lock()
-    server._params = {'camera_stale_after_sec': 2.0, 'invert_discrete_turns': True}
+    server._params = {'camera_stale_after_sec': 2.0}
     server._latest_rgb_ts = 0.0
     server._latest_depth_ts = 0.0
     server._camera_info_ts = 0.0
     server._last_model_decision = ModelSimDecision(
         linear_x=0.36,
-        angular_z=-0.375,
+        angular_z=0.375,
         status='internnav_command',
         degraded=False,
         debug={
             'selected_action': 2,
             'native_action_label': 'turn_left',
-            'effective_action_label': 'turn_right',
-            'invert_discrete_turns': True,
+            'effective_action_label': 'turn_left',
         },
     )
 
@@ -346,7 +331,7 @@ def test_internnav_cached_command_preserves_last_model_turn_direction():
     assert cached is not None
     assert cached.status == 'inference_in_progress_cached_internnav_command'
     assert cached.linear_x == 0.36
-    assert cached.angular_z == -0.375
+    assert cached.angular_z == 0.375
     assert cached.debug['cached_previous_model_command'] is True
     assert cached.debug['cached_selected_action'] == 2
     assert 'selected_action' not in cached.debug
@@ -494,7 +479,7 @@ def test_visualization_image_round_trip_helpers():
     assert int(recovered[0, 0, 1]) == 128
 
 
-def test_debug_overlay_renders_action_and_freshness_diagnostics():
+def test_debug_overlay_renders_current_action_visualization():
     image = np.zeros((180, 240, 3), dtype=np.uint8)
     observation = DualVLNObservation(
         pose=Pose2D(0.0, 0.0, 0.0),
@@ -516,14 +501,7 @@ def test_debug_overlay_renders_action_and_freshness_diagnostics():
         status='internnav_command',
         debug={
             'selected_action': 2,
-            'native_action_label': 'turn_left',
             'effective_action_label': 'turn_right',
-            'invert_discrete_turns': True,
-            'goal_distance': 1.0,
-            'yaw_error': -0.5,
-            'action_history_tail': [2, 2, 1],
-            'sensor_ages_sec': {'rgb': 0.1, 'depth': 0.2, 'camera_info': None},
-            'stale_after_sec': 2.0,
         },
     )
     overlay = render_debug_overlay(image, observation, decision, backend_name='python_adapter')

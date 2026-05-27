@@ -56,6 +56,24 @@ def generate_launch_description():
         '/home/ubuntu/arena_jazzy_ws/install',
         '/opt/ros/jazzy',
     ])
+    isaac_container_shell = (
+        'CONTAINER_NAME="${ARENA_ISAAC_CONTAINER_NAME:-}"; '
+        'if [ -z "$CONTAINER_NAME" ]; then '
+        'CONTAINER_NAME="$(docker ps '
+        '--filter "label=com.docker.compose.project=${ARENA_PROJECT_NAME:-}" '
+        '--filter "label=com.docker.compose.service=isaac" '
+        '--format "{{.Names}}" | head -n 1)"; '
+        'fi; '
+        'if [ -z "$CONTAINER_NAME" ]; then '
+        'CONTAINER_NAME="$(docker ps --filter ancestor=arena_isaac --format "{{.Names}}" | head -n 1)"; '
+        'fi; '
+        'if [ -z "$CONTAINER_NAME" ]; then '
+        'echo "No running Isaac container found for service=isaac or image=arena_isaac" >&2; '
+        'exit 1; '
+        'fi; '
+        'docker exec "$CONTAINER_NAME" bash -lc '
+    )
+
     isaac_cmd = (
         # A previous docker exec can leave Isaac Python alive after the host
         # launch tree is interrupted.  Multiple live PublishTime graphs publish
@@ -119,7 +137,7 @@ def generate_launch_description():
             value='UDPv4',
         ),
         launch.actions.ExecuteProcess(
-            cmd=['bash', '-c', f'docker exec docker-isaac-1 bash -lc "{isaac_cmd}"'],
+            cmd=['bash', '-c', isaac_container_shell + f'"{isaac_cmd}"'],
             sigterm_timeout=launch.substitutions.LaunchConfiguration('sigterm_timeout', default='60'),
             sigkill_timeout=launch.substitutions.LaunchConfiguration('sigkill_timeout', default='30'),
             on_exit=[launch.actions.Shutdown()],
