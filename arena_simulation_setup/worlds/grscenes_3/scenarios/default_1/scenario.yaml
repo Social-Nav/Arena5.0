@@ -1,0 +1,38 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [-15.34857, -4.88135, 82.23483]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.82
+  desired_velocity: 1.06
+  waypoints:
+  - [-15.25308, -4.18112, 90.0]
+  - [-15.25308, -3.35357, 90.0]
+  - [-15.25308, -2.12816, -27.29957]
+  - [-14.75974, -2.38279, 23.49857]
+  - [-14.02768, -2.0645, 75.32361]
+  - [-13.85262, -1.3961, 4.2364]
+  - [-13.42293, -1.36427, 4.2364]
+- name: hunav_2
+  model: male_adult_medical_01
+  pose: [-10.03316, -0.99824, -96.86999]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.76
+  desired_velocity: 0.95
+  waypoints:
+  - [-10.19231, -2.31913, -100.7843]
+  - [-10.25596, -2.65334, -95.44033]
+  - [-10.38328, -3.99015, -79.50852]
+  - [-10.22413, -4.84952, -88.38646]
+  - [-10.19231, -5.97945, -88.38646]
+robot:
+  name: robot
+  pose: [-10.79705, -2.19182, -160.97439]
+  waypoints:
+  - [-11.25857, -2.35096, -160.34617]
+  - [-11.92697, -2.58968, 126.57303]
+  - [-12.29301, -2.09633, 126.57303]
+  behavior: patrolling through the wider central open office path while avoiding the
+    table area
