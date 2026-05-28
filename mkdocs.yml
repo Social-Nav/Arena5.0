@@ -13,12 +13,23 @@ theme:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
+  - Node Interfaces:
+      - Overview: nodes/index.md
+      - TaskGenerator: nodes/task_generator.md
+      - InternNavServer: nodes/internnav_server.md
+      - IsaacController: nodes/isaac_controller.md
+      - RaycastObstaclePublisher: nodes/raycast_obstacle_publisher.md
+      - RobotManager: nodes/robot_manager.md
+      - EvalVideoRecorder: nodes/eval_video_recorder.md
+      - DataRecorder: nodes/data_recorder.md
+      - PedestrianMarkerPublisher: nodes/pedestrian_marker_publisher.md
   - Benchmark:
       - Overview: benchmark/overview.md
       - Architecture: benchmark/architecture.md
       - Running Benchmarks and Social VLN Eval: benchmark/running-benchmarks.md
       - Outputs, Social Metrics, and Aggregation: benchmark/outputs-and-metrics.md
       - Troubleshooting: benchmark/troubleshooting.md
+  - Debugging Runbook: debugging_runbook.md
 markdown_extensions:
   - admonition
   - toc:

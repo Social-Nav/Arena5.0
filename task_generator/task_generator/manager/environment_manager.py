@@ -1,6 +1,5 @@
 import asyncio
 import itertools
-import os
 import typing
 from collections.abc import Callable, Collection, Iterator, Sequence
 from typing import Any, Union
@@ -203,9 +202,6 @@ class EnvironmentManager(NodeInterface, _Realizer):
         )
 
         self.id_generator = itertools.count(434)
-        self._usd_scene_load_lock = asyncio.Lock()
-        self._loaded_usd_scene_paths: set[str] = set()
-        self._inflight_usd_scene_paths: set[str] = set()
 
     async def spawn_world_obstacles(self, world: Union[WorldDescription, USDWorldDescription]):
         """
@@ -217,86 +213,32 @@ class EnvironmentManager(NodeInterface, _Realizer):
         """
         
         # Check if this is a USD world - load the complete USD scene
-        # Fallback: if world is not USDWorldDescription yet, try resolving the
-        # world parameter to see if the map callback hasn't updated it yet.
-        if not isinstance(world, USDWorldDescription):
-            if hasattr(self, '_node') and hasattr(self._node, 'get_parameter'):
-                try:
-                    from arena_simulation_setup.tree.World import World as WorldModule
-                    world_name_param = self._node.get_parameter('world')
-                    world_name = world_name_param.value if world_name_param.type_ != '' else ''
-                    if world_name:
-                        resolved_world = await WorldModule.WorldIdentifier(world_name).resolve()
-                        loaded_desc = resolved_world.load()
-                        if isinstance(loaded_desc, USDWorldDescription):
-                            self._logger.info(
-                                f"Fallback: world param '{world_name}' resolved to USD; "
-                                f"upgrading from {type(world).__name__} to {type(loaded_desc).__name__}"
-                            )
-                            world = loaded_desc
-                except Exception as exc:
-                    self._logger.debug(f'USD fallback resolution failed: {exc}')
-
         if isinstance(world, USDWorldDescription):
-            self._logger.info(f"USD world detected - loading USD scene into Isaac Sim (type={type(world).__name__})")
+            self._logger.info("USD world detected - loading USD scene into Isaac Sim")
 
             usd_path = world.get_usd_path()
-            self._logger.info(f"USD world get_usd_path() returned: {usd_path}")
             if usd_path:
-                raw_usd_path = str(usd_path)
-                resolved_usd_path = raw_usd_path
-                self._logger.info(f"USD raw_usd_path={raw_usd_path}, isabs={os.path.isabs(resolved_usd_path)}, exists={os.path.exists(resolved_usd_path)}")
-                if not os.path.isabs(resolved_usd_path):
-                    resolved_usd_path = os.path.join(str(getattr(world, 'path', '') or ''), resolved_usd_path)
+                if hasattr(self._simulator, 'load_usd_scene'):
+                    usd_scene = world.usd_scene
+                    scale = usd_scene.scale if hasattr(usd_scene, 'scale') else 1.0
+                    position = usd_scene.position if hasattr(usd_scene, 'position') else None
+                    orientation = usd_scene.orientation if hasattr(usd_scene, 'orientation') else None
 
-                if not os.path.exists(resolved_usd_path):
-                    fallback_dir = str(getattr(world, 'path', '') or '')
-                    fallback_name = os.path.basename(raw_usd_path)
-                    fallback_path = os.path.join(fallback_dir, fallback_name) if fallback_dir and fallback_name else ''
-                    if fallback_path and os.path.exists(fallback_path):
-                        self._logger.warning(
-                            'USD world scene path from world.yaml does not exist; '
-                            f'using packaged fallback asset instead: {raw_usd_path} -> {fallback_path}'
-                        )
-                        resolved_usd_path = fallback_path
+                    success = await self._simulator.load_usd_scene(
+                        usd_path=usd_path,
+                        scene_prim_path="/World/Scene",
+                        scale=scale,
+                        position=position,
+                        orientation=orientation,
+                        add_colliders=False,  # GRScenes navigation USD already has collisions
+                        disable_collision_cooking=True,
+                    )
+                    if success:
+                        self._logger.info(f"USD scene loaded successfully: {usd_path}")
                     else:
-                        self._logger.error(
-                            'USD world scene path does not exist and no packaged fallback was found: '
-                            f'{raw_usd_path}'
-                        )
-
-                async with self._usd_scene_load_lock:
-                    if resolved_usd_path in self._loaded_usd_scene_paths:
-                        self._logger.info(f"USD scene already loaded; skipping duplicate request: {resolved_usd_path}")
-                    elif resolved_usd_path in self._inflight_usd_scene_paths:
-                        self._logger.info(f"USD scene load already in flight; skipping duplicate request: {resolved_usd_path}")
-                    elif hasattr(self._simulator, 'load_usd_scene'):
-                        self._inflight_usd_scene_paths.add(resolved_usd_path)
-                        usd_scene = world.usd_scene
-                        scale = usd_scene.scale if hasattr(usd_scene, 'scale') else 1.0
-                        position = usd_scene.position if hasattr(usd_scene, 'position') else None
-                        orientation = usd_scene.orientation if hasattr(usd_scene, 'orientation') else None
-
-                        try:
-                            success = await self._simulator.load_usd_scene(
-                                usd_path=resolved_usd_path,
-                                scene_prim_path="/World/Scene",
-                                scale=scale,
-                                position=position,
-                                orientation=orientation,
-                                add_colliders=False,  # GRScenes navigation USD already has collisions
-                                disable_collision_cooking=True,
-                            )
-                        finally:
-                            self._inflight_usd_scene_paths.discard(resolved_usd_path)
-
-                        if success:
-                            self._loaded_usd_scene_paths.add(resolved_usd_path)
-                            self._logger.info(f"USD scene loaded successfully: {resolved_usd_path}")
-                        else:
-                            self._logger.error(f"Failed to load USD scene: {resolved_usd_path}")
-                    else:
-                        self._logger.warning("Simulator does not support USD scene loading")
+                        self._logger.error(f"Failed to load USD scene: {usd_path}")
+                else:
+                    self._logger.warning("Simulator does not support USD scene loading")
 
             # For USD worlds, still initialize HuNav but without walls/doors
             await self._human_simulator.spawn_world(
@@ -304,28 +246,9 @@ class EnvironmentManager(NodeInterface, _Realizer):
                 doors=tuple(),
             )
             return
-        
-        # Arena based Yaml world spawning
-        self._logger.info(f"Non-USD world spawning (type={type(world).__name__}), walls={len(tuple(world.all_walls))}, doors={len(tuple(world.all_doors))}, floors={len(tuple(world.all_floors))}")
 
-        async def guarded_world_spawn(label: str, coro: typing.Awaitable, timeout_s: float = 45.0):
-            self._logger.info(f"[world-geometry] starting {label}")
-            try:
-                result = await asyncio.wait_for(coro, timeout=max(float(timeout_s), 0.0))
-                self._logger.info(f"[world-geometry] finished {label}")
-                return result
-            except asyncio.TimeoutError:
-                self._logger.warning(
-                    f"[world-geometry] timed out while spawning {label} after {timeout_s:.1f}s; "
-                    "continuing so robot/navigation bringup is not blocked"
-                )
-                return False
-            except Exception as exc:
-                self._logger.warning(
-                    f"[world-geometry] failed while spawning {label}: {exc!r}; "
-                    "continuing so robot/navigation bringup is not blocked"
-                )
-                return False
+
+        # Arena based Yaml world spawning
 
         futures: list[typing.Awaitable] = []
 
@@ -334,38 +257,27 @@ class EnvironmentManager(NodeInterface, _Realizer):
         floors = tuple(world.all_floors)
         elevators = tuple(world.all_elevators)
         if floors:
-            futures.append(guarded_world_spawn('floors', self._simulator.spawn_floors(tuple(map(self.realize, floors)))))
+            futures.append(self._simulator.spawn_floors(tuple(map(self.realize, floors))))
 
         if walls or doors:
             futures.append(
-                guarded_world_spawn(
-                    'walls/doors',
-                    self._human_simulator.spawn_world(
-                        tuple(map(self.realize, walls)),
-                        tuple(map(self.realize, doors)),
-                    ),
-                    timeout_s=75.0,
+                self._human_simulator.spawn_world(
+                    tuple(map(self.realize, walls)),
+                    tuple(map(self.realize, doors)),
                 )
             )
 
         futures.append(
-            guarded_world_spawn(
-                'static obstacles',
-                self._human_simulator.spawn_obstacles(
-                    tuple(map(self.realize, world.all_static_entities)),
-                    layer=ObstacleLayer.WORLD,
-                ),
-                timeout_s=30.0,
+            self._human_simulator.spawn_obstacles(
+                tuple(map(self.realize, world.all_static_entities)),
+                layer=ObstacleLayer.WORLD,
             )
         )
         if elevators:
             self._logger.debug(f"Realized elevators for world: {[e.name for e in elevators]}")
             futures.append(
-                guarded_world_spawn(
-                    'elevators',
-                    self._simulator.spawn_elevators(
-                        tuple(map(self.realize, elevators))
-                    ),
+                self._simulator.spawn_elevators(
+                    tuple(map(self.realize, elevators))
                 )
             )
 

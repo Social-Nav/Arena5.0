@@ -1,0 +1,86 @@
+rosbag2_bagfile_information:
+  version: 9
+  storage_identifier: sqlite3
+  duration:
+    nanoseconds: 9900000000
+  starting_time:
+    nanoseconds_since_epoch: 0
+  message_count: 800
+  topics_with_message_count:
+    - topic_metadata:
+        name: scan
+        type: sensor_msgs/msg/LaserScan
+        serialization_format: cdr
+        offered_qos_profiles:
+          []
+        type_description_hash: ""
+      message_count: 100
+    - topic_metadata:
+        name: ego_image
+        type: sensor_msgs/msg/Image
+        serialization_format: cdr
+        offered_qos_profiles:
+          []
+        type_description_hash: ""
+      message_count: 100
+    - topic_metadata:
+        name: finished
+        type: std_msgs/msg/Empty
+        serialization_format: cdr
+        offered_qos_profiles:
+          []
+        type_description_hash: ""
+      message_count: 100
+    - topic_metadata:
+        name: task_reset
+        type: std_msgs/msg/Int16
+        serialization_format: cdr
+        offered_qos_profiles:
+          []
+        type_description_hash: ""
+      message_count: 100
+    - topic_metadata:
+        name: vln_instruction
+        type: std_msgs/msg/String
+        serialization_format: cdr
+        offered_qos_profiles:
+          []
+        type_description_hash: ""
+      message_count: 100
+    - topic_metadata:
+        name: goal_pose
+        type: geometry_msgs/msg/PoseStamped
+        serialization_format: cdr
+        offered_qos_profiles:
+          []
+        type_description_hash: ""
+      message_count: 100
+    - topic_metadata:
+        name: pose
+        type: geometry_msgs/msg/PoseStamped
+        serialization_format: cdr
+        offered_qos_profiles:
+          []
+        type_description_hash: ""
+      message_count: 100
+    - topic_metadata:
+        name: odom
+        type: nav_msgs/msg/Odometry
+        serialization_format: cdr
+        offered_qos_profiles:
+          []
+        type_description_hash: ""
+      message_count: 100
+  compression_format: ""
+  compression_mode: ""
+  relative_file_paths:
+    - test_bag_0.db3
+  files:
+    - path: test_bag_0.db3
+      starting_time:
+        nanoseconds_since_epoch: 0
+      duration:
+        nanoseconds: 9900000000
+      message_count: 800
+  custom_data: ~
+  ros_distro: jazzy

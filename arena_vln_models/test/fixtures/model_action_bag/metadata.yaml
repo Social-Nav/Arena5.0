@@ -1,0 +1,30 @@
+rosbag2_bagfile_information:
+  version: 9
+  storage_identifier: sqlite3
+  duration:
+    nanoseconds: 3500000000
+  starting_time:
+    nanoseconds_since_epoch: 0
+  message_count: 8
+  topics_with_message_count:
+    - topic_metadata:
+        name: internnav/model_output
+        type: std_msgs/msg/String
+        serialization_format: cdr
+        offered_qos_profiles:
+          []
+        type_description_hash: ""
+      message_count: 8
+  compression_format: ""
+  compression_mode: ""
+  relative_file_paths:
+    - model_action_bag_0.db3
+  files:
+    - path: model_action_bag_0.db3
+      starting_time:
+        nanoseconds_since_epoch: 0
+      duration:
+        nanoseconds: 3500000000
+      message_count: 8
+  custom_data: ~
+  ros_distro: jazzy

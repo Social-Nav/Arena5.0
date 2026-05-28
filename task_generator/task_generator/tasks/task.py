@@ -138,6 +138,7 @@ class Task(_TaskRegistry, NodeInterface, Props_):
             modules=modules,
             **kwargs,
         )
+        await self.robots_manager.set_up()
         return self
 
     def __init__(

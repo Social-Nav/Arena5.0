@@ -137,18 +137,19 @@ class IsaacEvalSimulator(IsaacSimulator):
                         robot_params.odom_frame,
                         publish_fallback_odom_tf=False,
                     )
-                    # Wait for SpawnUsdRobot service to become available before calling.
-                    # Use a longer timeout for the service call itself which internally
-                    # waits for the service to become available via rclpy.
-                    response = await self._spawn_usd_robot_client.call_timeout(
-                        SpawnUsdRobot.Request(
-                            name=fq_name,
-                            usd_path=str(model.path),
-                            robot_namespace=str(self.node.service_namespace(robot.name)).lstrip('/'),
-                            base_frame=robot_params.base_frame or '',
-                            pose=robot.pose.to_msg(),
-                        ),
-                        timeout_sec=120.0,
+                    # Use the same fresh-DDS-participant workaround as LoadUsdScene.
+                    # The long-lived task_generator rclpy participant can discover
+                    # the Isaac service but still miss requests or responses across
+                    # Docker/FastDDS boundaries; a short-lived subprocess behaves
+                    # like `ros2 service call` and has proven reliable for these
+                    # heavyweight Isaac services.
+                    response = await self._spawn_usd_robot_subprocess(
+                        name=fq_name,
+                        usd_path=str(model.path),
+                        robot_namespace=str(self.node.service_namespace(robot.name)).lstrip('/'),
+                        base_frame=robot_params.base_frame or '',
+                        pose=robot.pose,
+                        timeout_sec=float(os.environ.get('ARENA_ISAAC_SPAWN_USD_ROBOT_TIMEOUT_SEC', '300.0')),
                     )
                     if response is None:
                         self._logger.error(
@@ -156,19 +157,19 @@ class IsaacEvalSimulator(IsaacSimulator):
                             'strict eval mode will not continue without a real robot spawn.'
                         )
                         return False
-                    # The legacy _srv endpoint returns an empty path (fire-and-forget),
-                    # so an empty path is acceptable. Only fail if response is None.
-                    spawn_path = str(getattr(response, 'path', '') or '').strip()
+                    spawn_path = str(response.get('path', '') or '').strip()
                     if spawn_path:
                         self._logger.info(
                             f"Spawned USD robot '{robot.name}' via {self._spawn_usd_robot_client.client.srv_name} at "
                             f"{spawn_path}; strict eval mode will wait for real TF/odom/camera readiness before releasing the episode"
                         )
                     else:
-                        self._logger.info(
-                            f"SpawnUsdRobot request sent for '{robot.name}' via {self._spawn_usd_robot_client.client.srv_name} "
-                            f'(fire-and-forget endpoint; will wait for real TF/odom/camera readiness)'
+                        self._logger.error(
+                            f"SpawnUsdRobot returned an empty path for '{robot.name}' via "
+                            f"{self._spawn_usd_robot_client.client.srv_name}; strict eval mode will not continue "
+                            'without a confirmed live robot prim.'
                         )
+                        return False
                     await asyncio.sleep(1.0)
                     self._spawned_usd_robots.add(robot.name)
                     await self._ensure_map_to_world_tf(robot.name)
@@ -268,10 +269,13 @@ class IsaacEvalSimulator(IsaacSimulator):
             )
             return tuple(False for _ in obstacles)
 
-        await self._clients.SpawnPrims.call_fire_and_forget(
-            SpawnPrims.Request(prims=list(filter(None, prims)))
-        )
-        return tuple(prim is not None for prim in prims)
+        req = SpawnPrims.Request(prims=list(filter(None, prims)))
+        response = await self._clients.SpawnPrims.call_timeout(req)
+        if response is None:
+            return tuple(False for _ in obstacles)
+
+        response_iter = iter(response.ret)
+        return tuple((prim is not None) and next(response_iter) for prim in prims)
 
     async def robot_move(self, robots):
         async def move_robot(robot: Robot) -> bool:
@@ -354,10 +358,12 @@ class IsaacEvalSimulator(IsaacSimulator):
             )
         )
 
-        if walls_req.walls:
-            await self._clients.SpawnWalls.call_fire_and_forget(walls_req)
-        if prims_req.prims:
-            await self._clients.SpawnPrims.call_fire_and_forget(prims_req)
+        walls_res = await self._clients.SpawnWalls.call_timeout(walls_req) if walls_req.walls else None
+        prims_res = await self._clients.SpawnPrims.call_timeout(prims_req) if prims_req.prims else None
+        if walls_req.walls and (walls_res is None or not all(walls_res.ret)):
+            return False
+        if prims_req.prims and (prims_res is None or not all(prims_res.ret)):
+            return False
         self._logger.info('All walls spawned.')
         return True
 
@@ -380,7 +386,9 @@ class IsaacEvalSimulator(IsaacSimulator):
 
         floors_req = SpawnFloors.Request(floors=list(filter(None, await asyncio.gather(*map(impl, floors)))))
         if floors_req.floors:
-            await self._clients.SpawnFloors.call_fire_and_forget(floors_req)
+            floors_res = await self._clients.SpawnFloors.call_timeout(floors_req)
+            if floors_res is None or not all(floors_res.ret):
+                return False
         self._logger.info('All floors spawned successfully.')
         return True
 
@@ -404,7 +412,9 @@ class IsaacEvalSimulator(IsaacSimulator):
 
         doors_req = SpawnDoors.Request(doors=list(filter(None, await asyncio.gather(*map(impl, doors)))))
         if doors_req.doors:
-            await self._clients.SpawnDoors.call_fire_and_forget(doors_req)
+            doors_res = await self._clients.SpawnDoors.call_timeout(doors_req)
+            if doors_res is None or not all(doors_res.ret):
+                return False
         self._logger.info('All doors spawned successfully.')
         return True
 
@@ -436,7 +446,9 @@ class IsaacEvalSimulator(IsaacSimulator):
 
         req = SpawnElevators.Request(elevators=list(filter(None, await asyncio.gather(*map(impl, elevators)))))
         if req.elevators:
-            await self._clients.SpawnElevators.call_fire_and_forget(req)
+            elevators_res = await self._clients.SpawnElevators.call_timeout(req)
+            if elevators_res is None or not all(elevators_res.ret):
+                return False
         self._logger.debug('All elevators spawned successfully.')
         return True
 
@@ -488,16 +500,19 @@ class IsaacEvalSimulator(IsaacSimulator):
         if not req.pedestrians:
             return tuple(False for _ in pedestrians)
 
-        await self._clients.SpawnPedestrians.call_fire_and_forget(req)
+        res = await self._clients.SpawnPedestrians.call_timeout(req)
+        if res is None:
+            return tuple(False for _ in pedestrians)
         await self.pedestrian_update(
             arena_people_msgs.msg.Pedestrians(
                 pedestrians=[
                     arena_people_msgs.msg.Pedestrian(name=ped.sim_path, pose=ped.pose.to_msg())
-                    for ped in pedestrians
+                    for status, ped in zip(res.ret, pedestrians)
+                    if status
                 ]
             )
         )
-        return tuple(True for _ in pedestrians)
+        return res.ret
 
     async def pedestrian_update(self, pedestrians):
         async def impl(ped: arena_people_msgs.msg.Pedestrian) -> PedestrianGoal | None:
@@ -511,10 +526,8 @@ class IsaacEvalSimulator(IsaacSimulator):
         if not goals:
             return tuple()
 
-        await self._clients.NavigatePedestrians.call_fire_and_forget(
-            NavigatePedestrians.Request(goals=goals)
-        )
-        return tuple(True for _ in goals)
+        res = await self._clients.NavigatePedestrians.call_timeout(NavigatePedestrians.Request(goals=goals))
+        return tuple(a and b for a, b in zip(goals, res and res.ret or ()))
 
     async def _delete_entity(self, name: str) -> bool:
         self._logger.debug(f'Skipping DeletePrims for fresh Isaac eval stage: {name}')
@@ -525,7 +538,7 @@ class IsaacEvalSimulator(IsaacSimulator):
         return True
 
     async def _move_entities(self, actions: Sequence[tuple[str, Pose]]) -> Sequence[bool]:
-        await self._clients.EditPrims.call_fire_and_forget(
+        response = await self._clients.EditPrims.call_timeout(
             EditPrims.Request(
                 prims=[
                     Prim(name=name, pose=pose.to_msg() if hasattr(pose, 'to_msg') else pose)
@@ -534,7 +547,10 @@ class IsaacEvalSimulator(IsaacSimulator):
                 pose=True,
             )
         )
-        return [True] * len(actions)
+        if response is None:
+            return [False] * len(actions)
+
+        return response.ret
 
     async def setup(self):
         self._logger.info('Setting up IsaacEvalSimulator service clients...')
@@ -620,9 +636,9 @@ class IsaacEvalSimulator(IsaacSimulator):
                 f'Using legacy SpawnUsdRobot endpoint {legacy_spawn_service} for eval compatibility.'
             )
         elif canonical_spawn_service in available_services:
-            self._spawn_usd_robot_client = self._legacy_spawn_usd_robot
+            self._spawn_usd_robot_client = self._clients.SpawnUsdRobot
             self._logger.info(
-                f'Using legacy SpawnUsdRobot endpoint {legacy_spawn_service} for eval compatibility.'
+                f'Using canonical SpawnUsdRobot endpoint {canonical_spawn_service}; legacy endpoint was unavailable.'
             )
         elif spawn_service_override.endswith('_srv'):
             raise RuntimeError(
@@ -682,6 +698,115 @@ class IsaacEvalSimulator(IsaacSimulator):
         except Exception as exc:
             self._logger.error(f'Exception loading USD scene: {exc}\n{traceback.format_exc()}')
             return False
+
+    async def _spawn_usd_robot_subprocess(
+        self,
+        *,
+        name: str,
+        usd_path: str,
+        robot_namespace: str,
+        base_frame: str,
+        pose: Pose,
+        timeout_sec: float = 300.0,
+    ) -> dict | None:
+        """Call SpawnUsdRobot via subprocess to get a fresh DDS participant."""
+        srv_name = self._spawn_usd_robot_client.client.srv_name
+        msg_pose = pose.to_msg() if hasattr(pose, 'to_msg') else pose
+        timeout_sec = max(float(timeout_sec), 1.0)
+
+        script = (
+            "import json, os, sys, time\n"
+            "import rclpy\n"
+            "os.environ.setdefault('ROS_DOMAIN_ID', '1')\n"
+            "os.environ.setdefault('RMW_IMPLEMENTATION', 'rmw_fastrtps_cpp')\n"
+            "os.environ.setdefault('ROS_AUTOMATIC_DISCOVERY_RANGE', 'SUBNET')\n"
+            "os.environ.setdefault('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4')\n"
+            "from isaacsim_msgs.srv import SpawnUsdRobot\n"
+            "rclpy.init()\n"
+            "node = rclpy.create_node('spawn_usd_robot_subprocess')\n"
+            f"client = node.create_client(SpawnUsdRobot, {srv_name!r})\n"
+            "if not client.wait_for_service(timeout_sec=30.0):\n"
+            "    print(json.dumps({'success': False, 'message': 'Service unavailable', 'path': ''}), flush=True)\n"
+            "    node.destroy_node()\n"
+            "    rclpy.shutdown()\n"
+            "    sys.exit(1)\n"
+            "req = SpawnUsdRobot.Request()\n"
+            f"req.name = {name!r}\n"
+            f"req.usd_path = {usd_path!r}\n"
+            f"req.robot_namespace = {robot_namespace!r}\n"
+            f"req.base_frame = {base_frame!r}\n"
+            f"req.pose.position.x = {float(msg_pose.position.x)!r}\n"
+            f"req.pose.position.y = {float(msg_pose.position.y)!r}\n"
+            f"req.pose.position.z = {float(msg_pose.position.z)!r}\n"
+            f"req.pose.orientation.x = {float(msg_pose.orientation.x)!r}\n"
+            f"req.pose.orientation.y = {float(msg_pose.orientation.y)!r}\n"
+            f"req.pose.orientation.z = {float(msg_pose.orientation.z)!r}\n"
+            f"req.pose.orientation.w = {float(msg_pose.orientation.w)!r}\n"
+            "future = client.call_async(req)\n"
+            f"deadline = time.monotonic() + {timeout_sec!r}\n"
+            "while time.monotonic() < deadline and not future.done():\n"
+            "    rclpy.spin_once(node, timeout_sec=0.5)\n"
+            "if future.done():\n"
+            "    try:\n"
+            "        r = future.result()\n"
+            "        print(json.dumps({'success': True, 'message': '', 'path': r.path}), flush=True)\n"
+            "    except Exception as exc:\n"
+            "        print(json.dumps({'success': False, 'message': str(exc), 'path': ''}), flush=True)\n"
+            "else:\n"
+            "    print(json.dumps({'success': False, 'message': 'Timeout', 'path': ''}), flush=True)\n"
+            "node.destroy_node()\n"
+            "rclpy.shutdown()\n"
+        )
+
+        self._logger.info(
+            f'Calling SpawnUsdRobot via subprocess '
+            f'(srv={srv_name}, name={name}, timeout={timeout_sec:.0f}s)'
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable,
+                '-c',
+                script,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec + 30.0)
+        except asyncio.TimeoutError:
+            proc.kill()
+            self._logger.error(f'SpawnUsdRobot subprocess timed out after {timeout_sec:.0f}s')
+            return None
+
+        stdout_text = stdout.decode('utf-8', errors='replace').strip()
+        stderr_text = stderr.decode('utf-8', errors='replace').strip()
+
+        if stderr_text:
+            self._logger.debug(f'SpawnUsdRobot subprocess stderr: {stderr_text[-500:]}')
+
+        if not stdout_text:
+            self._logger.error(f'SpawnUsdRobot subprocess returned no output (rc={proc.returncode})')
+            return None
+
+        for line in reversed(stdout_text.split('\n')):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                import json
+                result = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+
+            if result.get('success'):
+                self._logger.info(f"SpawnUsdRobot succeeded: path={result.get('path', '')}")
+                return result
+
+            self._logger.error(
+                f"SpawnUsdRobot failed via subprocess: {result.get('message', '') or 'unknown error'}"
+            )
+            return None
+
+        self._logger.error(f'SpawnUsdRobot subprocess: could not parse output: {stdout_text[:200]}')
+        return None
 
     async def _load_usd_scene_subprocess(
         self,

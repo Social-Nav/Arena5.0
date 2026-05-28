@@ -146,25 +146,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             modules=list(tm_modules)
         )
 
-        try:
-            synced = await asyncio.wait_for(self._world_manager.sync(), timeout=30.0)
-        except asyncio.TimeoutError:
-            synced = False
-            self.get_logger().warn(
-                "Timed out waiting for world/map synchronization; continuing because the "
-                "world-change callback may already have spawned geometry in Isaac."
-            )
-        if not synced:
-            self.get_logger().warn(
-                "World/map synchronization did not report success before task reset; "
-                "continuing to avoid blocking robot/Nav2 bringup."
-            )
-        if not self._world_geometry_spawned:
-            self.get_logger().warn(
-                "World map synchronized before the world-change spawn callback completed; "
-                "spawning static world geometry explicitly."
-            )
-            await self._spawn_current_world_geometry()
+        await self._world_manager.sync()
         await self.reset_task(first_map=True)
 
         self._check_status_task = asyncio.create_task(self._check_task_status())

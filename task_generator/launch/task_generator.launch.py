@@ -1,6 +1,5 @@
 import os
 import typing
-from pathlib import Path
 
 import launch.event_handlers
 import launch.launch_description_sources
@@ -10,48 +9,6 @@ from arena_bringup.future import PythonExpression
 from arena_bringup.substitutions import CurrentNamespaceSubstitution, LaunchArgument
 
 import launch
-
-
-def _default_map_yaml(world_name: str = 'map_empty') -> str:
-    candidates = []
-
-    host_ws_dir = os.environ.get('HOST_ARENA_WS_DIR', '').strip()
-    if host_ws_dir:
-        candidates.append(
-            Path(host_ws_dir) / 'src' / 'Arena' / 'arena_simulation_setup' / 'worlds' / world_name / 'map' / 'map.yaml'
-        )
-
-    candidates.append(
-        Path('/opt/arena_ws/src/Arena/arena_simulation_setup/worlds') / world_name / 'map' / 'map.yaml'
-    )
-
-    candidates.append(
-        Path(get_package_share_directory('arena_simulation_setup')) / 'worlds' / world_name / 'map' / 'map.yaml'
-    )
-
-    for candidate in candidates:
-        if candidate.exists():
-            return str(candidate)
-
-    fallback = Path(get_package_share_directory('arena_simulation_setup')) / 'worlds' / 'map_empty' / 'map' / 'map.yaml'
-    return str(fallback if fallback.exists() else candidates[0])
-
-
-def _map_yaml_for_world_substitution(world_substitution):
-    """Build a launch-time map.yaml path that follows the selected world.
-
-    map_server used to start with map_empty and rely on WorldManagerROS to
-    replace it.  On slow Isaac/ROS startup the latched map_empty publication can
-    arrive after the world parameter changes and be incorrectly treated as the
-    new world's map, leaving Nav2 planning on map_empty.  Starting map_server
-    with the requested world's map avoids that race.
-    """
-    host_ws_dir = os.environ.get('HOST_ARENA_WS_DIR', '').strip()
-    if host_ws_dir:
-        base = Path(host_ws_dir) / 'src' / 'Arena' / 'arena_simulation_setup' / 'worlds'
-    else:
-        base = Path(get_package_share_directory('arena_simulation_setup')) / 'worlds'
-    return [str(base) + '/', world_substitution, '/map/map.yaml']
 
 
 def generate_launch_description():
@@ -296,10 +253,7 @@ def generate_launch_description():
     map_server_node = launch.actions.IncludeLaunchDescription(
         launch.launch_description_sources.PythonLaunchDescriptionSource(
             os.path.join(bringup_dir, "launch/utils/map_server.launch.py")
-        ),
-        launch_arguments={
-            'yaml_filename': _map_yaml_for_world_substitution(world.substitution),
-        }.items(),
+        )
     )
 
     # Hunavsim Pedestrians in rviz

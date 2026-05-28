@@ -1,9 +1,7 @@
 
 import asyncio
 import os
-import shutil
 import tempfile
-import time
 import traceback
 import typing
 from pathlib import Path
@@ -16,11 +14,13 @@ import nav2_msgs.srv
 import nav_msgs.msg
 import numpy as np
 import yaml
+from ament_index_python.packages import get_package_share_directory
 from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.Time import Time
 from arena_simulation_setup.shared import Position
 from arena_simulation_setup.tree import DynamicPaths
 
+import launch
 from task_generator import NodeInterface
 from task_generator.manager.environment_manager import EnvironmentManager
 
@@ -54,74 +54,43 @@ class MapServerHandler(NodeInterface):
     """Handler functions for the map server lifecycle.
     """
 
-    async def _try_activate_map_server(self, map_server_name: str, *, timeout: float) -> bool:
-        try:
-            activated = await self.node.change_lifecycle_state_async(
-                map_server_name,
-                lifecycle_msgs.msg.Transition.TRANSITION_ACTIVATE,
-                timeout=timeout,
-            )
-        except Exception as exc:
-            self._logger.warn(f'failed to activate map server {map_server_name}: {exc}')
-            return False
-        if activated:
-            self._logger.info(f'map server {map_server_name} activated.')
-        return activated
-
-    async def _try_configure_map_server(self, map_server_name: str, *, timeout: float) -> bool:
-        try:
-            configured = await self.node.change_lifecycle_state_async(
-                map_server_name,
-                lifecycle_msgs.msg.Transition.TRANSITION_CONFIGURE,
-                timeout=timeout,
-            )
-        except Exception as exc:
-            self._logger.warn(f'failed to configure map server {map_server_name}: {exc}')
-            return False
-        if configured:
-            self._logger.info(f'map server {map_server_name} configured.')
-        return configured
-
     async def ensure_map_server(self):
-        """Wait for the launch-managed map server to become active.
+        """Restart the map server if it is not active.
         """
 
-        map_server_name = self.node.service_namespace('map_server')
-        deadline = time.monotonic() + 60.0
-        wait_interval = 1.0
+        wait_interval = 15.0
 
-        while time.monotonic() < deadline:
-            try:
-                state = await self.node.get_lifecycle_state_async(
-                    map_server_name,
-                    timeout=wait_interval,
-                )
-            except Exception as exc:
-                self._logger.warn(
-                    f'waiting for map server lifecycle services: {exc}'
-                )
-            else:
-                if state.id == lifecycle_msgs.msg.State.PRIMARY_STATE_ACTIVE:
-                    self._logger.info('map server active.')
-                    return
+        while not await self.node.wait_for_lifecycle_state_async(
+            self.node.service_namespace('map_server'),
+            lifecycle_msgs.msg.State.PRIMARY_STATE_ACTIVE,
+            timeout=wait_interval,
+        ):
+            wait_interval = min(wait_interval * 2, 60.0)
 
-                if state.id == lifecycle_msgs.msg.State.PRIMARY_STATE_INACTIVE:
-                    if await self._try_activate_map_server(map_server_name, timeout=wait_interval):
-                        continue
-                elif state.id == lifecycle_msgs.msg.State.PRIMARY_STATE_UNCONFIGURED:
-                    configured = await self._try_configure_map_server(map_server_name, timeout=wait_interval)
-                    if configured:
-                        await self._try_activate_map_server(map_server_name, timeout=wait_interval)
-                        continue
+            self._logger.warn('shutting down map server...')
 
-                self._logger.warn(
-                    f'waiting for map server to become active (current state: {state.label})'
-                )
+            await self.node.change_lifecycle_state_async(
+                self.node.service_namespace('map_server'),
+                lifecycle_msgs.msg.Transition.TRANSITION_DESTROY
+            )
 
-            await asyncio.sleep(wait_interval)
-            wait_interval = min(wait_interval * 2, 5.0)
+            self._logger.warn('map server shut down.')
+            self._logger.warn('relaunching map server...')
 
-        raise RuntimeError(f'map server {map_server_name} did not become active in time')
+            await self.node.do_launch(
+                launch.LaunchDescription([
+                    launch.actions.IncludeLaunchDescription(
+                        launch.launch_description_sources.PythonLaunchDescriptionSource(
+                            os.path.join(
+                                get_package_share_directory('arena_bringup'),
+                                'launch/utils/map_server.launch.py'
+                            )
+                        )
+                    )
+                ])
+            )
+
+        self._logger.info('map server launched.')
 
 
 class WorldManagerROS(MapServerHandler, WorldManager):
@@ -169,70 +138,18 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         )
         origin[0] = shifted_origin.x
         origin[1] = shifted_origin.y
-        map_yaml['origin'] = [float(value) for value in origin]
+        map_yaml['origin'] = origin
         with open(Path(map_tmpdir.name) / 'map.yaml', 'w') as f:
             yaml.safe_dump(map_yaml, f)
 
-        # Copy all non-YAML assets into the temporary directory instead of
-        # symlinking them. Jazzy's map_server is stricter about transient map
-        # metadata / asset resolution during LoadMap, and using concrete files
-        # keeps the shifted map self-contained.
+        # symlink all non-targets
         for item in os.listdir(map_dir):
             base = map_dir / item
             if base == target:
                 continue
-            destination = Path(map_tmpdir.name) / item
-            if base.is_dir():
-                shutil.copytree(base, destination, symlinks=True)
-            else:
-                shutil.copy2(base, destination)
+            os.symlink(base, Path(map_tmpdir.name) / item)
 
         return map_tmpdir
-
-    def _load_world_map_from_yaml(self, map_yaml_path: str) -> WorldMap:
-        """Load a WorldMap directly from a map.yaml file.
-
-        The launch-time map server already starts with the requested world map,
-        but in slow Docker/Isaac startups the LoadMap service can time out while
-        the map topic is still usable.  Build the task-generator WorldMap from
-        the same YAML/image on disk so random start/goal generation never falls
-        back to the dummy 0,0 map when only the service response is delayed.
-        """
-        with open(map_yaml_path, 'r') as f:
-            metadata = yaml.safe_load(f) or {}
-        image_path = Path(map_yaml_path).parent / str(metadata.get('image', ''))
-
-        from PIL import Image
-
-        image = np.asarray(Image.open(image_path).convert('L'), dtype=np.float32)
-        negate = int(metadata.get('negate', 0))
-        free_thresh = float(metadata.get('free_thresh', 0.196))
-        occupied_thresh = float(metadata.get('occupied_thresh', 0.65))
-        if negate:
-            occ = image / 255.0
-        else:
-            occ = (255.0 - image) / 255.0
-
-        data = np.full(occ.shape, -1, dtype=np.int8)
-        data[occ > occupied_thresh] = 100
-        data[occ < free_thresh] = 0
-
-        grid = nav_msgs.msg.OccupancyGrid()
-        grid.info.height = int(data.shape[0])
-        grid.info.width = int(data.shape[1])
-        grid.info.resolution = float(metadata.get('resolution', 0.05))
-        origin = list(metadata.get('origin', [0.0, 0.0, 0.0]))
-        grid.info.origin.position.x = float(origin[0])
-        grid.info.origin.position.y = float(origin[1])
-        grid.info.origin.orientation.w = 1.0
-        grid.info.map_load_time = self.node.sim_time.to_msg()
-        grid.data = data.reshape(-1).astype(int).tolist()
-
-        world_map = WorldMap.from_costmap(grid)
-        if self._origin is not None:
-            world_map.origin = self._origin
-            self._origin = None
-        return world_map
 
     def _world_callback(self, value: typing.Any) -> bool:
         """Handle world change events.
@@ -261,11 +178,6 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         self._logger.warn(f'Loading World {world_name}')
         self._world_name = world_name
 
-        try:
-            self.node.wait_for(self.ensure_map_server())
-        except Exception as exc:
-            self._logger.warn(f'failed to ensure active map server before loading world {world_name}: {exc}')
-
         world = World.WorldIdentifier(world_name).resolve_sync()
         tmp_map = self._shift_map(world.map.path)
         map_yaml = os.path.join(
@@ -273,44 +185,21 @@ class WorldManagerROS(MapServerHandler, WorldManager):
             'map.yaml',
         )
 
-        response = None
-        last_result: int | None = None
-        try:
-            for attempt in range(10):
-                response = self._cli.call_timeout_sync(
-                    nav2_msgs.srv.LoadMap.Request(
-                        map_url=f'{map_yaml}'
-                    )
-                )
-
-                if response is None:
-                    self._logger.warn(
-                        f'failed to load map for world {world_name}: service timed out '
-                        f'(attempt {attempt + 1}/10)'
-                    )
-                else:
-                    last_result = response.result
-                    if response.result == 0:
-                        return True
-                    self._logger.warn(
-                        f'failed to load map for world {world_name}: status code {response.result} '
-                        f'(attempt {attempt + 1}/10)'
-                    )
-
-                time.sleep(1.0)
-
-            self._logger.warn(
-                f'LoadMap did not complete for world {world_name}; using direct map.yaml fallback '
-                f'(last status: {last_result if last_result is not None else "timeout"})'
+        response = self._cli.call_timeout_sync(
+            nav2_msgs.srv.LoadMap.Request(
+                map_url=f'{map_yaml}'
             )
-            DynamicPaths.WORLD.path = world.path
-            self.update_world(
-                world_map=self._load_world_map_from_yaml(map_yaml),
-                world_description=world.load(),
-            )
-            return True
-        finally:
-            tmp_map.cleanup()
+        )
+
+        tmp_map.cleanup()
+
+        if response is None:
+            raise RuntimeError(
+                f'failed to load map for world {world_name}: service timed out')
+
+        if response.result > 0:
+            raise RuntimeError(
+                f'failed to load map for world {world_name}: status code {response.result}')
 
         return True
 
@@ -320,10 +209,6 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         Args:
             costmap (nav_msgs.msg.OccupancyGrid): The updated costmap.
         """
-        if not self.world_name:
-            self._logger.debug('ignoring map update before world parameter is initialized')
-            return
-
         if self._map.time <= costmap.info.map_load_time:
 
             world = await World.WorldIdentifier(self.world_name).resolve()
@@ -340,10 +225,10 @@ class WorldManagerROS(MapServerHandler, WorldManager):
             )
 
             self._map_name = self.world_name
-            results = await asyncio.gather(*(callback() for callback in self._callbacks), return_exceptions=True)
-            for result in results:
-                if isinstance(result, Exception):
-                    self._logger.warning(f'encountered exception in world callback: {result}')
+            try:
+                await asyncio.gather(*(callback() for callback in self._callbacks), return_exceptions=True)
+            except Exception as e:
+                self._logger.warning(f'encountered exception in world callback: {e}\n{traceback.format_exc()}')
 
     def on_world_change(self, callback: typing.Callable[[], typing.Awaitable[None]]):
         """Register a callback to be called when the world changes.

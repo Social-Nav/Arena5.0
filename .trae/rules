@@ -1,0 +1,8 @@
+禁止用 dummy/fallback 数据填补缺失的传感器状态；系统必须等待真实 TF/odom/camera 等 topic 就绪，否则 early exit / fail fast。
+
+# 项目约束文件
+在开始任何工作前，必须先阅读工作区根目录下的 AGENTS.md 文件（/home/ubuntu/arena_jazzy_ws/AGENTS.md），其中包含：
+- Docker + Isaac Sim 执行环境硬性约束（禁止在宿主机运行 ROS/colcon/eval）
+- GPU 残留进程清理流程
+- Context7 MCP 文档查询约定
+违反 AGENTS.md 中的约束可能导致环境损坏或无效操作。
