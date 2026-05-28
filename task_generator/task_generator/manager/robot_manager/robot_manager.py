@@ -485,7 +485,15 @@ class RobotManager(NodeInterface):
         """Publish the goal to the robot once reset state is synchronized."""
         wait_for_world_geometry_ready = getattr(self.node, 'wait_for_world_geometry_ready', None)
         if callable(wait_for_world_geometry_ready):
-            if not await wait_for_world_geometry_ready(timeout_s=90.0):
+            # Large USD scenes can spend several minutes inside the Isaac
+            # LoadUsdScene service before the task generator marks world
+            # geometry ready.  Keep the goal barrier longer than the per-sensor
+            # readiness checks so slow scene composition does not race goal
+            # publication.
+            geometry_timeout_s = float(
+                self.node.rosparam[float].get('world_geometry_ready_timeout_sec', 600.0)
+            )
+            if not await wait_for_world_geometry_ready(timeout_s=geometry_timeout_s):
                 raise RuntimeError('World geometry did not report ready before goal publish.')
 
         if not await self._wait_for_sim_tick(timeout_s=120.0):

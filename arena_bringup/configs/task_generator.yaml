@@ -1,5 +1,10 @@
 /**:
   ros__parameters:
+    # GRScenes-style USD composition can take several minutes in Isaac Sim.
+    # Keep navigation readiness barriers long enough to wait for real scene,
+    # TF, odom, and camera topics instead of racing goal publication.
+    episode_navigation_ready_timeout_sec: 900.0
+    world_geometry_ready_timeout_sec: 600.0
     task:
       parametrized:
         file: default.xml

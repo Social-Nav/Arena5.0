@@ -6,3 +6,19 @@
 - GPU 残留进程清理流程
 - Context7 MCP 文档查询约定
 违反 AGENTS.md 中的约束可能导致环境损坏或无效操作。
+
+# GRScenes 天花板渲染可视化开关
+GRScenes 室内 USD 场景的 `sim_top_down` debug 视频默认需要能透过天花板看到室内过程；相关逻辑位于 `arena_isaac/arena_isaac/isaac_utils/usd_scene_loader.py`，通过隐藏匹配到的 ceiling/roof `UsdGeom.Imageable` prim 实现，只影响渲染可见性，不删除 prim，也不修改 collision/physics。
+
+可通过 `USDSceneLoader.load_scene(..., load_config=...)` 控制：
+- `hide_ceiling_prims`: `true/false`，是否隐藏天花板/屋顶类 prim。
+- `ceiling_name_patterns`: 字符串列表，大小写不敏感的 prim path/name 子串匹配规则；默认建议为 `['ceiling', 'ceil', 'roof']`。
+
+也可通过 Isaac 运行环境变量控制：
+- `ARENA_ISAAC_HIDE_CEILING_PRIMS=0/1`：全局关闭/开启天花板隐藏。
+- `ARENA_ISAAC_CEILING_NAME_PATTERNS=ceiling,ceil,roof`：覆盖默认匹配规则，使用逗号分隔。
+
+调试建议：
+- 若 `sim_top_down.mp4` 被天花板完全遮挡，确认 `ARENA_ISAAC_HIDE_CEILING_PRIMS` 未被设为 `0`，并检查 `ceiling_name_patterns` 是否覆盖了当前资产中的 ceiling/roof 命名。
+- 若需要验证原始资产天花板效果，可临时设置 `ARENA_ISAAC_HIDE_CEILING_PRIMS=0` 后重跑 eval；重跑前仍必须遵守 AGENTS.md 的 Isaac/eval 残留进程清理流程。
+
