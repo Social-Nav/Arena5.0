@@ -101,22 +101,22 @@ fi
 
 echo 'Building Arena...'
 cd $ARENA_WS_DIR
-bash -lc "source \"$ARENA_WS_DIR/arena\" >/dev/null && arena build"
+bash -lc "source \"$ARENA_WS_DIR/arena\" -c 'arena build'"
 
 if [ "$ARENA_VALIDATE_BOOTSTRAP" = 1 ]; then
-    bash -lc "source \"$ARENA_WS_DIR/arena\" >/dev/null && arena validate bootstrap"
+    bash -lc "source \"$ARENA_WS_DIR/arena\" -c 'arena validate bootstrap'"
 fi
 
 if [ ${#ARENA_OPTIONAL_FEATURES[@]} -gt 0 ]; then
     echo 'Installing optional Arena features...'
     for feature in "${ARENA_OPTIONAL_FEATURES[@]}"; do
         echo "  - $feature"
-        bash -lc "source \"$ARENA_WS_DIR/arena\" >/dev/null && arena feature '$feature' install"
+        bash -lc "source \"$ARENA_WS_DIR/arena\" -c 'arena feature '$feature' install'"
     done
 fi
 
 if [ "$ARENA_VALIDATE_BOOTSTRAP" = 1 ]; then
-    bash -lc "source \"$ARENA_WS_DIR/arena\" >/dev/null && arena validate bootstrap"
+    bash -lc "source \"$ARENA_WS_DIR/arena\" -c 'arena validate bootstrap'"
 fi
 
 echo 'Installed Arena'

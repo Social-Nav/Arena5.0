@@ -159,8 +159,8 @@ if [ -z ${ARENA_SOURCED+x} ] ; then
         case "$verb" in
             build)
                 "${TOOLS_DIR}/colcon_build" "$@"
-                . "$SOURCE_FILE"
                 result=$?
+                . "$SOURCE_FILE"
             ;;
             update)
                 "${TOOLS_DIR}/pull" "$@"
@@ -207,8 +207,12 @@ if [ -z ${ARENA_SOURCED+x} ] ; then
                 "${TOOLS_DIR}/smoke_isaac_eval" "$@"
                 result=$?
             ;;
+            minimum-test|min-test)
+                "${TOOLS_DIR}/minimum_run_test" "$@"
+                result=$?
+            ;;
             *)
-                echo 'Usage: arena <build|update|launch|deactivate|feature|validate|smoke> [args...]'
+                echo 'Usage: arena <build|update|launch|deactivate|feature|validate|smoke|minimum-test> [args...]'
                 result=1
             ;;
         esac

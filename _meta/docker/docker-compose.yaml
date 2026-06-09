@@ -4,9 +4,15 @@ services:
     build:
       context: .
       dockerfile: src/Arena/_meta/docker/features/docker/Dockerfile
+      network: host
       args:
         - gid=${HOST_GID}
         - uid=${HOST_UID}
+        - APT_TIMEOUT_SEC=${APT_TIMEOUT_SEC:-3600}
+        - HTTP_PROXY=${HTTP_PROXY:-}
+        - HTTPS_PROXY=${HTTPS_PROXY:-}
+        - http_proxy=${http_proxy:-}
+        - https_proxy=${https_proxy:-}
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
       - "/tmp/.X11-unix:/tmp/.X11-unix:rw"
@@ -27,17 +33,34 @@ services:
       - TMPDIR=/tmp/shared
       - DISPLAY
       - UV_LINK_MODE=copy
+      - UV_NO_PROGRESS=1
+      - UV_HTTP_TIMEOUT
+      - UV_CONCURRENT_DOWNLOADS
+      - UV_INDEX_URL
       - ARENA_IMAGE
       - ARENA_PROJECT_NAME
       - ARENA_ROS_DISTRO
+      - ARENA_UV_SYNC_TIMEOUT_SEC
+      - ARENA_APT_UPDATE_TIMEOUT_SEC
+      - ARENA_SKIP_APT_UPDATE
+      - ARENA_VCSTOOL_UPDATE_TIMEOUT_SEC
+      - ARENA_SKIP_VCSTOOL_UPDATE
+      - HTTP_PROXY
+      - HTTPS_PROXY
+      - NO_PROXY
+      - http_proxy
+      - https_proxy
+      - no_proxy
       - HOST_UID
       - HOST_GID
+      - HOST_DOCKER_GID
       - HOST_ARENA_WS_DIR
     env_file:
       - "$HOST_ARENA_WS_DIR/.env"
     user: "${HOST_UID}"
     group_add:
       - sudo
+      - "${HOST_DOCKER_GID}"
     network_mode: host
     command: ["bash"]
     stdin_open: true 
@@ -57,13 +80,14 @@ services:
     build:
       context: .
       dockerfile: src/Arena/_meta/docker/features/isaac/Dockerfile
+      network: host
       args:
-        - HTTP_PROXY=${HTTP_PROXY}
-        - HTTPS_PROXY=${HTTPS_PROXY}
-        - NO_PROXY=${NO_PROXY}
-        - http_proxy=${http_proxy}
-        - https_proxy=${https_proxy}
-        - no_proxy=${no_proxy}
+        - HTTP_PROXY=${HTTP_PROXY:-}
+        - HTTPS_PROXY=${HTTPS_PROXY:-}
+        - NO_PROXY=${NO_PROXY:-}
+        - http_proxy=${http_proxy:-}
+        - https_proxy=${https_proxy:-}
+        - no_proxy=${no_proxy:-}
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
       - "/tmp/.X11-unix:/tmp/.X11-unix:rw"
@@ -84,9 +108,24 @@ services:
       - TMPDIR=/tmp/shared
       - QT_X11_NO_MITSHM=1
       - UV_LINK_MODE=copy
+      - UV_NO_PROGRESS=1
+      - UV_HTTP_TIMEOUT
+      - UV_CONCURRENT_DOWNLOADS
+      - UV_INDEX_URL
       - ARENA_IMAGE
       - ARENA_PROJECT_NAME
       - ARENA_ROS_DISTRO
+      - ARENA_UV_SYNC_TIMEOUT_SEC
+      - ARENA_APT_UPDATE_TIMEOUT_SEC
+      - ARENA_SKIP_APT_UPDATE
+      - ARENA_VCSTOOL_UPDATE_TIMEOUT_SEC
+      - ARENA_SKIP_VCSTOOL_UPDATE
+      - HTTP_PROXY
+      - HTTPS_PROXY
+      - NO_PROXY
+      - http_proxy
+      - https_proxy
+      - no_proxy
       - HOST_UID
       - HOST_ARENA_WS_DIR
       - ROS_DOMAIN_ID=1

@@ -23,14 +23,17 @@ export GIT_CONFIG_VALUE_1="ssh://git@github.com/"
 
 if [ ! -f /.built ]; then
     echo "Running initial setup..."
-    sudo touch /.built
     if [ -f /opt/arena_ws/src/Arena/.gitmodules ]; then
         echo "Initializing git submodules..."
-        git -C /opt/arena_ws/src/Arena submodule sync --recursive || true
-        git -C /opt/arena_ws/src/Arena submodule update --init --recursive || true
+        if [ -z "${HTTP_PROXY}${HTTPS_PROXY}${http_proxy}${https_proxy}" ]; then
+            echo "WARNING: no HTTP(S) proxy is configured; git submodule update requires working internet access." >&2
+        fi
+        git -C /opt/arena_ws/src/Arena submodule sync --recursive
+        git -C /opt/arena_ws/src/Arena submodule update --init --recursive
     fi
-    arena update || true
-    BUILD_ALL=1 arena build || true
+    arena update
+    BUILD_ALL=1 arena build
+    sudo touch /.built
     echo 'Initial setup complete.'
     echo -e '\033[0mRun \033[01;33marena feature docker commit\033[0m to save this state.'
 fi

@@ -17,7 +17,7 @@ dependencies = [
     "PyYAML",
     "filelock",
     "scipy",
-    "empy",
+    "empy==3.3.4",
     "defusedxml",
     "lxml",
     "netifaces",
