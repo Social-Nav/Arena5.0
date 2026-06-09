@@ -1,9 +1,37 @@
 #! /usr/bin/env python3
 import asyncio
+import threading
 import traceback
 import rclpy
+import rclpy.action
 import rclpy.executors
 from .node import TaskGenerator
+
+
+def patch_action_client_lock_race():
+    """Pre-create ActionClient._lock before it is added to the executor.
+
+    ROS 2 Jazzy's rclpy ActionClient initializes ``_lock`` at the end of
+    ``__init__``, after the waitable has already been registered on the node.
+    The task generator spins a MultiThreadedExecutor while async setup is still
+    creating the Nav2 action client, so the executor can briefly observe a
+    partially constructed ActionClient and call get_num_entities() before
+    ``_lock`` exists.  Pre-creating the lock keeps that construction window safe
+    while preserving the upstream implementation for all normal behavior.
+    """
+    action_client_cls = rclpy.action.ActionClient
+    if getattr(action_client_cls, '_arena_precreates_lock', False):
+        return
+
+    original_init = action_client_cls.__init__
+
+    def _arena_safe_init(self, *args, **kwargs):
+        if not hasattr(self, '_lock'):
+            self._lock = threading.Lock()
+        original_init(self, *args, **kwargs)
+
+    action_client_cls.__init__ = _arena_safe_init
+    action_client_cls._arena_precreates_lock = True
 
 
 def spin_blocking(executor):
@@ -23,6 +51,7 @@ async def app_logic(node):
 async def main_async(args=None):
     del args
     rclpy.init()
+    patch_action_client_lock_race()
     loop = asyncio.get_running_loop()
 
     executor = rclpy.executors.MultiThreadedExecutor()

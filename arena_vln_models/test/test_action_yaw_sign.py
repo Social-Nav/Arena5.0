@@ -8,8 +8,12 @@ ROS convention: +angular_z = counter-clockwise = LEFT turn
                  -angular_z = clockwise = RIGHT turn
 
 InternNav native convention (camera frame):
-  action 2 = native "turn_left"  → +angular_z (ROS left / CCW)
-  action 3 = native "turn_right" → -angular_z (ROS right / CW)
+  action 2 = native "turn_left"  → +angular_z in generic discrete mapping
+  action 3 = native "turn_right" → -angular_z in generic discrete mapping
+
+Arena official-discrete primitive convention (Isaac/Ai2_Bot2):
+  action 2 = native "turn_left"  → -cmd_vel angular_z, observed as +odom yaw
+  action 3 = native "turn_right" → +cmd_vel angular_z, observed as -odom yaw
 
 The mapping is hard-coded (no invert_discrete_turns parameter) to match the
 trajectory policy's passthrough yaw sign.  A mismatched sign between discrete
@@ -70,6 +74,7 @@ from arena_vln_models.backends import (
     PythonAdapterBackend,
     DualVLNObservation,
     _action_to_command,
+    _official_discrete_primitive,
     _trajectory_control_step,
 )
 
@@ -80,6 +85,7 @@ def _discrete_params():
     return {
         'max_linear': 1.0,
         'max_angular': 2.0,
+        'discrete_arc_turn': True,
     }
 
 
@@ -131,59 +137,24 @@ class TestDiscreteActionFullMatrix:
             f"action 2 ang={ang2}, action 3 ang={ang3} — should have opposite signs"
         )
 
+    def test_official_discrete_turn_primitives_are_in_place_bounded_and_compensated(self):
+        lin2, ang2, status2, debug2 = _official_discrete_primitive(2, _discrete_params())
+        lin3, ang3, status3, debug3 = _official_discrete_primitive(3, _discrete_params())
+        assert lin2 == 0.0
+        assert lin3 == 0.0
+        assert ang2 < 0.0
+        assert ang3 > 0.0
+        assert status2 == 'official_discrete_turn_left_primitive'
+        assert status3 == 'official_discrete_turn_right_primitive'
+        assert debug2['official_discrete_primitive'] is True
+        assert debug3['primitive_interface'] == 'single_cmd_vel_tick'
 
-# ── Synthetic trajectory yaw sign ────────────────────────────────────────────
-
-class TestSyntheticTrajectoryYawSign:
-    """Verify _action_to_synthetic_trajectory produces correct yaw signs.
-
-    The function is defined inside a raw string literal (worker code) and
-    executed in a subprocess, so we extract it via exec().
-    """
-
-    @staticmethod
-    def _synthetic(action):
-        from arena_vln_models.internnav import InternNavSubprocessAdapter
-        worker_code = InternNavSubprocessAdapter._worker_code()
-        # Strip the main block (parser + parse_args + main()) to avoid argparse errors
-        main_start = worker_code.find('\nparser = argparse.ArgumentParser()')
-        if main_start != -1:
-            worker_code = worker_code[:main_start]
-        namespace = {}
-        exec(worker_code, namespace)
-        return namespace['_action_to_synthetic_trajectory'](action)
-
-    def test_forward_has_zero_yaw(self):
-        traj = self._synthetic(1)
-        assert traj == [[0.25, 0.0, 0.0]]
-
-    def test_stop_has_zero_yaw(self):
-        traj = self._synthetic(0)
-        assert traj == [[0.0, 0.0, 0.0]]
-
-    def test_action_2_yaw_positive(self):
-        """action 2 (native left) → +yaw (ROS left / CCW)."""
-        traj = self._synthetic(2)
-        assert traj[0][2] > 0.0, f"action 2 yaw should be positive, got {traj[0][2]}"
-
-    def test_action_3_yaw_negative(self):
-        """action 3 (native right) → -yaw (ROS right / CW)."""
-        traj = self._synthetic(3)
-        assert traj[0][2] < 0.0, f"action 3 yaw should be negative, got {traj[0][2]}"
-
-    def test_synthetic_yaw_matches_discrete_angular_z_sign(self):
-        """Synthetic trajectory yaw sign must match discrete action angular_z sign."""
-        for action_id in (2, 3):
-            traj = self._synthetic(action_id)
-            _lin, ang, _status, _debug = _action_to_command(
-                action_id, _discrete_params()
-            )
-            traj_yaw = traj[0][2]
-            # Both should have the same sign (both represent the same turn direction)
-            assert (traj_yaw > 0.0) == (ang > 0.0), (
-                f"action={action_id}: "
-                f"trajectory yaw={traj_yaw}, discrete angular_z={ang} — signs must match"
-            )
+    def test_official_discrete_forward_primitive_moves_forward_only(self):
+        lin, ang, status, debug = _official_discrete_primitive(1, _discrete_params())
+        assert lin > 0.0
+        assert ang == 0.0
+        assert status == 'official_discrete_forward_primitive'
+        assert debug['primitive_forward_speed'] <= _discrete_params()['max_linear']
 
 
 # ── Trajectory control step ──────────────────────────────────────────────────
@@ -414,7 +385,7 @@ class TestActionEdgeCases:
     def test_turn_linear_has_minimum(self):
         """Turn actions have a minimum forward speed so robot makes visible progress."""
         lin, ang, _status, _debug = _action_to_command(2, {
-            'max_linear': 0.1, 'max_angular': 2.0,
+            'max_linear': 0.1, 'max_angular': 2.0, 'discrete_arc_turn': True,
         })
         assert lin == 0.12  # max(0.1*0.6, 0.12) = 0.12
         assert ang > 0.0

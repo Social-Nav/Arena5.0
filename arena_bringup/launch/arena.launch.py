@@ -255,7 +255,7 @@ def generate_launch_description():
         name='internnav_external_server',
         default_value='false',
         choices=['true', 'false'],
-        description='Use an externally launched InternNav/dual_vln_server instead of starting one in the Arena container'
+        description='Use the dedicated internnav-1 InternNav server instead of starting a model server in arena-1'
     )
     dual_vln_external_server = declare_legacy_alias('dual_vln_external_server', internnav_external_server)
     internnav_command_service = LaunchArgument(
@@ -367,6 +367,7 @@ def generate_launch_description():
             float,
         )
         d = typing.cast(float, d)
+        scenario_file_value = scenario_file.substitution
 
         # Log env_n value
         launch.actions.LogInfo(
@@ -390,7 +391,8 @@ def generate_launch_description():
                     headlessness=PythonExpression([headless.substitution, '>1']),
                     namespace=base_namespace,
                     prefix='',
-                    reference=list(next(references))
+                    reference=list(next(references)),
+                    scenario_file_value=scenario_file_value,
                 )
             )
 
@@ -402,7 +404,8 @@ def generate_launch_description():
                         headlessness=PythonExpression([headless.substitution, '>-1']),
                         namespace=os.path.join(base_namespace, prefix),
                         prefix=prefix,
-                        reference=list(next(references))
+                        reference=list(next(references)),
+                        scenario_file_value=scenario_file_value,
                     )
                 )
 
@@ -420,9 +423,14 @@ def generate_launch_description():
         headlessness,
         namespace: str,
         prefix: str,
-        reference: typing.List[float]
+        reference: typing.List[float],
+        scenario_file_value,
     ):
         return IsolatedGroupAction([
+            launch.actions.SetEnvironmentVariable(
+                name='ARENA_SCENARIO_FILE',
+                value=scenario_file.substitution,
+            ),
             LogInfo(msg=[
                 TextSubstitution(text="Spawning task_generator with namespace: "),
                 TextSubstitution(text=namespace)
@@ -448,7 +456,7 @@ def generate_launch_description():
                     **human.dict,
                     **tm_obstacles.dict,
                     **tm_robots.dict,
-                    **scenario_file.dict,
+                    'scenario_file': scenario_file_value,
                     **tm_modules.dict,
                     **robot.dict,
                     **inter_planner.dict,

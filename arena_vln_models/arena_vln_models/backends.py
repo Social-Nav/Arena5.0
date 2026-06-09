@@ -171,6 +171,7 @@ def _action_to_command(action: Any, params: dict[str, Any]) -> Optional[tuple[fl
 
     max_linear = float(params['max_linear'])
     max_angular = float(params['max_angular'])
+    discrete_arc_turn = bool(params.get('discrete_arc_turn', False))
     # ROS coordinate convention (REP 103): +angular_z = counter-clockwise = LEFT turn.
     # InternNav native action ids: 2 = "turn_left", 3 = "turn_right" (in the model's
     # camera frame).  The discrete→Twist mapping below is the validated, hard-coded
@@ -195,24 +196,76 @@ def _action_to_command(action: Any, params: dict[str, Any]) -> Optional[tuple[fl
     if selected_int == 1:
         return max(max_linear * 0.6, 0.05), 0.0, 'discrete_forward', debug
     if selected_int == 2:
-        # In Arena's real robot/Isaac direct bridge, InternNav frequently emits
-        # repeated turn actions before it ever produces a forward token.  If
-        # turns execute as pure in-place rotation, eval videos can appear
-        # stationary even though the policy is actively steering.  Preserve the
-        # historical gentle forward arc used by the successful eval runs so the
-        # robot keeps making visible progress while turning.
-        debug['arc_turn'] = True
+        debug['arc_turn'] = discrete_arc_turn
+        debug['discrete_turn_mode'] = 'arc' if discrete_arc_turn else 'in_place'
         # action 2 = native "turn_left" → +angular_z (ROS CCW / left)
-        return max(max_linear * 0.6, 0.12), max_angular * 0.25, 'discrete_turn_left', debug
+        linear_x = max(max_linear * 0.6, 0.12) if discrete_arc_turn else 0.0
+        return linear_x, max_angular * 0.25, 'discrete_turn_left', debug
     if selected_int == 3:
-        debug['arc_turn'] = True
+        debug['arc_turn'] = discrete_arc_turn
+        debug['discrete_turn_mode'] = 'arc' if discrete_arc_turn else 'in_place'
         # action 3 = native "turn_right" → -angular_z (ROS CW / right)
-        return max(max_linear * 0.6, 0.12), -max_angular * 0.25, 'discrete_turn_right', debug
+        linear_x = max(max_linear * 0.6, 0.12) if discrete_arc_turn else 0.0
+        return linear_x, -max_angular * 0.25, 'discrete_turn_right', debug
     if selected_int == 5:
         debug['look_down_requested'] = True
         return 0.0, 0.0, 'look_down_requested', debug
     debug['unsupported_action'] = selected_int
     return 0.0, 0.0, 'unsupported_discrete_action', debug
+
+
+def _official_discrete_primitive(
+    action: Any,
+    params: dict[str, Any],
+) -> Optional[tuple[float, float, str, dict[str, Any]]]:
+    """Bound one official symbolic action to a single Arena primitive.
+
+    This keeps the official DualVLN arrow protocol discrete: one model token is
+    converted to one bounded cmd_vel response, then Arena can request the next
+    visual/model decision instead of replaying an unbounded cached turn.
+    """
+    command = _action_to_command(action, params)
+    if command is None:
+        return None
+    linear_x, angular_z, status, debug = command
+    try:
+        action_id = int(debug.get('selected_action'))
+    except (TypeError, ValueError):
+        action_id = None
+
+    default_forward_speed = float(params.get('max_linear', 0.6)) * 0.35
+    default_turn_speed = float(params.get('max_angular', 1.5)) * 0.35
+    try:
+        forward_speed = float(params.get('official_discrete_forward_speed', default_forward_speed))
+    except (TypeError, ValueError):
+        forward_speed = default_forward_speed
+    try:
+        turn_speed = float(params.get('official_discrete_turn_speed', default_turn_speed))
+    except (TypeError, ValueError):
+        turn_speed = default_turn_speed
+    if forward_speed <= 0.0:
+        forward_speed = default_forward_speed
+    if turn_speed <= 0.0:
+        turn_speed = default_turn_speed
+    forward_speed = clamp(forward_speed, 0.05, float(params['max_linear']))
+    turn_speed = clamp(turn_speed, 0.05, float(params['max_angular']))
+
+    debug['official_discrete_primitive'] = True
+    debug['primitive_interface'] = 'single_cmd_vel_tick'
+    debug['primitive_forward_speed'] = forward_speed
+    debug['primitive_turn_speed'] = turn_speed
+    if action_id == 1:
+        return forward_speed, 0.0, 'official_discrete_forward_primitive', debug
+    if action_id == 2:
+        # Isaac/Ai2_Bot2 applies the native official-discrete turn command with
+        # the opposite odom yaw sign, so compensate at the bounded primitive
+        # boundary while keeping the native symbolic label traceable.
+        return 0.0, -turn_speed, 'official_discrete_turn_left_primitive', debug
+    if action_id == 3:
+        return 0.0, turn_speed, 'official_discrete_turn_right_primitive', debug
+    if action_id in {0, 5}:
+        return linear_x, angular_z, status, debug
+    return linear_x, angular_z, status, debug
 
 
 def _goal_debug(observation: ModelSimObservation) -> dict[str, Any]:
@@ -737,6 +790,18 @@ class PythonAdapterBackend(ModelSimBackend):
             debug = _sanitize_debug(output.get('debug', {}))
             debug.setdefault('raw_model_output', _to_jsonable(output))
             debug.setdefault('raw_model_output_type', type(output).__name__)
+            for key in (
+                'raw_output_text',
+                'llm_output',
+                'llm_digits',
+                'digit_groups',
+                'model_generation_output_mode',
+                'symbolic_action_seq',
+                'generated_token_ids',
+                'pixel_goal',
+            ):
+                if key in output and key not in debug:
+                    debug[key] = _to_jsonable(output[key])
             target_pixel = output.get('target_pixel')
             if target_pixel is None:
                 target_pixel = output.get('output_pixel', output.get('pixel_goal'))
@@ -778,13 +843,21 @@ class PythonAdapterBackend(ModelSimBackend):
             def _discrete_decision() -> Optional[ModelSimDecision]:
                 if discrete_action is None or 'linear_x' in output or 'angular_z' in output:
                     return None
-                command = _action_to_command(discrete_action, self._params)
+                symbolic_policy = str(debug.get('symbolic_fallback_policy', '') or self._params.get('internnav_symbolic_fallback_policy', '')).strip().lower()
+                official_discrete = symbolic_policy in {'official', 'official_discrete', 'discrete', 'action', 'actions', 'queue'}
+                command = (
+                    _official_discrete_primitive(discrete_action, self._params)
+                    if official_discrete
+                    else _action_to_command(discrete_action, self._params)
+                )
                 if command is None:
                     return None
                 linear_x, angular_z, status, action_debug = command
                 debug.update(action_debug)
                 debug.setdefault('converted_status', status)
                 debug.setdefault('selected_output_mode', 'discrete')
+                debug.setdefault('official_discrete_selected', official_discrete)
+                debug.setdefault('command_generation_stage', 'symbolic_action_to_cmd_vel')
                 if trajectory is not None:
                     first_step = _trajectory_first_step(trajectory)
                     if first_step is not None:
@@ -798,7 +871,28 @@ class PythonAdapterBackend(ModelSimBackend):
                 )
 
             if output_policy == 'trajectory':
-                decision = _trajectory_decision() or _discrete_decision()
+                debug.setdefault('trajectory_policy_requested', True)
+                if trajectory is None:
+                    debug.setdefault('trajectory_missing_under_policy', True)
+                    debug.setdefault(
+                        'trajectory_missing_warning',
+                        'model_output_policy=trajectory but adapter output did not contain output_trajectory/trajectory.',
+                    )
+                decision = _trajectory_decision()
+                if decision is None and trajectory is not None:
+                    debug.setdefault('trajectory_invalid_under_policy', True)
+                    debug.setdefault(
+                        'trajectory_invalid_warning',
+                        'model_output_policy=trajectory but output_trajectory/trajectory could not be converted to a control step.',
+                    )
+                if decision is None:
+                    decision = _discrete_decision()
+                    if decision is not None:
+                        debug.setdefault('trajectory_policy_fallback', True)
+                        debug.setdefault(
+                            'trajectory_warning',
+                            'model_output_policy=trajectory but no usable trajectory was available; falling back to discrete output.',
+                        )
                 if decision is not None:
                     return decision
             elif output_policy == 'discrete':

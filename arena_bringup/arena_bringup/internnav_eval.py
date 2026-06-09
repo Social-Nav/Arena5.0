@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import re
 import signal
 import shutil
 import subprocess
@@ -607,6 +608,21 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
     stale_records = 0
     missing_rgb = 0
     missing_depth = 0
+    official_primitive_count = 0
+    official_discrete_selected_count = 0
+    queued_action_tail_record_count = 0
+    dropped_action_tail_record_count = 0
+    dropped_action_tail_count = 0
+    action_effect_count = 0
+    yaw_sign_action_effect_match = 0
+    yaw_sign_action_effect_mismatch = 0
+    llm_raw_present_count = 0
+    llm_raw_has_digits_count = 0
+    llm_digits_present_count = 0
+    llm_digits_non_empty_count = 0
+    llm_raw_has_digits_but_digits_empty_count = 0
+    llm_symbolic_output_count = 0
+    llm_pixel_goal_output_count = 0
     goal_distances = []
     final_goal_distances = []
     yaw_errors = []
@@ -617,6 +633,32 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
         event_counts[event_type] = event_counts.get(event_type, 0) + 1
         payload = rec.get('parsed') if isinstance(rec.get('parsed'), dict) else rec
         debug = payload.get('debug') if isinstance(payload.get('debug'), dict) else {}
+        llm = payload.get('llm') if isinstance(payload.get('llm'), dict) else {}
+        raw_llm = (
+            llm.get('raw_output_text')
+            or debug.get('raw_output_text')
+            or debug.get('subprocess_llm_output')
+            or debug.get('adapter_llm_output')
+            or debug.get('llm_output')
+        )
+        llm_digits = llm.get('llm_digits') if 'llm_digits' in llm else debug.get('llm_digits', debug.get('digit_groups'))
+        if raw_llm:
+            llm_raw_present_count += 1
+        raw_has_digits = bool(raw_llm and re.search(r'\d+', str(raw_llm)))
+        if raw_has_digits:
+            llm_raw_has_digits_count += 1
+        if llm_digits is not None:
+            llm_digits_present_count += 1
+        digits_non_empty = isinstance(llm_digits, list) and len(llm_digits) > 0
+        if digits_non_empty:
+            llm_digits_non_empty_count += 1
+        if raw_has_digits and not digits_non_empty:
+            llm_raw_has_digits_but_digits_empty_count += 1
+        output_mode = str(llm.get('output_mode') or debug.get('model_generation_output_mode') or '')
+        if output_mode == 'symbolic_action':
+            llm_symbolic_output_count += 1
+        elif output_mode == 'pixel_goal':
+            llm_pixel_goal_output_count += 1
         status = str(payload.get('status', ''))
         statuses[status] = statuses.get(status, 0) + 1
 
@@ -634,6 +676,25 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
         if status == 'internnav_command':
             model_command_record_count += 1
         action_info = payload.get('action') if isinstance(payload.get('action'), dict) else {}
+        if action_info.get('official_discrete_selected') or debug.get('official_discrete_selected'):
+            official_discrete_selected_count += 1
+        if action_info.get('official_discrete_primitive') or debug.get('official_discrete_primitive'):
+            official_primitive_count += 1
+        queued_tail = action_info.get('queued_action_sequence_tail', debug.get('queued_action_sequence_tail'))
+        if isinstance(queued_tail, list):
+            queued_action_tail_record_count += 1
+        dropped_tail = action_info.get('dropped_action_sequence_tail', debug.get('dropped_action_sequence_tail'))
+        if isinstance(dropped_tail, list):
+            dropped_action_tail_record_count += 1
+            dropped_action_tail_count += len(dropped_tail)
+        action_effect = payload.get('action_effect', debug.get('action_effect'))
+        if isinstance(action_effect, dict):
+            action_effect_count += 1
+            sign_match = action_effect.get('yaw_sign_matches_action')
+            if sign_match is True:
+                yaw_sign_action_effect_match += 1
+            elif sign_match is False:
+                yaw_sign_action_effect_mismatch += 1
         action = action_info.get('selected')
         if action is None:
             action = debug.get('selected_action')
@@ -712,6 +773,12 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
         flags.append('possible_stale_observations')
     if missing_rgb or missing_depth:
         flags.append('missing_camera_inputs')
+    if official_discrete_selected_count and official_primitive_count == 0:
+        flags.append('missing_official_discrete_primitive_conversion')
+    if dropped_action_tail_count:
+        flags.append('official_discrete_action_tail_dropped')
+    if llm_raw_has_digits_but_digits_empty_count:
+        flags.append('llm_digits_drop_suspected')
 
     summary = {
         'trace_path': trace_path,
@@ -729,6 +796,25 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
             'forward_count': forward_count,
             'forward_ratio': forward_ratio,
             'stop_count': stop_count,
+        },
+        'official_discrete_stats': {
+            'official_discrete_selected_count': official_discrete_selected_count,
+            'official_discrete_primitive_count': official_primitive_count,
+            'queued_action_tail_record_count': queued_action_tail_record_count,
+            'dropped_action_tail_record_count': dropped_action_tail_record_count,
+            'dropped_action_tail_count': dropped_action_tail_count,
+            'action_effect_count': action_effect_count,
+            'yaw_sign_action_effect_match_count': yaw_sign_action_effect_match,
+            'yaw_sign_action_effect_mismatch_count': yaw_sign_action_effect_mismatch,
+        },
+        'llm_trace_stats': {
+            'raw_llm_present_count': llm_raw_present_count,
+            'raw_llm_has_digits_count': llm_raw_has_digits_count,
+            'llm_digits_present_count': llm_digits_present_count,
+            'llm_digits_non_empty_count': llm_digits_non_empty_count,
+            'raw_has_digits_but_llm_digits_empty_count': llm_raw_has_digits_but_digits_empty_count,
+            'symbolic_output_count': llm_symbolic_output_count,
+            'pixel_goal_output_count': llm_pixel_goal_output_count,
         },
         'goal_distance': {
             'first': first_distance,
@@ -1948,7 +2034,12 @@ def _terminate_process_tree(proc: subprocess.Popen, *, grace_period_sec: float =
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Run a reproducible Arena InternNav eval.')
+    parser = argparse.ArgumentParser(
+        description=(
+            'Run a reproducible Arena InternNav eval from arena-1. '
+            'Real InternNav model inference is always external and must be served by internnav-1.'
+        )
+    )
     parser.add_argument('--sim', default='isaac_eval')
     parser.add_argument('--human', default='hunav')
     parser.add_argument('--world', default='map_empty')
@@ -2002,7 +2093,13 @@ def main() -> int:
     )
     parser.add_argument('--internnav-look-down', '--dual-vln-look-down', dest='dual_vln_look_down', action='store_true')
     parser.add_argument('--internnav-enable-visualization', '--dual-vln-enable-visualization', dest='dual_vln_enable_visualization', action='store_true')
-    parser.add_argument('--internnav-external-server', '--dual-vln-external-server', dest='internnav_external_server', action='store_true')
+    parser.add_argument(
+        '--internnav-external-server',
+        '--dual-vln-external-server',
+        dest='internnav_external_server',
+        action='store_true',
+        help='Use the dedicated internnav-1 model server. This is the required/default mode for real InternNav eval.',
+    )
     parser.add_argument('--internnav-command-service', '--dual-vln-command-service', dest='dual_vln_command_service', default='')
     parser.add_argument('--internnav-visualization-topic', '--dual-vln-visualization-topic', dest='dual_vln_visualization_topic', default='internnav/debug_image')
     parser.add_argument('--internnav-action-visualization-topic', '--dual-vln-action-visualization-topic', dest='dual_vln_action_visualization_topic', default='internnav/action_image')
@@ -2042,6 +2139,10 @@ def main() -> int:
     parser.add_argument('--skip-metrics', action='store_true')
     parser.add_argument('extra_launch_args', nargs='*', help='Additional KEY:=VALUE launch arguments')
     args = parser.parse_args()
+    if str(args.dual_vln_mode).strip().lower() == 'internnav':
+        args.internnav_external_server = True
+        args.dual_vln_require_real_backend = False
+        args.dual_vln_strict_device = False
     if args.social_eval:
         if args.tm_robots == 'random':
             args.tm_robots = 'scenario'
@@ -2071,6 +2172,8 @@ def main() -> int:
     video_error_path = os.path.join(output_dir, 'video_recording_error.txt')
 
     env = os.environ.copy()
+    if args.scenario_file:
+        env['ARENA_SCENARIO_FILE'] = str(args.scenario_file)
     resolved_ros_env = _normalize_external_ros_env(env) if args.internnav_external_server else {
         key: {'value': str(env.get(key, '')).strip(), 'source': 'environment' if str(env.get(key, '')).strip() else 'unset'}
         for key in ('ROS_DOMAIN_ID', 'RMW_IMPLEMENTATION', 'ROS_LOCALHOST_ONLY')
@@ -2396,7 +2499,13 @@ def main() -> int:
         if timeout_wall_sec <= 0.0:
             timeout_wall_factor = max(float(args.timeout_wall_factor or 1.0), 1.0)
             timeout_wall_sec = max(float(args.timeout) * timeout_wall_factor, float(args.timeout) + 120.0)
-        launch_timeout_sec = max(timeout_wall_sec * max(args.episodes, 1) + 180.0, 300.0)
+        # The wrapper timeout must include pre-episode Isaac readiness time in
+        # addition to the task_generator's per-episode wall timeout.  Large
+        # GRScenes USD loads routinely spend several minutes in LoadUsdScene
+        # before task_reset is published, so a small fixed 180s startup margin
+        # can kill the eval before the episode is released even though the
+        # task_generator's own episode timeout has not started yet.
+        launch_timeout_sec = max(timeout_wall_sec * max(args.episodes, 1) + 600.0, 300.0)
 
     video_proc = None
     if args.save_eval_video:
@@ -2502,6 +2611,28 @@ def main() -> int:
     video_index = _read_json_if_exists(video_index_path) if args.save_eval_video else None
     video_error = _read_text_if_exists(video_error_path) if args.save_eval_video else None
     video_returncode = video_proc.returncode if video_proc is not None else None
+    video_artifacts_complete = None
+    video_artifact_issues: list[str] = []
+    if args.save_eval_video:
+        video_artifacts_complete = False
+        episodes = video_index.get('episodes') if isinstance(video_index, dict) else []
+        if not episodes:
+            video_artifact_issues.append('missing_video_episodes')
+        else:
+            video_artifacts_complete = True
+            for episode in episodes:
+                if not isinstance(episode, dict):
+                    continue
+                for field in ('ego_frames', 'debug_overlay_frames', 'top_down_frames'):
+                    if int(episode.get(field, 0) or 0) <= 0:
+                        video_artifacts_complete = False
+                        video_artifact_issues.append(f'{field}_empty')
+    if internnav_diagnostic_summary is not None and video_artifact_issues:
+        flags = internnav_diagnostic_summary.setdefault('fault_candidates', {}).setdefault('flags', [])
+        if 'missing_or_empty_video_artifacts' not in flags:
+            flags.append('missing_or_empty_video_artifacts')
+        with open(internnav_diagnostic_summary_path, 'w', encoding='utf-8') as f:
+            json.dump(internnav_diagnostic_summary, f, ensure_ascii=False, indent=2, sort_keys=True)
     end_reason = _classify_end_reason(
         finished_observed=finished_observed,
         launch_returncode=launch_returncode,
@@ -2517,6 +2648,8 @@ def main() -> int:
     manifest['artifacts']['video_index_present'] = video_index is not None
     manifest['artifacts']['video_index'] = video_index
     manifest['artifacts']['video_recording_error'] = video_error
+    manifest['artifacts']['video_artifacts_complete'] = video_artifacts_complete
+    manifest['artifacts']['video_artifact_issues'] = video_artifact_issues
     manifest['result'].update(
         {
             'finished_observed': finished_observed,

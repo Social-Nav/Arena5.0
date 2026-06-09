@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import textwrap
+from collections.abc import Mapping
 from typing import Optional
 
 import numpy as np
@@ -88,6 +89,126 @@ def _coerce_points(value: object) -> list[tuple[int, int]]:
     return points
 
 
+def _first_present(*values: object) -> object:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def _mapping_get(mapping: object, *keys: str) -> object:
+    if not isinstance(mapping, Mapping):
+        return None
+    for key in keys:
+        if key in mapping:
+            return mapping.get(key)
+    return None
+
+
+def _point_in_image(point: tuple[int, int], width: int, height: int) -> bool:
+    return 0 <= point[0] < width and 0 <= point[1] < height
+
+
+def _coerce_image_point(value: object, width: int, height: int) -> Optional[tuple[int, int]]:
+    # Some adapters return normalized [0, 1] coordinates.  Treat them as image
+    # pixels only when both axes are in the normalized range.
+    if isinstance(value, (list, tuple)) and len(value) >= 2:
+        try:
+            x = float(value[0])
+            y = float(value[1])
+        except (TypeError, ValueError):
+            return None
+        if 0.0 <= x <= 1.0 and 0.0 <= y <= 1.0:
+            normalized = (int(round(x * (width - 1))), int(round(y * (height - 1))))
+            if _point_in_image(normalized, width, height):
+                return normalized
+    point = _coerce_point(value)
+    if point is None:
+        return None
+    if _point_in_image(point, width, height):
+        return point
+    return None
+
+
+def _coerce_local_trajectory_points(value: object) -> list[tuple[float, float]]:
+    """Convert a trajectory-like object to local (forward, lateral) points.
+
+    InternNav's System-1 trajectory is usually a list of dense local waypoints
+    ``[x_forward_m, y_left_m, yaw]``.  Some debug paths contain a single control
+    step instead.  Keep the parser permissive so the overlay can still show a
+    useful path when the adapter shape changes slightly.
+    """
+    if value is None:
+        return []
+    if isinstance(value, np.ndarray):
+        value = value.tolist()
+    if isinstance(value, Mapping):
+        value = _first_present(
+            value.get('output_trajectory'),
+            value.get('trajectory'),
+            value.get('trajectory_preview'),
+            value.get('points'),
+        )
+    if not isinstance(value, (list, tuple)) or not value:
+        return []
+
+    # Single waypoint/control step: [x, y, yaw].
+    if len(value) >= 2 and not isinstance(value[0], (list, tuple, dict, np.ndarray)):
+        try:
+            return [(float(value[0]), float(value[1]))]
+        except (TypeError, ValueError):
+            return []
+
+    points: list[tuple[float, float]] = []
+    for item in value:
+        if isinstance(item, np.ndarray):
+            item = item.tolist()
+        if isinstance(item, Mapping):
+            item = _first_present(item.get('point'), item.get('xy'), item.get('position'), item.get('waypoint'))
+        if not isinstance(item, (list, tuple)) or len(item) < 2:
+            continue
+        try:
+            points.append((float(item[0]), float(item[1])))
+        except (TypeError, ValueError):
+            continue
+    return points
+
+
+def _local_trajectory_to_image_points(
+    trajectory: object,
+    width: int,
+    height: int,
+) -> list[tuple[int, int]]:
+    local_points = _coerce_local_trajectory_points(trajectory)
+    if not local_points:
+        return []
+
+    max_forward = max(max(point[0] for point in local_points), 0.5)
+    lateral_extent = max(max(abs(point[1]) for point in local_points), 0.35)
+    # Draw a paper-style egocentric route ribbon on the lower half of the camera
+    # image: robot at bottom center, forward direction upwards, lateral left/right
+    # mapped to screen left/right.  This is intentionally a visualization of the
+    # model's local trajectory, not a calibrated 3D projection.
+    origin = (width // 2, height - max(36, height // 12))
+    vertical_scale = (height * 0.44) / max_forward
+    horizontal_scale = (width * 0.30) / lateral_extent
+    pixels = [origin]
+    for forward_m, lateral_m in local_points:
+        if not math.isfinite(forward_m) or not math.isfinite(lateral_m):
+            continue
+        x = int(round(origin[0] + lateral_m * horizontal_scale))
+        y = int(round(origin[1] - max(forward_m, 0.0) * vertical_scale))
+        x = max(0, min(width - 1, x))
+        y = max(0, min(height - 1, y))
+        pixels.append((x, y))
+    return pixels
+
+
+def _short_text(value: object, limit: int = 72) -> str:
+    text = str(value or '')
+    return text if len(text) <= limit else text[: max(limit - 1, 0)] + '…'
+
+
 def _draw_marker(draw: ImageDraw.ImageDraw, point: tuple[int, int], color: tuple[int, int, int], label: str) -> None:
     x, y = point
     radius = 8
@@ -104,6 +225,15 @@ def _draw_path(draw: ImageDraw.ImageDraw, points: list[tuple[int, int]], color: 
         draw.ellipse((point[0] - 3, point[1] - 3, point[0] + 3, point[1] + 3), fill=color)
     if points:
         draw.text((points[0][0] + 8, points[0][1] + 8), label, fill=color)
+
+
+def _draw_label_panel(draw: ImageDraw.ImageDraw, lines: list[str], width: int) -> None:
+    line_height = 18
+    panel_width = min(width - 16, max(260, 18 + max((len(line) for line in lines), default=0) * 8))
+    panel_height = 18 + line_height * max(len(lines), 1) + 8
+    draw.rectangle([(8, 8), (8 + panel_width, panel_height)], fill=(0, 0, 0), outline=(0, 255, 0), width=2)
+    for index, line in enumerate(lines):
+        draw.text((18, 18 + index * line_height), line, fill=(255, 255, 255))
 
 
 def _draw_arrow(
@@ -217,14 +347,62 @@ def render_debug_overlay(
         action_parts.append('stop')
     action_text = 'action: ' + (' | '.join(action_parts) if action_parts else 'n/a')
 
-    line_height = 18
-    panel_height = 18 + line_height + 12
-    panel_width = min(width - 16, max(150, 18 + len(action_text) * 8))
-    draw.rectangle([(8, 8), (8 + panel_width, panel_height)], fill=(0, 0, 0), outline=(0, 255, 0), width=2)
-    draw.text((18, 18), action_text, fill=(255, 255, 255))
+    debug = decision.debug
+    raw_model_output = debug.get('raw_model_output')
+    output_mode = _first_present(
+        debug.get('model_generation_output_mode'),
+        debug.get('selected_output_mode'),
+        _mapping_get(raw_model_output, 'model_generation_output_mode', 'selected_output_mode'),
+    )
+    pixel_goal_raw = _first_present(
+        debug.get('pixel_goal'),
+        debug.get('target_pixel'),
+        debug.get('output_pixel'),
+        _mapping_get(raw_model_output, 'pixel_goal', 'target_pixel', 'output_pixel'),
+    )
+    pixel_goal = _coerce_image_point(pixel_goal_raw, width, height)
+    trajectory_raw = _first_present(
+        debug.get('trajectory_preview'),
+        debug.get('output_trajectory'),
+        debug.get('trajectory'),
+        _mapping_get(raw_model_output, 'output_trajectory', 'trajectory', 'trajectory_preview'),
+    )
+    trajectory_pixels_raw = _first_present(
+        debug.get('trajectory_pixels'),
+        debug.get('image_trajectory'),
+        _mapping_get(raw_model_output, 'trajectory_pixels', 'image_trajectory'),
+    )
+    trajectory_pixels = [point for point in _coerce_points(trajectory_pixels_raw) if _point_in_image(point, width, height)]
+    if not trajectory_pixels:
+        trajectory_pixels = _local_trajectory_to_image_points(trajectory_raw, width, height)
+    trajectory_point_count = max(len(trajectory_pixels) - 1, 0) if trajectory_pixels else 0
+
+    info_lines = [
+        action_text,
+        f'output: {_short_text(output_mode or decision.status, 56)}',
+        f'pixel goal: {list(pixel_goal) if pixel_goal is not None else _short_text(pixel_goal_raw or "n/a", 44)}',
+        f'trajectory: {trajectory_point_count} pts | vx={float(decision.linear_x):.2f} wz={float(decision.angular_z):.2f}',
+    ]
+    raw_llm = _first_present(
+        debug.get('raw_output_text'),
+        debug.get('subprocess_llm_output'),
+        debug.get('adapter_llm_output'),
+        debug.get('llm_output'),
+    )
+    if raw_llm:
+        info_lines.append('llm: ' + _short_text(raw_llm, 68))
+    _draw_label_panel(draw, info_lines, width)
 
     center = (width // 2, height - 36)
     draw.ellipse((center[0] - 7, center[1] - 7, center[0] + 7, center[1] + 7), fill=(255, 255, 255))
+
+    if trajectory_pixels:
+        _draw_path(draw, trajectory_pixels, (64, 200, 255), 'S1 trajectory')
+        if len(trajectory_pixels) >= 2:
+            _draw_arrow(draw, trajectory_pixels[-2], trajectory_pixels[-1], (64, 200, 255), width=3)
+
+    if pixel_goal is not None:
+        _draw_marker(draw, pixel_goal, (80, 255, 80), 'S2 pixel goal')
 
     glyph_color = (80, 255, 80) if not decision.degraded else (255, 160, 80)
     glyph_center = (width - 76, height - 70)

@@ -71,7 +71,14 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         self._completed_episodes = 0
         self._finished_published = False
         self._world_geometry_spawned = False
+        # Start unblocked until a real world-spawn callback begins.  The world
+        # manager can emit the callback before episode entity gates are used, but
+        # when that callback blocks on a heavyweight Isaac USD load the robot
+        # manager must still be allowed to create the robot/cameras that some
+        # eval paths need for readiness.  _spawn_current_world_geometry clears
+        # this event for the actual static-world spawn transaction.
         self._world_geometry_ready: asyncio.Event = asyncio.Event()
+        self._world_geometry_ready.set()
         self._episode_entities_ready: asyncio.Event = asyncio.Event()
         self._human_states_ready: asyncio.Event = asyncio.Event()
         self._last_human_states_count = 0

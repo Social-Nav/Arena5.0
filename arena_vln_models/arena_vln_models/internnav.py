@@ -262,6 +262,7 @@ class InternNavSubprocessAdapter:
         self._timeout = float(params.get('inference_timeout_sec', 120.0))
         self._tmpdir = tempfile.TemporaryDirectory(prefix='arena_internnav_ipc_')
         self._seq = 0
+        self._request_files: dict[int, tuple[str, str]] = {}
         self._stderr_lines: list[str] = []
         env = os.environ.copy()
         output_policy = str(params.get('model_output_policy', 'trajectory')).strip().lower()
@@ -277,27 +278,30 @@ class InternNavSubprocessAdapter:
             pythonpath_parts.append(env['PYTHONPATH'])
         env['PYTHONPATH'] = os.pathsep.join(pythonpath_parts)
         worker_code = self._worker_code()
+        command = [
+            python_executable,
+            '-u',
+            '-c',
+            worker_code,
+            '--model-path',
+            model_path,
+            '--device',
+            requested_device,
+            '--resize-w',
+            str(int(params.get('internnav_resize_w', os.environ.get('ARENA_INTERNNAV_RESIZE_W', 336)))),
+            '--resize-h',
+            str(int(params.get('internnav_resize_h', os.environ.get('ARENA_INTERNNAV_RESIZE_H', 336)))),
+            '--num-history',
+            str(int(params.get('internnav_num_history', os.environ.get('ARENA_INTERNNAV_NUM_HISTORY', 0)))),
+            '--plan-step-gap',
+            str(int(params.get('internnav_plan_step_gap', os.environ.get('ARENA_INTERNNAV_PLAN_STEP_GAP', 12)))),
+            '--model-output-policy',
+            output_policy,
+        ]
+        if bool(params.get('strict_device', False)):
+            command.append('--strict-device')
         self._proc = subprocess.Popen(
-            [
-                python_executable,
-                '-u',
-                '-c',
-                worker_code,
-                '--model-path',
-                model_path,
-                '--device',
-                requested_device,
-                '--resize-w',
-                str(int(params.get('internnav_resize_w', os.environ.get('ARENA_INTERNNAV_RESIZE_W', 336)))),
-                '--resize-h',
-                str(int(params.get('internnav_resize_h', os.environ.get('ARENA_INTERNNAV_RESIZE_H', 336)))),
-                '--num-history',
-                str(int(params.get('internnav_num_history', os.environ.get('ARENA_INTERNNAV_NUM_HISTORY', 0)))),
-                '--plan-step-gap',
-                str(int(params.get('internnav_plan_step_gap', os.environ.get('ARENA_INTERNNAV_PLAN_STEP_GAP', 12)))),
-                '--model-output-policy',
-                output_policy,
-            ],
+            command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -444,12 +448,17 @@ parser.add_argument('--resize-h', type=int, default=448)
 parser.add_argument('--num-history', type=int, default=4)
 parser.add_argument('--plan-step-gap', type=int, default=4)
 parser.add_argument('--model-output-policy', default='trajectory')
+parser.add_argument('--strict-device', action='store_true')
 args = parser.parse_args()
 
 try:
     import torch
     runtime_device = args.device
     if runtime_device.startswith('cuda') and not torch.cuda.is_available():
+        if args.strict_device:
+            raise RuntimeError(
+                f"Requested device '{runtime_device}' but CUDA is unavailable in InternNav subprocess"
+            )
         runtime_device = 'cpu'
     torch.device(runtime_device)
     from internnav.agent.internvla_n1_agent_realworld import InternVLAN1AsyncAgent
@@ -493,15 +502,17 @@ except Exception as exc:
     sys.exit(1)
 
 for line in sys.stdin:
+    request_id = None
     try:
         req = json.loads(line)
+        request_id = req.get('request_id')
         if req.get('cmd') == 'reset':
             if hasattr(agent, 'reset'):
                 try:
                     agent.reset()
                 except TypeError:
                     agent.reset(None)
-            print(json.dumps({'status': 'reset_ok'}), flush=True)
+            print(json.dumps({'status': 'reset_ok', 'request_id': request_id}), flush=True)
             continue
         rgb = np.load(req['rgb_path'])
         depth = np.load(req['depth_path'])
@@ -528,12 +539,26 @@ for line in sys.stdin:
         result['debug']['subprocess_llm_output'] = getattr(agent, 'llm_output', '')
         result['debug']['subprocess_output_latent_pending'] = getattr(agent, 'output_latent', None) is not None
         result['debug']['subprocess_output_action_pending'] = getattr(agent, 'output_action', None) is not None
-        print(json.dumps({'status': 'ok', 'result': result}), flush=True)
+        print(json.dumps({'status': 'ok', 'request_id': request_id, 'result': result}), flush=True)
     except Exception as exc:
-        print(json.dumps({'status': 'error', 'error': str(exc), 'traceback': traceback.format_exc()}), flush=True)
+        print(json.dumps({'status': 'error', 'request_id': request_id, 'error': str(exc), 'traceback': traceback.format_exc()}), flush=True)
 '''
 
-    def _read_response(self, timeout_sec: float) -> dict[str, Any]:
+    def _cleanup_request_files(self, request_id: Any) -> None:
+        try:
+            key = int(request_id)
+        except Exception:
+            return
+        paths = self._request_files.pop(key, None)
+        if not paths:
+            return
+        for path in paths:
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                pass
+
+    def _read_response(self, timeout_sec: float, expected_request_id: Optional[int] = None) -> dict[str, Any]:
         import select
         if self._proc.stdout is None:
             return {'status': 'error', 'error': 'subprocess stdout is unavailable'}
@@ -561,11 +586,25 @@ for line in sys.stdin:
                     'stderr_tail': list(getattr(self, '_stderr_lines', [])[-20:]),
                 }
             try:
-                return json.loads(line)
+                response = json.loads(line)
             except Exception:
                 skipped_stdout.append(line.strip()[:400])
                 if len(skipped_stdout) > 20:
                     del skipped_stdout[: len(skipped_stdout) - 20]
+                continue
+            if expected_request_id is None:
+                return response
+            response_request_id = response.get('request_id')
+            if response_request_id == expected_request_id:
+                return response
+            self._cleanup_request_files(response_request_id)
+            skipped_stdout.append(
+                f'skipped stale subprocess response request_id={response_request_id!r} '
+                f'while waiting for request_id={expected_request_id!r}: '
+                f'status={response.get("status")!r}'
+            )
+            if len(skipped_stdout) > 20:
+                del skipped_stdout[: len(skipped_stdout) - 20]
 
     def reset(self) -> None:
         if self._proc.poll() is not None:
@@ -588,8 +627,10 @@ for line in sys.stdin:
         depth_path = os.path.join(self._tmpdir.name, f'depth_{self._seq}.npy')
         np.save(rgb_path, rgb)
         np.save(depth_path, depth)
+        self._request_files[self._seq] = (rgb_path, depth_path)
         payload = {
             'cmd': 'compute',
+            'request_id': self._seq,
             'rgb_path': rgb_path,
             'depth_path': depth_path,
             'pose': to_jsonable(pose_vector(observation)),
@@ -602,7 +643,7 @@ for line in sys.stdin:
             assert self._proc.stdin is not None
             self._proc.stdin.write(json.dumps(payload) + '\n')
             self._proc.stdin.flush()
-            response = self._read_response(timeout_sec=self._timeout)
+            response = self._read_response(timeout_sec=self._timeout, expected_request_id=self._seq)
         finally:
             # Do not remove IPC arrays after a timeout: the worker subprocess may
             # still be computing and has not necessarily opened the files yet.
@@ -610,11 +651,7 @@ for line in sys.stdin:
             # misleading FileNotFoundError on the next status update.
             timed_out = response.get('status') == 'error' and 'timed out' in str(response.get('error', ''))
             if not timed_out:
-                for path in (rgb_path, depth_path):
-                    try:
-                        os.unlink(path)
-                    except FileNotFoundError:
-                        pass
+                self._cleanup_request_files(self._seq)
         if response.get('status') != 'ok':
             raise RuntimeError(response.get('error') or str(response))
         result = response.get('result')

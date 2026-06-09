@@ -91,7 +91,7 @@ grep -i "running\|finished\|timeout\|hang\|deadlock" <log>
 在修改任何参数或代码之前，先用 ROS 2 CLI 工具验证假设：
 
 ```bash
-# 在 Docker 容器内执行
+# 在 arena-arena_jazzy_ws-arena-1 内执行；不要在宿主机执行 ROS CLI
 docker exec arena-arena_jazzy_ws-arena-1 bash -lc '
 cd /opt/arena_ws
 source /opt/ros/jazzy/setup.bash
@@ -121,7 +121,7 @@ ros2 topic info --verbose <topic_name>
 当问题难以在线复现时，录制 rosbag 离线分析：
 
 ```bash
-# 录制所有 topic
+# 录制所有 topic（在 arena-arena_jazzy_ws-arena-1 内执行）
 docker exec arena-arena_jazzy_ws-arena-1 bash -lc '
 cd /opt/arena_ws
 source /opt/ros/jazzy/setup.bash

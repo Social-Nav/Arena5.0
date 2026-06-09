@@ -1,4 +1,5 @@
 import math
+import os
 
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from arena_simulation_setup.tree.World import WorldIdentifier
@@ -19,15 +20,29 @@ class TM_Scenario(TM_Robots):
 
     _config: ROSParamT[list[RobotGoal]]
 
+    def _world_name(self) -> str:
+        configured = str(getattr(self.node.conf.Arena.WORLD, 'value', '') or '').strip()
+        return configured or self.node._world_manager.world_name
+
+    def _scenario_param(self) -> str:
+        env_value = str(os.environ.get('ARENA_SCENARIO_FILE', '') or '').strip()
+        if env_value:
+            return env_value
+        try:
+            value = self.node.get_parameter(self.namespace('file')).value
+        except Exception:
+            value = self._config.param
+        return str(value or '').strip()
+
     def _parse_scenario(self, scenario: str) -> list[RobotGoal]:
-        return WorldIdentifier(self.node._world_manager.world_name).resolve_sync().scenario(scenario).resolve_sync().load().robots
+        return WorldIdentifier(self._world_name()).resolve_sync().scenario(str(scenario)).resolve_sync().load().robots
 
     async def reset(self, **kwargs):
         await super().reset(**kwargs)
 
         # Re-resolve against the current world_name at reset time to avoid
         # stale cache from startup (file param fires before world param is set).
-        SCENARIO_ROBOTS = self._parse_scenario(self._config.param)
+        SCENARIO_ROBOTS = self._parse_scenario(self._scenario_param())
 
         # check robot manager length
         managed_robots = list(self._PROPS.robots.values())

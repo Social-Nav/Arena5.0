@@ -1,4 +1,5 @@
 import threading
+import json
 import sys
 import types
 from types import SimpleNamespace
@@ -104,7 +105,11 @@ from arena_vln_models.core import (
 )
 from arena_vln_models.backends import HeuristicBackend, ModelSimDecision, Pose2D, PythonAdapterBackend, DualVLNObservation, _action_to_command
 from arena_vln_models import internnav as internnav_module
-from arena_vln_models.internnav import InternNavAdapter, available_backends, load_internnav_adapter
+from arena_vln_models.internnav import (
+    InternNavAdapter,
+    available_backends,
+    load_internnav_adapter,
+)
 from arena_vln_models.internnav_server import InternNavServer, _normalize_internnav_adapter_target
 from arena_vln_models.visualization import image_msg_to_numpy, numpy_to_image_msg, render_debug_overlay
 
@@ -219,11 +224,11 @@ def test_discrete_turn_mapping_preserves_native_labels():
     params = {'max_linear': 1.0, 'max_angular': 2.0}
     linear_x, angular_z, status, debug = _action_to_command(2, params)
     assert status == 'discrete_turn_left'
-    assert linear_x > 0.0
+    assert linear_x == 0.0
     assert angular_z > 0.0
     assert debug['native_action_label'] == 'turn_left'
     assert debug['effective_action_label'] == 'turn_left'
-    assert debug['arc_turn'] is True
+    assert debug['arc_turn'] is False
 
 
 def test_trajectory_output_uses_internnav_continuous_subgoal_interface():
@@ -267,6 +272,57 @@ def test_trajectory_policy_prefers_trajectory_when_action_is_also_present():
     assert 'selected_action' not in decision.debug
 
 
+def test_python_adapter_backend_promotes_top_level_llm_trace_fields():
+    backend = PythonAdapterBackend.__new__(PythonAdapterBackend)
+    backend._params = {
+        'max_linear': 0.5,
+        'max_angular': 0.5,
+        'model_output_policy': 'auto',
+    }
+
+    decision = backend._coerce_output({
+        'linear_x': 0.1,
+        'angular_z': 0.0,
+        'raw_output_text': '215 376',
+        'llm_digits': [215, 376],
+        'digit_groups': [215, 376],
+        'generated_token_ids': [11, 22],
+    })
+
+    assert decision.debug['raw_output_text'] == '215 376'
+    assert decision.debug['llm_digits'] == [215, 376]
+    assert decision.debug['digit_groups'] == [215, 376]
+    assert decision.debug['generated_token_ids'] == [11, 22]
+
+
+def test_internnav_server_status_contains_llm_block():
+    published = []
+    server = InternNavServer.__new__(InternNavServer)
+    server._status_publisher = SimpleNamespace(publish=lambda msg: published.append(msg.data))
+    decision = ModelSimDecision(
+        linear_x=0.0,
+        angular_z=0.0,
+        status='internnav_command',
+        degraded=False,
+        debug={
+            'raw_output_text': '215 376',
+            'llm_digits': [215, 376],
+            'digit_groups': [215, 376],
+            'model_generation_output_mode': 'pixel_goal',
+            'pixel_goal': [376, 215],
+        },
+    )
+
+    server._publish_status(decision)
+
+    payload = json.loads(published[-1])
+    assert payload['llm']['raw_output_text'] == '215 376'
+    assert payload['llm']['llm_digits'] == [215, 376]
+    assert payload['llm']['digit_groups'] == [215, 376]
+    assert payload['llm']['output_mode'] == 'pixel_goal'
+    assert payload['debug']['llm_digits'] == [215, 376]
+
+
 def test_discrete_policy_forces_action_mapping_for_ablation():
     backend = PythonAdapterBackend.__new__(PythonAdapterBackend)
     backend._params = {
@@ -281,11 +337,64 @@ def test_discrete_policy_forces_action_mapping_for_ablation():
     })
 
     assert decision.status == 'discrete_turn_left'
-    assert decision.linear_x > 0.0
+    assert decision.linear_x == 0.0
     assert decision.angular_z > 0.0
     assert decision.debug['selected_output_mode'] == 'discrete'
     assert decision.debug['model_output_policy'] == 'discrete'
     assert decision.debug['selected_action'] == 2
+
+
+def test_trajectory_policy_symbolic_official_discrete_uses_bounded_primitive():
+    backend = PythonAdapterBackend.__new__(PythonAdapterBackend)
+    backend._params = {
+        'max_linear': 0.6,
+        'max_angular': 1.5,
+        'model_output_policy': 'trajectory',
+        'internnav_symbolic_fallback_policy': 'official_discrete',
+        'official_discrete_forward_speed': 0.2,
+        'official_discrete_turn_speed': 0.4,
+    }
+
+    decision = backend._coerce_output({
+        'discrete_action': 2,
+        'status': 'synthetic_symbolic_action',
+        'debug': {'symbolic_fallback_policy': 'official_discrete'},
+    })
+
+    assert decision.status == 'synthetic_symbolic_action'
+    assert decision.linear_x == 0.0
+    assert decision.angular_z == -0.4
+    assert decision.debug['selected_action'] == 2
+    assert decision.debug['official_discrete_selected'] is True
+    assert decision.debug['official_discrete_primitive'] is True
+    assert decision.debug['primitive_interface'] == 'single_cmd_vel_tick'
+    assert decision.debug['primitive_forward_speed'] == 0.2
+    assert decision.debug['primitive_turn_speed'] == 0.4
+    assert decision.debug['command_generation_stage'] == 'symbolic_action_to_cmd_vel'
+
+
+def test_trajectory_policy_goal_guided_synthetic_trajectory_not_official_primitive():
+    backend = PythonAdapterBackend.__new__(PythonAdapterBackend)
+    backend._params = {
+        'max_linear': 0.6,
+        'max_angular': 1.5,
+        'model_output_policy': 'trajectory',
+        'internnav_symbolic_fallback_policy': 'goal_guided',
+    }
+
+    decision = backend._coerce_output({
+        'discrete_action': 2,
+        'output_trajectory': [[0.45, 0.0, 0.25]],
+        'debug': {
+            'symbolic_fallback_policy': 'goal_guided',
+            'trajectory_synthetic_source': 'goal_guided_symbolic_fallback',
+        },
+    })
+
+    assert decision.status == 'trajectory_command'
+    assert decision.debug['selected_output_mode'] == 'trajectory'
+    assert decision.debug['trajectory_synthetic_source'] == 'goal_guided_symbolic_fallback'
+    assert 'official_discrete_primitive' not in decision.debug
 
 
 def test_internnav_server_defaults_empty_adapter_target_for_internnav_mode():
@@ -301,6 +410,39 @@ def test_internnav_server_normalizes_legacy_native_adapter_target():
     )
     assert adapter_target == 'arena_vln_models.internnav:load_internnav_adapter'
     assert source == 'legacy:internnav.agent.internvla_n1_agent_realworld.InternVLAN1AsyncAgent'
+
+
+def test_internnav_instruction_gate_blocks_generic_default_instruction():
+    server = InternNavServer.__new__(InternNavServer)
+    server._params = {'require_route_instruction': True}
+    server.get_parameter = lambda name: SimpleNamespace(value='vln_instruction')
+
+    decision = server._instruction_gate_decision(DualVLNObservation(
+        pose=Pose2D(0.0, 0.0, 0.0),
+        goal=Pose2D(1.0, 0.0, 0.0),
+        instruction='navigate',
+    ))
+
+    assert decision is not None
+    assert decision.status == 'waiting_for_instruction'
+    assert decision.degraded is True
+    assert decision.linear_x == 0.0
+    assert decision.angular_z == 0.0
+    assert decision.debug['instruction_gate'] is True
+
+
+def test_internnav_instruction_gate_allows_route_specific_instruction():
+    server = InternNavServer.__new__(InternNavServer)
+    server._params = {'require_route_instruction': True}
+    server.get_parameter = lambda name: SimpleNamespace(value='vln_instruction')
+
+    decision = server._instruction_gate_decision(DualVLNObservation(
+        pose=Pose2D(0.0, 0.0, 0.0),
+        goal=Pose2D(1.0, 0.0, 0.0),
+        instruction='Turn right and move through the open waiting area toward the corridor.',
+    ))
+
+    assert decision is None
 
 
 def test_internnav_cached_command_preserves_last_model_turn_direction():

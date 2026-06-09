@@ -259,6 +259,7 @@ class SocialNavScenario:
             '--tm-obstacles', 'scenario',
             '--social-eval',
             '--internnav-mode', 'internnav',
+            '--internnav-external-server',
             '--vln-instruction', str(language.get('instruction') or 'navigate'),
         ]
         if self.scenario_id:

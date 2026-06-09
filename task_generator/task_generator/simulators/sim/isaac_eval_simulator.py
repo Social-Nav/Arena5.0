@@ -717,7 +717,7 @@ class IsaacEvalSimulator(IsaacSimulator):
         script = (
             "import json, os, sys, time\n"
             "import rclpy\n"
-            "os.environ.setdefault('ROS_DOMAIN_ID', '1')\n"
+            "os.environ.setdefault('ROS_DOMAIN_ID', '0')\n"
             "os.environ.setdefault('RMW_IMPLEMENTATION', 'rmw_fastrtps_cpp')\n"
             "os.environ.setdefault('ROS_AUTOMATIC_DISCOVERY_RANGE', 'SUBNET')\n"
             "os.environ.setdefault('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4')\n"
@@ -725,7 +725,8 @@ class IsaacEvalSimulator(IsaacSimulator):
             "rclpy.init()\n"
             "node = rclpy.create_node('spawn_usd_robot_subprocess')\n"
             f"client = node.create_client(SpawnUsdRobot, {srv_name!r})\n"
-            "if not client.wait_for_service(timeout_sec=30.0):\n"
+            f"service_wait_timeout = min(max({timeout_sec!r}, 30.0), 180.0)\n"
+            "if not client.wait_for_service(timeout_sec=service_wait_timeout):\n"
             "    print(json.dumps({'success': False, 'message': 'Service unavailable', 'path': ''}), flush=True)\n"
             "    node.destroy_node()\n"
             "    rclpy.shutdown()\n"
@@ -827,7 +828,7 @@ class IsaacEvalSimulator(IsaacSimulator):
 
         script = (
             "import rclpy, time, os, sys, json\n"
-            "os.environ.setdefault('ROS_DOMAIN_ID', '1')\n"
+            "os.environ.setdefault('ROS_DOMAIN_ID', '0')\n"
             "os.environ.setdefault('RMW_IMPLEMENTATION', 'rmw_fastrtps_cpp')\n"
             "os.environ.setdefault('ROS_AUTOMATIC_DISCOVERY_RANGE', 'SUBNET')\n"
             "os.environ.setdefault('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4')\n"

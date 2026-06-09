@@ -41,7 +41,7 @@ def generate_launch_description():
     )
     scenario_file = LaunchArgument(
         name="scenario_file",
-        default_value="default",
+        default_value=launch.substitutions.EnvironmentVariable('ARENA_SCENARIO_FILE', default_value='default'),
     )
     tm_modules = LaunchArgument(
         name="tm_modules",
@@ -388,7 +388,11 @@ def generate_launch_description():
                 # legacy empty dual_vln_* defaults that otherwise erase the
                 # runtime camera/model arguments before robot_manager launches
                 # the InternNav wrapper.
-                'task.scenario.file': scenario_file.param_value(str),
+                'task': {
+                    'scenario': {
+                        'file': scenario_file.param_value(str),
+                    },
+                },
                 'internnav_mode': dual_vln_mode.param_value(str),
                 'internnav_model_path': dual_vln_model_path.param_value(str),
                 'internnav_device': dual_vln_device.param_value(str),

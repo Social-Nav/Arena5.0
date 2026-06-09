@@ -27,6 +27,7 @@ nav:
       - Overview: benchmark/overview.md
       - Architecture: benchmark/architecture.md
       - Running Benchmarks and Social VLN Eval: benchmark/running-benchmarks.md
+      - Episodic Data Annotation: benchmark/episodic-data-annotation.md
       - Outputs, Social Metrics, and Aggregation: benchmark/outputs-and-metrics.md
       - Troubleshooting: benchmark/troubleshooting.md
   - Debugging Runbook: debugging_runbook.md

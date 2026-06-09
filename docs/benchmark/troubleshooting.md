@@ -39,7 +39,7 @@ a local `dual_vln_server`, or the robot never calls the external service.
 
 ### Most likely causes
 
-- `--internnav-external-server` was omitted from `internnav_eval`
+- `--internnav-external-server` was omitted from `internnav_eval`, so arena-1 may try to use an invalid local model path
 - an older task-generator YAML default overrode the launch argument
 - the containers are not sharing the same ROS domain / host network discovery
 
@@ -49,11 +49,13 @@ a local `dual_vln_server`, or the robot never calls the external service.
   `internnav_external_server:=true` and `dual_vln_external_server:=true`
 - keep `ARENA_INTERNNAV_EXTERNAL_SERVER=1` in the eval environment when validating
   legacy configs
-- verify the arena container has no local server process:
+- verify the arena-1 container has no local model server process:
 
 ```bash
 ps -ef | grep -E "dual_vln_server|internnav_server" | grep -v grep
 ```
+
+- verify the model server process exists in `arena-arena_jazzy_ws-internnav-1`, not in `arena-arena_jazzy_ws-arena-1`
 
 - verify the external ROS contract is visible:
 

@@ -90,10 +90,13 @@ The wrapper validates the YAML and translates it into the existing
 `--local-planner`, `--scenario-file`, `--internnav-mode internnav`, the VLN
 instruction, and scenario metadata stored later in `run_manifest.yaml`.
 
-Run these commands from the Arena container, not from the host shell.  The
+Run ROS/eval commands from the Arena container, not from the host shell.  The
 validated Docker image is built from `osrf/ros:jazzy-desktop` and contains
 `/opt/ros/jazzy/setup.bash`; a host machine may still have only `/opt/ros/humble`
-installed.  A quick sanity check is:
+installed.  The container roles are fixed: `arena-arena_jazzy_ws-arena-1` runs
+evaluator/ROS scripts, `arena-arena_jazzy_ws-isaac-1` runs Isaac Sim, and
+`arena-arena_jazzy_ws-internnav-1` runs the GPU InternNav model.  A quick sanity
+check is:
 
 ```bash
 docker exec arena-arena_jazzy_ws-arena-1 bash -lc \
@@ -128,7 +131,7 @@ It produced all four required videos under `videos/episode_0000/` and passed
 ### Recommended three-container flow
 
 For GPU-backed InternNav inference, run the model server from the dedicated
-`internnav` container and tell Arena not to launch a local server:
+`internnav-1` container and tell Arena not to launch a local server:
 
 ```bash
 cd /home/ubuntu/arena_jazzy_ws
@@ -138,14 +141,15 @@ source src/Arena/_meta/docker/source
 src/Arena/_meta/docker/features/internnav/main install
 src/Arena/_meta/docker/features/internnav/main install-runtime
 
-# Start the external server in /task_generator_node/Ai2_Bot2.
+# Start the external server in /task_generator_node/Ai2_Bot2.  This command
+# enters arena-arena_jazzy_ws-internnav-1; do not start the model in arena-1.
 src/Arena/_meta/docker/features/internnav/main launch \
   --robot Ai2_Bot2 \
   --mode internnav \
   --device cuda:0
 ```
 
-Then run the evaluation from the Arena container with external-server mode:
+Then run the evaluation from `arena-arena_jazzy_ws-arena-1` with external-server mode:
 
 ```bash
 ARENA_INTERNNAV_EXTERNAL_SERVER=1 \
@@ -166,7 +170,7 @@ ros2 run arena_bringup internnav_eval \
 
 The important launch contract is `--internnav-external-server`: it forwards
 `internnav_external_server:=true` and `dual_vln_external_server:=true`, causing
-the robot launch to suppress the local `dual_vln_server`.  The model container
+the robot launch to suppress any local model `dual_vln_server` in arena-1.  The model container
 continues to provide `/task_generator_node/Ai2_Bot2/get_command` and
 `/task_generator_node/Ai2_Bot2/internnav/status`.
 

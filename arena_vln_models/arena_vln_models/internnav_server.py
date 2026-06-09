@@ -158,6 +158,13 @@ class BaseModelSimServer(Node):
         self.declare_parameter('strict_device', False)
         self.declare_parameter('look_down', False)
         self.declare_parameter('model_output_policy', 'trajectory')
+        self.declare_parameter('internnav_symbolic_fallback_policy', '')
+        self.declare_parameter('synthetic_action_sequence', '')
+        self.declare_parameter('official_discrete_action_tail_limit', 0)
+        self.declare_parameter('official_discrete_forward_speed', 0.0)
+        self.declare_parameter('official_discrete_turn_speed', 0.0)
+        self.declare_parameter('require_route_instruction', True)
+        self.declare_parameter('discrete_arc_turn', False)
         self.declare_parameter('max_linear', 0.6)
         self.declare_parameter('max_angular', 1.5)
         self.declare_parameter('k_lin', 1.2)
@@ -166,9 +173,11 @@ class BaseModelSimServer(Node):
         self.declare_parameter('angle_tolerance', 0.25)
         self.declare_parameter('min_lin_when_aligned', 0.05)
         self.declare_parameter('trace_path', '')
-        # Discrete action → Twist mapping is hard-coded in backends._action_to_command().
+        # Discrete action → Twist mapping is implemented in backends._action_to_command().
         # See that function for the ROS coordinate convention (REP 103) and the rationale
-        # for not making the turn sign configurable.
+        # for not making the turn sign configurable.  Turn actions default to in-place
+        # rotation; discrete_arc_turn keeps the old forward-arc behavior available for
+        # explicit compatibility testing.
 
         self._pose: Optional[Pose2D] = None
         self._last_odom_pose_ts: float = 0.0
@@ -199,9 +208,11 @@ class BaseModelSimServer(Node):
         self._trace_seq: int = 0
         self._model_output_seq: int = 0
         self._action_history: list[int] = []
+        self._previous_pose_for_action_trace: Optional[Pose2D] = None
         self._backend = None
         self._backend_mode: str = ''
         self._backend_init_error: str = ''
+        self._last_instruction_quality_warning: str = ''
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self, spin_thread=True)
 
@@ -253,6 +264,10 @@ class BaseModelSimServer(Node):
             self.get_parameter('look_down').value,
             env_names=('ARENA_EVAL_INTERNNAV_LOOK_DOWN',),
         )
+        require_route_instruction, require_route_instruction_source = _resolve_bool(
+            self.get_parameter('require_route_instruction').value,
+            env_names=('ARENA_EVAL_INTERNNAV_REQUIRE_ROUTE_INSTRUCTION', 'ARENA_INTERNNAV_REQUIRE_ROUTE_INSTRUCTION'),
+        )
         enable_visualization, enable_visualization_source = _resolve_bool(
             self.get_parameter('enable_visualization').value,
             env_names=('ARENA_EVAL_INTERNNAV_ENABLE_VISUALIZATION',),
@@ -265,6 +280,47 @@ class BaseModelSimServer(Node):
         model_output_policy, model_output_policy_source = _resolve_string(
             self.get_parameter('model_output_policy').value,
             env_names=('ARENA_EVAL_INTERNNAV_MODEL_OUTPUT_POLICY', 'ARENA_INTERNNAV_MODEL_OUTPUT_POLICY'),
+        )
+        symbolic_fallback_policy, symbolic_fallback_policy_source = _resolve_string(
+            self.get_parameter('internnav_symbolic_fallback_policy').value,
+            env_names=(
+                'ARENA_EVAL_INTERNNAV_SYMBOLIC_FALLBACK_POLICY',
+                'ARENA_INTERNNAV_SYMBOLIC_FALLBACK_POLICY',
+            ),
+            allow_empty=True,
+        )
+        synthetic_action_sequence, synthetic_action_sequence_source = _resolve_string(
+            self.get_parameter('synthetic_action_sequence').value,
+            env_names=(
+                'ARENA_EVAL_INTERNNAV_SYNTHETIC_ACTION_SEQUENCE',
+                'ARENA_INTERNNAV_SYNTHETIC_ACTION_SEQUENCE',
+            ),
+            allow_empty=True,
+        )
+        official_action_tail_limit, official_action_tail_limit_source = _resolve_float(
+            self.get_parameter('official_discrete_action_tail_limit').value,
+            env_names=(
+                'ARENA_EVAL_INTERNNAV_OFFICIAL_ACTION_TAIL_LIMIT',
+                'ARENA_INTERNNAV_OFFICIAL_ACTION_TAIL_LIMIT',
+            ),
+        )
+        official_forward_speed, official_forward_speed_source = _resolve_float(
+            self.get_parameter('official_discrete_forward_speed').value,
+            env_names=(
+                'ARENA_EVAL_INTERNNAV_OFFICIAL_DISCRETE_FORWARD_SPEED',
+                'ARENA_INTERNNAV_OFFICIAL_DISCRETE_FORWARD_SPEED',
+            ),
+        )
+        official_turn_speed, official_turn_speed_source = _resolve_float(
+            self.get_parameter('official_discrete_turn_speed').value,
+            env_names=(
+                'ARENA_EVAL_INTERNNAV_OFFICIAL_DISCRETE_TURN_SPEED',
+                'ARENA_INTERNNAV_OFFICIAL_DISCRETE_TURN_SPEED',
+            ),
+        )
+        discrete_arc_turn, discrete_arc_turn_source = _resolve_bool(
+            self.get_parameter('discrete_arc_turn').value,
+            env_names=('ARENA_EVAL_INTERNNAV_DISCRETE_ARC_TURN', 'ARENA_INTERNNAV_DISCRETE_ARC_TURN'),
         )
         visualization_topic, visualization_topic_source = _resolve_string(
             self.get_parameter('visualization_topic').value,
@@ -304,9 +360,16 @@ class BaseModelSimServer(Node):
             ('require_real_backend', require_real_backend, require_real_backend_source),
             ('strict_device', strict_device, strict_device_source),
             ('look_down', look_down, look_down_source),
+            ('require_route_instruction', require_route_instruction, require_route_instruction_source),
             ('enable_visualization', enable_visualization, enable_visualization_source),
             ('trace_path', trace_path, trace_path_source),
             ('model_output_policy', model_output_policy, model_output_policy_source),
+            ('internnav_symbolic_fallback_policy', symbolic_fallback_policy, symbolic_fallback_policy_source),
+            ('synthetic_action_sequence', synthetic_action_sequence, synthetic_action_sequence_source),
+            ('official_discrete_action_tail_limit', int(official_action_tail_limit), official_action_tail_limit_source),
+            ('official_discrete_forward_speed', official_forward_speed, official_forward_speed_source),
+            ('official_discrete_turn_speed', official_turn_speed, official_turn_speed_source),
+            ('discrete_arc_turn', discrete_arc_turn, discrete_arc_turn_source),
             ('visualization_topic', visualization_topic, visualization_topic_source),
             ('action_visualization_topic', action_visualization_topic, action_visualization_topic_source),
             ('visualization_rate_hz', visualization_rate_hz, visualization_rate_hz_source),
@@ -330,6 +393,7 @@ class BaseModelSimServer(Node):
             'require_real_backend': require_real_backend,
             'strict_device': strict_device,
             'look_down': look_down,
+            'require_route_instruction': require_route_instruction,
             'max_linear': float(self.get_parameter('max_linear').value),
             'max_angular': float(self.get_parameter('max_angular').value),
             'k_lin': float(self.get_parameter('k_lin').value),
@@ -338,6 +402,12 @@ class BaseModelSimServer(Node):
             'angle_tolerance': float(self.get_parameter('angle_tolerance').value),
             'min_lin_when_aligned': float(self.get_parameter('min_lin_when_aligned').value),
             'model_output_policy': model_output_policy,
+            'internnav_symbolic_fallback_policy': symbolic_fallback_policy,
+            'synthetic_action_sequence': synthetic_action_sequence,
+            'official_discrete_action_tail_limit': int(official_action_tail_limit),
+            'official_discrete_forward_speed': float(official_forward_speed),
+            'official_discrete_turn_speed': float(official_turn_speed),
+            'discrete_arc_turn': discrete_arc_turn,
         }
         self._trace_path = trace_path
 
@@ -455,6 +525,12 @@ class BaseModelSimServer(Node):
             ('enable_visualization', enable_visualization_source),
             ('trace_path', trace_path_source),
             ('model_output_policy', model_output_policy_source),
+            ('internnav_symbolic_fallback_policy', symbolic_fallback_policy_source),
+            ('synthetic_action_sequence', synthetic_action_sequence_source),
+            ('official_discrete_action_tail_limit', official_action_tail_limit_source),
+            ('official_discrete_forward_speed', official_forward_speed_source),
+            ('official_discrete_turn_speed', official_turn_speed_source),
+            ('discrete_arc_turn', discrete_arc_turn_source),
             ('visualization_topic', visualization_topic_source),
             ('action_visualization_topic', action_visualization_topic_source),
             ('visualization_rate_hz', visualization_rate_hz_source),
@@ -836,9 +912,14 @@ class BaseModelSimServer(Node):
         with self._state_lock:
             current_status = self._last_decision.status
         if current_status == 'backend_ready':
-            self._publish_status(self._last_decision)
+            # Keep the latched readiness sample fresh.  RobotManager validates
+            # sensor ages from the status payload before releasing the VLN goal;
+            # republishing the original backend_ready decision here can overwrite
+            # the transient-local cache with stale startup ages and make late
+            # subscribers miss an otherwise healthy InternNav server.
+            self._republish_last_status()
             return
-        if current_status not in {'startup', 'waiting_for_camera', 'camera_timeout', 'stale_camera'}:
+        if current_status not in {'startup', 'waiting_for_camera', 'camera_timeout', 'stale_camera', 'waiting_for_instruction'}:
             return
         decision = ModelSimDecision(
             status='backend_ready',
@@ -927,6 +1008,50 @@ class BaseModelSimServer(Node):
             'yaw_error': yaw_error,
         }
 
+    def _instruction_diagnostics(self, instruction: str) -> dict[str, object]:
+        text = str(instruction or '').strip()
+        normalized = ' '.join(text.lower().split())
+        generic_defaults = {'', 'navigate', 'go', 'start', 'default', 'none', 'null'}
+        diagnostics: dict[str, object] = {
+            'instruction_normalized': normalized,
+            'instruction_is_empty': not text,
+            'instruction_is_default': normalized in generic_defaults,
+            'instruction_quality': 'ok',
+        }
+        if not text:
+            diagnostics['instruction_quality'] = 'empty'
+            diagnostics['instruction_warning'] = (
+                'InternNav/DualVLN expects a natural-language VLN instruction; received an empty instruction.'
+            )
+        elif normalized in generic_defaults:
+            diagnostics['instruction_quality'] = 'generic_default'
+            diagnostics['instruction_warning'] = (
+                f"InternNav/DualVLN expects a route-specific natural-language instruction; received generic '{text}'."
+            )
+        return diagnostics
+
+    def _instruction_gate_decision(self, observation: ModelSimObservation) -> ModelSimDecision | None:
+        """Return a safe-stop decision until a real per-episode VLN instruction arrives."""
+        if not bool(self._params.get('require_route_instruction', True)):
+            return None
+
+        diagnostics = self._instruction_diagnostics(observation.instruction)
+        if diagnostics.get('instruction_quality') == 'ok':
+            return None
+
+        return ModelSimDecision(
+            status='waiting_for_instruction',
+            degraded=True,
+            debug={
+                'safe_stop': True,
+                'instruction_gate': True,
+                'route_instruction_required': True,
+                'instruction_topic': str(self.get_parameter('instruction_topic').value or ''),
+                'instruction_gate_reason': diagnostics.get('instruction_quality'),
+                'instruction_warning': diagnostics.get('instruction_warning'),
+            },
+        )
+
     def _write_trace_record(
         self,
         observation: ModelSimObservation,
@@ -966,10 +1091,22 @@ class BaseModelSimServer(Node):
                 'native_label': debug.get('native_action_label', debug.get('action_label')),
                 'effective_label': debug.get('effective_action_label', debug.get('action_label')),
                 'converted_status': debug.get('converted_status'),
+                'command_generation_stage': debug.get('command_generation_stage'),
+                'official_discrete_selected': debug.get('official_discrete_selected'),
+                'official_discrete_primitive': debug.get('official_discrete_primitive'),
+                'primitive_interface': debug.get('primitive_interface'),
+                'primitive_forward_speed': debug.get('primitive_forward_speed'),
+                'primitive_turn_speed': debug.get('primitive_turn_speed'),
                 'arc_turn': bool(debug.get('arc_turn', False)),
                 'history_tail': list(self._action_history[-24:]),
                 'remaining_action_queue': debug.get('remaining_action_queue'),
+                'queued_action': debug.get('queued_action'),
+                'queued_action_sequence_tail': debug.get('queued_action_sequence_tail'),
+                'dropped_action_sequence_tail': debug.get('dropped_action_sequence_tail'),
+                'official_discrete_action_tail_limit': debug.get('official_discrete_action_tail_limit'),
+                'cached_selected_action': debug.get('cached_selected_action'),
             },
+            'action_effect': debug.get('action_effect'),
             'goal': geometry,
             'observation': {
                 'rgb_available': observation.rgb_image is not None,
@@ -985,10 +1122,20 @@ class BaseModelSimServer(Node):
             'instruction': {
                 'length': len(observation.instruction),
                 'preview': observation.instruction[:220],
+                'quality': debug.get('instruction_quality'),
+                'warning': debug.get('instruction_warning'),
             },
             'timing': {
                 'infer_time_sec': debug.get('infer_time_sec'),
                 'subprocess_compute_sec': debug.get('subprocess_compute_sec'),
+            },
+            'llm': {
+                'raw_output_text': debug.get('raw_output_text') or debug.get('subprocess_llm_output') or debug.get('adapter_llm_output') or debug.get('llm_output'),
+                'llm_digits': debug.get('llm_digits', debug.get('digit_groups', [])),
+                'digit_groups': debug.get('digit_groups', debug.get('llm_digits', [])),
+                'output_mode': debug.get('model_generation_output_mode'),
+                'pixel_goal': debug.get('pixel_goal') or debug.get('target_pixel'),
+                'symbolic_action_seq': debug.get('symbolic_action_seq'),
             },
             'debug': debug,
         }
@@ -1000,6 +1147,38 @@ class BaseModelSimServer(Node):
             self.get_logger().warn(f'Failed to append {self.SERVER_LABEL} trace record: {exc}')
 
     def _annotate_decision_for_diagnostics(self, observation: ModelSimObservation, decision: ModelSimDecision) -> None:
+        instruction_debug = self._instruction_diagnostics(observation.instruction)
+        for key, value in instruction_debug.items():
+            decision.debug.setdefault(key, value)
+        instruction_warning = str(instruction_debug.get('instruction_warning', '') or '')
+        if instruction_warning and instruction_warning != self._last_instruction_quality_warning:
+            self.get_logger().warn(instruction_warning)
+            self._last_instruction_quality_warning = instruction_warning
+
+        output_policy = str(self._params.get('model_output_policy', '') or '').strip().lower()
+        trajectory_requested = output_policy in {'trajectory', 'continuous', 'continuous_trajectory', 'output_trajectory', 'traj', 'auto'}
+        decision.debug.setdefault('trajectory_policy_requested', trajectory_requested)
+        if trajectory_requested:
+            selected_output_mode = str(decision.debug.get('selected_output_mode', '') or '').strip().lower()
+            has_trajectory = any(
+                key in decision.debug
+                for key in ('trajectory_control_step', 'trajectory_first_step', 'trajectory_preview')
+            )
+            decision.debug.setdefault('trajectory_available', has_trajectory)
+            if selected_output_mode and selected_output_mode != 'trajectory':
+                decision.debug.setdefault('trajectory_policy_fallback', True)
+                decision.debug.setdefault(
+                    'trajectory_warning',
+                    f"model_output_policy=trajectory but selected_output_mode={selected_output_mode}; "
+                    'falling back to the available non-trajectory output.',
+                )
+            if not has_trajectory:
+                decision.debug.setdefault('trajectory_missing_under_policy', True)
+                decision.debug.setdefault(
+                    'trajectory_missing_warning',
+                    'model_output_policy=trajectory but adapter output did not contain output_trajectory/trajectory.',
+                )
+
         selected_action = decision.debug.get('selected_action')
         try:
             selected_action_int = int(selected_action) if selected_action is not None else None
@@ -1017,6 +1196,32 @@ class BaseModelSimServer(Node):
         decision.debug.setdefault('sensor_ages_sec', self._camera_sensor_ages())
         decision.debug.setdefault('stale_after_sec', float(self._params.get('camera_stale_after_sec', 0.0)))
         decision.debug['action_history_tail'] = list(self._action_history[-12:])
+
+        current_pose = observation.pose
+        previous_pose = self._previous_pose_for_action_trace
+        if current_pose is not None and previous_pose is not None:
+            dx = float(current_pose.x) - float(previous_pose.x)
+            dy = float(current_pose.y) - float(previous_pose.y)
+            dyaw = math.atan2(
+                math.sin(float(current_pose.yaw) - float(previous_pose.yaw)),
+                math.cos(float(current_pose.yaw) - float(previous_pose.yaw)),
+            )
+            action_effect = {
+                'previous_pose': [float(previous_pose.x), float(previous_pose.y), float(previous_pose.yaw)],
+                'current_pose': [float(current_pose.x), float(current_pose.y), float(current_pose.yaw)],
+                'delta_xy': [dx, dy],
+                'delta_distance': math.hypot(dx, dy),
+                'delta_yaw': dyaw,
+            }
+            if selected_action_int in {2, 3} and abs(dyaw) > 1e-5:
+                expected_sign = 1 if selected_action_int == 2 else -1
+                actual_sign = 1 if dyaw > 0.0 else -1
+                action_effect['expected_yaw_sign'] = expected_sign
+                action_effect['actual_yaw_sign'] = actual_sign
+                action_effect['yaw_sign_matches_action'] = expected_sign == actual_sign
+            decision.debug['action_effect'] = action_effect
+        if current_pose is not None:
+            self._previous_pose_for_action_trace = current_pose
 
     def _cached_model_decision_while_computing(self, observation: ModelSimObservation) -> ModelSimDecision | None:
         with self._state_lock:
@@ -1059,13 +1264,22 @@ class BaseModelSimServer(Node):
 
     def _publish_status(self, decision: ModelSimDecision) -> None:
         message = String()
+        debug = self._to_jsonable(decision.debug)
         message.data = json.dumps(
             {
                 'status': decision.status,
                 'degraded': bool(decision.degraded),
                 'linear_x': float(decision.linear_x),
                 'angular_z': float(decision.angular_z),
-                'debug': self._to_jsonable(decision.debug),
+                'llm': {
+                    'raw_output_text': debug.get('raw_output_text') or debug.get('subprocess_llm_output') or debug.get('adapter_llm_output') or debug.get('llm_output'),
+                    'llm_digits': debug.get('llm_digits', debug.get('digit_groups', [])),
+                    'digit_groups': debug.get('digit_groups', debug.get('llm_digits', [])),
+                    'output_mode': debug.get('model_generation_output_mode'),
+                    'pixel_goal': debug.get('pixel_goal') or debug.get('target_pixel'),
+                    'symbolic_action_seq': debug.get('symbolic_action_seq'),
+                },
+                'debug': debug,
                 'wrapper': self.SERVER_LABEL,
                 'model_instance': self.MODEL_INSTANCE,
             },
@@ -1131,10 +1345,22 @@ class BaseModelSimServer(Node):
                 'native_label': debug.get('native_action_label', debug.get('action_label')),
                 'effective_label': debug.get('effective_action_label', debug.get('action_label')),
                 'converted_status': debug.get('converted_status'),
+                'command_generation_stage': debug.get('command_generation_stage'),
+                'official_discrete_selected': debug.get('official_discrete_selected'),
+                'official_discrete_primitive': debug.get('official_discrete_primitive'),
+                'primitive_interface': debug.get('primitive_interface'),
+                'primitive_forward_speed': debug.get('primitive_forward_speed'),
+                'primitive_turn_speed': debug.get('primitive_turn_speed'),
                 'arc_turn': bool(debug.get('arc_turn', False)),
                 'history_tail': list(self._action_history[-24:]),
                 'remaining_action_queue': debug.get('remaining_action_queue'),
+                'queued_action': debug.get('queued_action'),
+                'queued_action_sequence_tail': debug.get('queued_action_sequence_tail'),
+                'dropped_action_sequence_tail': debug.get('dropped_action_sequence_tail'),
+                'official_discrete_action_tail_limit': debug.get('official_discrete_action_tail_limit'),
+                'cached_selected_action': debug.get('cached_selected_action'),
             },
+            'action_effect': debug.get('action_effect'),
             'goal': geometry,
             'observation': {
                 'rgb_available': bool(observation is not None and observation.rgb_image is not None),
@@ -1150,10 +1376,20 @@ class BaseModelSimServer(Node):
             'instruction': {
                 'length': len(observation.instruction) if observation is not None else None,
                 'preview': observation.instruction[:220] if observation is not None else '',
+                'quality': debug.get('instruction_quality'),
+                'warning': debug.get('instruction_warning'),
             },
             'timing': {
                 'infer_time_sec': debug.get('infer_time_sec'),
                 'subprocess_compute_sec': debug.get('subprocess_compute_sec'),
+            },
+            'llm': {
+                'raw_output_text': debug.get('raw_output_text') or debug.get('subprocess_llm_output') or debug.get('adapter_llm_output') or debug.get('llm_output'),
+                'llm_digits': debug.get('llm_digits', debug.get('digit_groups', [])),
+                'digit_groups': debug.get('digit_groups', debug.get('llm_digits', [])),
+                'output_mode': debug.get('model_generation_output_mode'),
+                'pixel_goal': debug.get('pixel_goal') or debug.get('target_pixel'),
+                'symbolic_action_seq': debug.get('symbolic_action_seq'),
             },
             'debug': debug,
         }
@@ -1359,6 +1595,21 @@ class BaseModelSimServer(Node):
                     f'linear={response.twist.linear.x:.3f} angular={response.twist.angular.z:.3f}'
                 )
                 return response
+            observation = self._build_observation()
+            instruction_gate_decision = self._instruction_gate_decision(observation)
+            if instruction_gate_decision is not None:
+                self._annotate_decision_for_diagnostics(observation, instruction_gate_decision)
+                self._write_trace_record(observation, instruction_gate_decision, event_type='instruction_gate')
+                self._set_last_decision(instruction_gate_decision)
+                self._publish_status(instruction_gate_decision)
+                self._publish_model_output(observation, instruction_gate_decision, event_type='instruction_gate')
+                response.twist = self._get_last_cmd()
+                self.get_logger().info(
+                    f'{self.SERVER_LABEL} get_command instruction gate response: '
+                    f'linear={response.twist.linear.x:.3f} angular={response.twist.angular.z:.3f}'
+                )
+                return response
+
             if getattr(self, '_backend', None) is None and not self._try_create_backend_if_possible():
                 decision = self._backend_unavailable_decision()
                 self._set_last_decision(decision)
@@ -1370,7 +1621,6 @@ class BaseModelSimServer(Node):
                     f'linear={response.twist.linear.x:.3f} angular={response.twist.angular.z:.3f}'
                 )
                 return response
-            observation = self._build_observation()
             if self._should_compute(now):
                 if self._backend.uses_model_inference:
                     started = self._start_background_compute(observation, now)

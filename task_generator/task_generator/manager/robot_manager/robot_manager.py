@@ -655,6 +655,15 @@ class RobotManager(NodeInterface):
             status_qos,
         )
 
+    def _recreate_dual_vln_status_subscription(self) -> None:
+        if self._dual_vln_status_subscription is not None:
+            try:
+                self.node.destroy_subscription(self._dual_vln_status_subscription)
+            except Exception:
+                pass
+            self._dual_vln_status_subscription = None
+        self._ensure_dual_vln_status_subscription()
+
     def _dual_vln_command_service_name(self) -> str:
         if self._dual_vln_command_service:
             return self._dual_vln_command_service
@@ -906,11 +915,25 @@ class RobotManager(NodeInterface):
             return True
 
         status_topic = self._dual_vln_status_topic or str(self.namespace('internnav', 'status'))
-        external_server = self._get_compat_rosparam(
+        external_server_param = self._get_compat_rosparam(
             bool,
             'internnav_external_server',
             'dual_vln_external_server',
             False,
+        )
+        configured_command_service = self._get_compat_rosparam(
+            str,
+            'internnav_command_service',
+            'dual_vln_command_service',
+            '',
+            empty_is_missing=True,
+        )
+        # Some launch paths can lose the compatibility boolean even though the
+        # external command endpoint is configured explicitly.  The next barrier
+        # still waits for the real service, so this only avoids a stale status
+        # circular wait; it does not synthesize backend/sensor readiness.
+        external_server = bool(external_server_param) or bool(
+            str(configured_command_service or '').strip().startswith('/')
         )
         command_client = None
         if external_server:
@@ -926,6 +949,7 @@ class RobotManager(NodeInterface):
             start_time = loop.time()
             deadline = start_time + max(float(timeout_s), 0.0)
             last_status = self._dual_vln_status
+            status_subscription_recreated = False
             while loop.time() < deadline:
                 last_status = self._dual_vln_status
                 status_age = time.monotonic() - self._dual_vln_status_wall_time if self._dual_vln_status_wall_time > 0.0 else float('inf')
@@ -940,6 +964,23 @@ class RobotManager(NodeInterface):
                     )
                     return True
 
+                if (
+                    not status_subscription_recreated
+                    and self._dual_vln_status_wall_time <= 0.0
+                    and (loop.time() - start_time) >= 2.0
+                ):
+                    # Long-running external InternNav servers can already be
+                    # publishing before task_generator reaches this barrier.
+                    # Rejoin the TRANSIENT_LOCAL status topic once after reset so
+                    # DDS redelivers the current latched backend_ready heartbeat
+                    # instead of waiting out the entire goal-readiness timeout.
+                    self._logger.warn(
+                        'No InternNav status sample received within 2s; recreating status subscription to rejoin '
+                        f'{status_topic} before continuing the backend_ready barrier.'
+                    )
+                    self._recreate_dual_vln_status_subscription()
+                    status_subscription_recreated = True
+
                 # The external InternNav server exposes get_command as the true
                 # actuation interface.  In long-running Docker eval sessions DDS
                 # can occasionally discover the service while the latched status
@@ -948,7 +989,7 @@ class RobotManager(NodeInterface):
                 # direct get_command->cmd_vel bridge can even start.  Once the
                 # external service is visible for a few seconds, let the service
                 # readiness barrier below be authoritative and proceed.
-                if external_server and not require_real_backend and (loop.time() - start_time) >= 5.0:
+                if external_server and (loop.time() - start_time) >= 5.0:
                     # The following get_command service barrier is the
                     # authoritative readiness check.  Do not let a missed/stale
                     # transient status sample consume the whole episode before
@@ -963,12 +1004,14 @@ class RobotManager(NodeInterface):
                             service_visible = bool(command_client.wait_for_service(timeout_sec=0.0))
                         except Exception:
                             service_visible = False
-                    self._logger.warn(
-                        'InternNav status did not publish a fresh backend_ready sample within 5s, but an external '
-                        f'server is configured; proceeding with service-readiness gating. '
-                        f'service_visible_now={service_visible} last_status={last_status!r}'
-                    )
-                    return True
+                    if service_visible or not require_real_backend:
+                        self._logger.warn(
+                            'InternNav status did not publish a fresh backend_ready sample within 5s, but an external '
+                            f'server is configured; proceeding with service-readiness gating. '
+                            f'service_visible_now={service_visible} require_real_backend={require_real_backend} '
+                            f'last_status={last_status!r}'
+                        )
+                        return True
                 await asyncio.sleep(0.1)
 
             self._logger.warn(
@@ -1252,7 +1295,10 @@ class RobotManager(NodeInterface):
             internnav_external_server = self._get_compat_rosparam(
                 bool, 'internnav_external_server', 'dual_vln_external_server', False
             )
-            if os.environ.get('ARENA_INTERNNAV_EXTERNAL_SERVER', '').strip().lower() in {'1', 'true', 'yes', 'on'}:
+            if (
+                internnav_mode.strip().lower() == 'internnav'
+                or os.environ.get('ARENA_INTERNNAV_EXTERNAL_SERVER', '').strip().lower() in {'1', 'true', 'yes', 'on'}
+            ):
                 internnav_external_server = True
 
             launch_arguments = {

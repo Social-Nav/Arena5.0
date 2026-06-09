@@ -3,6 +3,7 @@
 # 项目约束文件
 在开始任何工作前，必须先阅读工作区根目录下的 AGENTS.md 文件（/home/ubuntu/arena_jazzy_ws/AGENTS.md），其中包含：
 - Docker + Isaac Sim 执行环境硬性约束（禁止在宿主机运行 ROS/colcon/eval）
+- 三容器职责：arena-1 运行 evaluator/ROS2/colcon，isaac-1 运行 Isaac Sim，internnav-1 才能运行真实 InternNav GPU 模型；真实模型 eval 必须使用 external-server 模式。
 - GPU 残留进程清理流程
 - Context7 MCP 文档查询约定
 违反 AGENTS.md 中的约束可能导致环境损坏或无效操作。
