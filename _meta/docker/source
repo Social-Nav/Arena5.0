@@ -11,7 +11,15 @@ HOST_UID=$(id -u)
 export HOST_UID
 HOST_GID=$(id -g)
 export HOST_GID
+HOST_DOCKER_GID=$(stat -c '%g' /var/run/docker.sock 2>/dev/null || echo "$HOST_GID")
+export HOST_DOCKER_GID
 export ARENA_PROJECT_NAME="arena-$(basename "$ARENA_WS_DIR")"
+
+mkdir -p "$ARENA_DIR/.venv"
+mkdir -p "$ARENA_WS_DIR/build" "$ARENA_WS_DIR/install" "$ARENA_WS_DIR/log" "$ARENA_WS_DIR/deps" "$ARENA_WS_DIR/outputs"
+if [ ! -f "$ARENA_WS_DIR/.env" ] ; then
+    touch "$ARENA_WS_DIR/.env"
+fi
 
 xhost +local:docker >/dev/null 2>&1 || true
 
@@ -21,6 +29,7 @@ docker_env="${docker_env} ARENA_IMAGE=$ARENA_IMAGE"
 docker_env="${docker_env} ARENA_WS_DIR=$ARENA_WS_DIR"
 docker_env="${docker_env} HOST_UID=$HOST_UID"
 docker_env="${docker_env} HOST_GID=$HOST_GID"
+docker_env="${docker_env} HOST_DOCKER_GID=$HOST_DOCKER_GID"
 export docker_env
 
 arena_docker_compose_files(){
@@ -57,7 +66,32 @@ export -f arena_docker_compose
 
 arena_service="arena"
 
+wait_for_arena_container(){
+    local container_id
+    local state
+
+    while true; do
+        container_id="$(arena_docker_compose ps -q "$arena_service" 2>/dev/null || true)"
+        if [ -n "$container_id" ] && arena_docker_compose exec -T "$arena_service" test -f /.built >/dev/null 2>&1; then
+            return 0
+        fi
+
+        if [ -n "$container_id" ]; then
+            state="$(docker inspect -f '{{.State.Status}}' "$container_id" 2>/dev/null || true)"
+            if [ "$state" = "exited" ] || [ "$state" = "dead" ]; then
+                arena_docker_compose logs --tail=200 "$arena_service" >&2 || true
+                return 1
+            fi
+        fi
+
+        sleep 2
+    done
+}
+
 do_run(){
+    arena_docker_compose up -d --remove-orphans --timeout 0 "$arena_service"
+    wait_for_arena_container || return $?
+
     if [ "$1" == "-c" ]; then
         shift
         arena_docker_compose exec -T "$arena_service" /entrypoint.sh bash -c "$*"

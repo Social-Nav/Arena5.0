@@ -1,10 +1,19 @@
 ARG ROS_DISTRO=jazzy
 FROM osrf/ros:${ROS_DISTRO}-desktop AS base
+ARG APT_TIMEOUT_SEC=3600
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG http_proxy
+ARG https_proxy
 
+RUN if [ -z "${HTTP_PROXY}${HTTPS_PROXY}${http_proxy}${https_proxy}" ]; then \
+        echo "WARNING: no HTTP(S) proxy is configured; Docker build requires working internet access." >&2; \
+    fi
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y \
+    timeout ${APT_TIMEOUT_SEC}s apt-get update && \
+    timeout ${APT_TIMEOUT_SEC}s apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
     ffmpeg \
@@ -16,6 +25,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     pipx \
     python3-colcon-common-extensions \
     python3-rosdep \
+    libgps-dev \
     ros-${ROS_DISTRO}-fastcdr \
     ros-${ROS_DISTRO}-fastrtps \
     ros-${ROS_DISTRO}-fastrtps-cmake-module \
@@ -24,6 +34,19 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ros-${ROS_DISTRO}-nav2-bringup \
     ros-${ROS_DISTRO}-nav2-map-server \
     ros-${ROS_DISTRO}-nav2-amcl \
+    ros-${ROS_DISTRO}-nav2-behaviors \
+    ros-${ROS_DISTRO}-nav2-bt-navigator \
+    ros-${ROS_DISTRO}-nav2-collision-monitor \
+    ros-${ROS_DISTRO}-nav2-common \
+    ros-${ROS_DISTRO}-nav2-controller \
+    ros-${ROS_DISTRO}-nav2-dwb-controller \
+    ros-${ROS_DISTRO}-nav2-lifecycle-manager \
+    ros-${ROS_DISTRO}-nav2-navfn-planner \
+    ros-${ROS_DISTRO}-nav2-planner \
+    ros-${ROS_DISTRO}-nav2-smoother \
+    ros-${ROS_DISTRO}-nav2-velocity-smoother \
+    ros-${ROS_DISTRO}-nav2-waypoint-follower \
+    ros-${ROS_DISTRO}-nav2-msgs \
     ros-${ROS_DISTRO}-rmw-fastrtps-cpp \
     ros-${ROS_DISTRO}-rmw-fastrtps-shared-cpp \
     ros-${ROS_DISTRO}-ros-gz-sim \
@@ -52,6 +75,11 @@ RUN uv venv /opt/venv
 
 # merge
 FROM base AS final
+ARG APT_TIMEOUT_SEC=3600
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG http_proxy
+ARG https_proxy
 ARG username=arena
 ARG group=arena
 ARG uid=1000
@@ -64,7 +92,8 @@ COPY --from=python_deps /usr/local/bin/uv /usr/local/bin/uv
 # install docker cli
 RUN  --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y \
+    timeout ${APT_TIMEOUT_SEC}s apt-get update && \
+    timeout ${APT_TIMEOUT_SEC}s apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
         gnupg \
@@ -75,12 +104,12 @@ RUN  --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
         $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
         | tee /etc/apt/sources.list.d/docker.list > /dev/null \
-    && apt-get update && apt-get install -y docker-ce-cli \
-    && rm -rf /var/lib/apt/lists/*
+    && timeout ${APT_TIMEOUT_SEC}s apt-get update \
+    && timeout ${APT_TIMEOUT_SEC}s apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin
 
 # install lightsfm
-ADD https://github.com/robotics-upo/lightsfm.git /lightsfm
-RUN cd /lightsfm && make && make install
+RUN git clone --depth 1 https://github.com/robotics-upo/lightsfm.git /lightsfm && \
+    cd /lightsfm && make && make install
 
 
 
@@ -108,7 +137,10 @@ RUN ln -fs src/Arena/_meta/docker/features/docker/source.container ./source
 
 RUN chmod +x /entrypoint.sh
 USER ${username}
-RUN curl -fsSL https://pyenv.run | bash
+RUN if [ -z "${HTTP_PROXY}${HTTPS_PROXY}${http_proxy}${https_proxy}" ]; then \
+        echo "WARNING: no HTTP(S) proxy is configured; pyenv install requires working internet access." >&2; \
+    fi && \
+    curl -fsSL https://pyenv.run | bash
 
 ENTRYPOINT ["/entrypoint.sh"]
 

@@ -11,6 +11,7 @@ docker_env="${docker_env} ARENA_WS_DIR=$ARENA_WS_DIR"
 docker_env="${docker_env} ARENA_ROS_DISTRO=$ARENA_ROS_DISTRO"
 docker_env="${docker_env} HOST_UID=$HOST_UID"
 docker_env="${docker_env} HOST_GID=$HOST_GID"
+docker_env="${docker_env} HOST_DOCKER_GID=$HOST_DOCKER_GID"
 docker_env="${docker_env} HOST_ARENA_WS_DIR=$HOST_ARENA_WS_DIR"
 
 
