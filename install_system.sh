@@ -1,8 +1,8 @@
 #!/bin/bash -i
 set -e
 
-export ARENA_REPO=${ARENA_REPO:-https://github.com/voshch/Arena.git}
-export ARENA_BRANCH=${ARENA_BRANCH:-jazzy}
+export ARENA_REPO=${ARENA_REPO:-https://github.com/Social-Nav/Arena5.0.git}
+export ARENA_BRANCH=${ARENA_BRANCH:-feat/internnav-eval-progress}
 export ARENA_ROS_DISTRO=${ARENA_ROS_DISTRO:-jazzy}
 
 read_default(){

@@ -14,7 +14,7 @@ Before running Arena benchmarks, make sure you have:
 The repository already provides installation helpers:
 
 ```bash
-curl https://raw.githubusercontent.com/voshch/Arena/jazzy/install.sh > install.sh
+curl -fsSL https://raw.githubusercontent.com/Social-Nav/Arena5.0/feat/internnav-eval-progress/install.sh -o install.sh
 bash install.sh
 ```
 

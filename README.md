@@ -1,6 +1,6 @@
-# Arena-Rosnav
+# Arena5.0
 
-A modular ROS 2 (Humble) platform for researching and benchmarking autonomous robot navigation in 2D and 3D simulated environments. It supports classical planners (Nav2), deep-RL planners ([rosnav_rl](https://github.com/Arena-Rosnav/rosnav-rl)), and a variety of simulators (Gazebo, Isaac Sim).
+A modular ROS 2 Jazzy platform for researching and benchmarking autonomous robot navigation in 2D and 3D simulated environments. It supports classical planners (Nav2), deep-RL planners ([rosnav_rl](https://github.com/Arena-Rosnav/rosnav-rl)), and a variety of simulators (Gazebo, Isaac Sim).
 
 ---
 
@@ -43,7 +43,7 @@ Afterwards, run the following commands to install Arena:
 ### Basic Installation
 
 ```sh
-curl https://raw.githubusercontent.com/voshch/Arena/jazzy/install.sh > install.sh
+curl -fsSL https://raw.githubusercontent.com/Social-Nav/Arena5.0/feat/internnav-eval-progress/install.sh -o install.sh
 bash install.sh
 ```
 and follow the prompts. This will create a ROS 2 workspace at your target location and instruct you how to proceed (yellow text).
@@ -74,7 +74,7 @@ arena minimum-test --include-installed-features --with-robot-launch --robot Ai2_
 For Isaac Sim runs, two extra pieces are required beyond a normal workspace build:
 
 1. `arena feature isaac install` builds the Isaac image and embeds Python 3.11 ROS bridge messages into `/opt/isaac_bridge_msgs` inside the Isaac container.
-2. The host workspace may also need a Humble-compatible eval overlay at `install_humble_eval/` for packages that otherwise pull in binaries requiring a newer glibc than Ubuntu 22.04 provides.
+2. Isaac launches execute inside the Isaac feature container and use `/opt/arena_ws` paths, so keep the workspace mounted through the standard Arena Docker flow instead of pointing Isaac at host-only build artifacts.
 
 If you change anything under `arena_isaac/isaacsim_msgs`, `utils/msgs/arena_people_msgs`, or `src/deps/hunav/hunav_sim/hunav_msgs`, rebuild the Isaac image before launching again:
 
@@ -84,7 +84,7 @@ source arena
 arena feature isaac update
 ```
 
-Do not point Isaac launch at host-built `install_py311_msgs/` artifacts from another ROS distro. Isaac must load the image-bundled `/opt/isaac_bridge_msgs` packages so that its Python 3.11 runtime, `rclpy`, and FastDDS/FastCDR libraries stay ABI-compatible.
+Do not point Isaac launch at host-built message overlays from another ROS distro. Isaac must load the image-bundled `/opt/isaac_bridge_msgs` packages so that its Python 3.11 runtime, `rclpy`, and FastDDS/FastCDR libraries stay ABI-compatible.
 
 ## Usage
 
