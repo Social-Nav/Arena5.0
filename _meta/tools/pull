@@ -26,8 +26,19 @@ if [ $_GIT -eq 1 ] ; then
     export GIT_CONFIG_KEY_1="url.https://github.com/.insteadOf"
     export GIT_CONFIG_VALUE_1="ssh://git@github.com/"
     echo updating Arena...
-    git pull --ff-only --autostash && git submodule update --recursive
-    git submodule update --init --recursive arena_robots
+    git pull --ff-only --autostash && git submodule update
+    git submodule update --init arena_robots
+    if [ -f "$ARENA_DIR/arena_robots/.gitmodules" ]; then
+        git -C "$ARENA_DIR/arena_robots" submodule sync
+        git -C "$ARENA_DIR/arena_robots" \
+            -c submodule.deps/jackal.branch=noetic-devel \
+            -c submodule.deps/turtlebot4.branch=jazzy \
+            -c submodule.deps/robot_usds.branch=feature/Social-Nav \
+            submodule update --init --remote \
+            deps/jackal \
+            deps/turtlebot4 \
+            deps/robot_usds
+    fi
 
     # re-source
     . "$ARENA_DIR/_meta/tools/source"

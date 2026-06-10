@@ -14,6 +14,7 @@ services:
         - http_proxy=${http_proxy}
         - https_proxy=${https_proxy}
         - no_proxy=${no_proxy}
+        - ROS_APT_MIRROR=${ROS_APT_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/ros2/ubuntu}
     gpus: all
     network_mode: host
     stdin_open: true

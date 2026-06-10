@@ -28,11 +28,11 @@ def generate_launch_description():
         '/opt/isaac_bridge_msgs/arena_people_msgs/lib/python3.11/site-packages',
         '/opt/isaac_bridge_msgs/hunav_msgs/lib/python3.11/site-packages',
         '/opt/isaac_bridge_msgs/isaacsim_msgs/lib/python3.11/site-packages',
-        '/home/ubuntu/arena_jazzy_ws/install_humble_eval/arena_isaac/lib/python3.10/site-packages',
-        '/home/ubuntu/arena_jazzy_ws/src/Arena/arena_simulation_setup/src',
-        '/home/ubuntu/arena_jazzy_ws/src/Arena/arena_isaac/arena_isaac',
-        '/home/ubuntu/arena_jazzy_ws/src/Arena/arena_robots/arena_robots',
-        '/home/ubuntu/arena_jazzy_ws/src/Arena/arena_robots',
+        '/opt/arena_ws/install/arena_isaac/lib/python3.12/site-packages',
+        '/opt/arena_ws/src/Arena/arena_simulation_setup/src',
+        '/opt/arena_ws/src/Arena/arena_isaac/arena_isaac',
+        '/opt/arena_ws/src/Arena/arena_robots/arena_robots',
+        '/opt/arena_ws/src/Arena/arena_robots',
         '/isaac-sim/exts/isaacsim.ros2.bridge/jazzy/python',
         '/isaac-sim/exts/isaacsim.ros2.bridge/jazzy/rclpy',
     ])
@@ -45,15 +45,11 @@ def generate_launch_description():
         '/usr/lib/x86_64-linux-gnu',
     ])
     isaac_ament_prefix_path = ':'.join([
-        '/home/ubuntu/arena_jazzy_ws/install/arena_bringup',
-        '/home/ubuntu/arena_jazzy_ws/install/arena_robots',
-        '/home/ubuntu/arena_jazzy_ws/install/arena_simulation_setup',
-        '/home/ubuntu/arena_jazzy_ws/install/arena_isaac',
-        '/home/ubuntu/arena_jazzy_ws/install_humble_eval/arena_bringup',
-        '/home/ubuntu/arena_jazzy_ws/install_humble_eval/arena_robots',
-        '/home/ubuntu/arena_jazzy_ws/install_humble_eval/arena_simulation_setup',
-        '/home/ubuntu/arena_jazzy_ws/install_humble_eval/arena_isaac',
-        '/home/ubuntu/arena_jazzy_ws/install',
+        '/opt/arena_ws/install/arena_bringup',
+        '/opt/arena_ws/install/arena_robots',
+        '/opt/arena_ws/install/arena_simulation_setup',
+        '/opt/arena_ws/install/arena_isaac',
+        '/opt/arena_ws/install',
         '/opt/ros/jazzy',
     ])
     isaac_container_shell = (
@@ -98,7 +94,7 @@ def generate_launch_description():
         'export ARENA_ISAAC_RENDERER="${ARENA_ISAAC_RENDERER:-RayTracedLighting}"; '
         'export ARENA_DISABLE_ISAAC_ODOM_GRAPH="${ARENA_DISABLE_ISAAC_ODOM_GRAPH:-0}"; '
         'export ARENA_SPAWN_USD_ROBOT_ENABLE_ISAAC_ODOM_GRAPH="${ARENA_SPAWN_USD_ROBOT_ENABLE_ISAAC_ODOM_GRAPH:-1}"; '
-        'python3 /home/ubuntu/arena_jazzy_ws/src/Arena/arena_isaac/arena_isaac/arena_isaac/run_isaacsim.py '
+        'python3 /opt/arena_ws/src/Arena/arena_isaac/arena_isaac/arena_isaac/run_isaacsim.py '
         '--save-data "$ARENA_SAVE_DATA" --robot "$ARENA_ROBOT" 2>&1 | tee /tmp/isaac_sim.log'
     )
 

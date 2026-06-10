@@ -14,6 +14,7 @@ ARG NO_PROXY
 ARG http_proxy
 ARG https_proxy
 ARG no_proxy
+ARG ROS_APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/ros2/ubuntu
 
 ENV HTTP_PROXY=${HTTP_PROXY} \
     HTTPS_PROXY=${HTTPS_PROXY} \
@@ -21,6 +22,12 @@ ENV HTTP_PROXY=${HTTP_PROXY} \
     http_proxy=${http_proxy} \
     https_proxy=${https_proxy} \
     no_proxy=${no_proxy}
+
+RUN if [ -n "${ROS_APT_MIRROR}" ]; then \
+        rm -f /etc/apt/sources.list.d/ros2.sources /etc/apt/sources.list.d/ros2.list && \
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros2-archive-keyring.gpg] ${ROS_APT_MIRROR} $(. /etc/os-release && echo "$VERSION_CODENAME") main" \
+            > /etc/apt/sources.list.d/ros2.list; \
+    fi
 
 # 1. Setup Deadsnakes for Python 3.11 (Jazzy is native 3.12)
 RUN apt-get update && apt-get install -y software-properties-common && \

@@ -5,9 +5,20 @@ ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG http_proxy
 ARG https_proxy
+ARG ROS_APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/ros2/ubuntu
+ARG PYTHON_BUILD_MIRROR_URL=https://mirrors.tuna.tsinghua.edu.cn/python
+ARG PYTHON_BUILD_MIRROR_URL_SKIP_CHECKSUM=1
+ENV PYTHON_BUILD_MIRROR_URL=${PYTHON_BUILD_MIRROR_URL}
+ENV PYTHON_BUILD_MIRROR_URL_SKIP_CHECKSUM=${PYTHON_BUILD_MIRROR_URL_SKIP_CHECKSUM}
 
 RUN if [ -z "${HTTP_PROXY}${HTTPS_PROXY}${http_proxy}${https_proxy}" ]; then \
         echo "WARNING: no HTTP(S) proxy is configured; Docker build requires working internet access." >&2; \
+    fi
+
+RUN if [ -n "${ROS_APT_MIRROR}" ]; then \
+        rm -f /etc/apt/sources.list.d/ros2.sources /etc/apt/sources.list.d/ros2.list && \
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros2-archive-keyring.gpg] ${ROS_APT_MIRROR} $(. /etc/os-release && echo "$VERSION_CODENAME") main" \
+            > /etc/apt/sources.list.d/ros2.list; \
     fi
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -31,7 +42,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ros-${ROS_DISTRO}-fastrtps-cmake-module \
     ros-${ROS_DISTRO}-irobot-create-description \
     ros-${ROS_DISTRO}-navigation2 \
-    ros-${ROS_DISTRO}-nav2-bringup \
     ros-${ROS_DISTRO}-nav2-map-server \
     ros-${ROS_DISTRO}-nav2-amcl \
     ros-${ROS_DISTRO}-nav2-behaviors \
@@ -49,9 +59,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ros-${ROS_DISTRO}-nav2-msgs \
     ros-${ROS_DISTRO}-rmw-fastrtps-cpp \
     ros-${ROS_DISTRO}-rmw-fastrtps-shared-cpp \
-    ros-${ROS_DISTRO}-ros-gz-sim \
-    ros-${ROS_DISTRO}-ros-gz-bridge \
-    ros-${ROS_DISTRO}-ros-gz-image \
     ros-${ROS_DISTRO}-rosidl-dynamic-typesupport-fastrtps \
     ros-${ROS_DISTRO}-rosidl-typesupport-fastrtps-c \
     ros-${ROS_DISTRO}-rosidl-typesupport-fastrtps-cpp \
@@ -105,7 +112,7 @@ RUN  --mount=type=cache,target=/var/cache/apt,sharing=locked \
         $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
         | tee /etc/apt/sources.list.d/docker.list > /dev/null \
     && timeout ${APT_TIMEOUT_SEC}s apt-get update \
-    && timeout ${APT_TIMEOUT_SEC}s apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin
+    && timeout ${APT_TIMEOUT_SEC}s apt-get install -y --no-install-recommends docker-ce-cli docker-buildx-plugin docker-compose-plugin
 
 # install lightsfm
 RUN git clone --depth 1 https://github.com/robotics-upo/lightsfm.git /lightsfm && \

@@ -365,7 +365,7 @@ class Mod_Benchmark(TM_Module):
         return success
 
     def __init__(self, task, **kwargs):
-        super().__init__(task, **kwargs)
+        super().__init__(task=task, **kwargs)
 
         self.needs_reincarnation: bool = True
 

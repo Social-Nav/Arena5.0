@@ -3,6 +3,8 @@
 export ARENA_WS_DIR="/opt/arena_ws"
 export ARENA_VENV_DIR="/opt/venv"
 export ARENA_FEATURES_DIR="$ARENA_WS_DIR/src/Arena/_meta/docker/features"
+export PYTHON_BUILD_MIRROR_URL="${PYTHON_BUILD_MIRROR_URL:-https://mirrors.tuna.tsinghua.edu.cn/python}"
+export PYTHON_BUILD_MIRROR_URL_SKIP_CHECKSUM="${PYTHON_BUILD_MIRROR_URL_SKIP_CHECKSUM:-1}"
 
 docker_env=""
 docker_env="${docker_env} ARENA_PROJECT_NAME=$ARENA_PROJECT_NAME"
@@ -13,6 +15,11 @@ docker_env="${docker_env} HOST_UID=$HOST_UID"
 docker_env="${docker_env} HOST_GID=$HOST_GID"
 docker_env="${docker_env} HOST_DOCKER_GID=$HOST_DOCKER_GID"
 docker_env="${docker_env} HOST_ARENA_WS_DIR=$HOST_ARENA_WS_DIR"
+for name in HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy ROS_APT_MIRROR PYTHON_BUILD_MIRROR_URL PYTHON_BUILD_MIRROR_URL_SKIP_CHECKSUM HOST_SCENES_DIR; do
+    if [ -n "${!name+x}" ]; then
+        docker_env="${docker_env} ${name}=${!name}"
+    fi
+done
 
 
 export docker_env

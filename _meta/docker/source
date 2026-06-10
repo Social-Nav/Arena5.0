@@ -30,6 +30,11 @@ docker_env="${docker_env} ARENA_WS_DIR=$ARENA_WS_DIR"
 docker_env="${docker_env} HOST_UID=$HOST_UID"
 docker_env="${docker_env} HOST_GID=$HOST_GID"
 docker_env="${docker_env} HOST_DOCKER_GID=$HOST_DOCKER_GID"
+for name in HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy ROS_APT_MIRROR HOST_SCENES_DIR; do
+    if [ -n "${!name+x}" ]; then
+        docker_env="${docker_env} ${name}=${!name}"
+    fi
+done
 export docker_env
 
 arena_docker_compose_files(){

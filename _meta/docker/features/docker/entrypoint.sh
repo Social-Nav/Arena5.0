@@ -28,8 +28,19 @@ if [ ! -f /.built ]; then
         if [ -z "${HTTP_PROXY}${HTTPS_PROXY}${http_proxy}${https_proxy}" ]; then
             echo "WARNING: no HTTP(S) proxy is configured; git submodule update requires working internet access." >&2
         fi
-        git -C /opt/arena_ws/src/Arena submodule sync --recursive
-        git -C /opt/arena_ws/src/Arena submodule update --init --recursive
+        git -C /opt/arena_ws/src/Arena submodule sync
+        git -C /opt/arena_ws/src/Arena submodule update --init
+        if [ -f /opt/arena_ws/src/Arena/arena_robots/.gitmodules ]; then
+            git -C /opt/arena_ws/src/Arena/arena_robots submodule sync
+            git -C /opt/arena_ws/src/Arena/arena_robots \
+                -c submodule.deps/jackal.branch=noetic-devel \
+                -c submodule.deps/turtlebot4.branch=jazzy \
+                -c submodule.deps/robot_usds.branch=feature/Social-Nav \
+                submodule update --init --remote \
+                deps/jackal \
+                deps/turtlebot4 \
+                deps/robot_usds
+        fi
     fi
     arena update
     BUILD_ALL=1 arena build

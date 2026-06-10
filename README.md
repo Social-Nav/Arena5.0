@@ -6,7 +6,38 @@ A modular ROS 2 (Humble) platform for researching and benchmarking autonomous ro
 
 ## Installation
 
-Preqeuisites: [Docker](https://docs.docker.com/engine/install/) installation with [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) for GPU support. Current user must be in group `docker`.
+Prerequisites: [Docker](https://docs.docker.com/engine/install/) installation with [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) for GPU support. Current user must be in group `docker`.
+
+The commands below assume the workspace is mounted at `~/arena_ws`.  Network-related environment variables are forwarded from the host into the main Arena container and into feature containers, so set proxy and mirror variables **before** sourcing `arena` or running feature installs.
+
+### Network proxy and mirrors
+
+If your network requires a proxy, set both upper-case and lower-case proxy variables:
+
+```sh
+export HTTP_PROXY=http://100.68.161.151:3128
+export HTTPS_PROXY=http://100.68.161.151:3128
+export NO_PROXY=localhost,127.0.0.1,::1
+export http_proxy="$HTTP_PROXY"
+export https_proxy="$HTTPS_PROXY"
+export no_proxy="$NO_PROXY"
+```
+
+To use the Tsinghua ROS 2 mirror and the Tsinghua Python source mirror during clean builds:
+
+```sh
+export ROS_APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/ros2/ubuntu
+export PYTHON_BUILD_MIRROR_URL=https://mirrors.tuna.tsinghua.edu.cn/python
+export PYTHON_BUILD_MIRROR_URL_SKIP_CHECKSUM=1
+```
+
+To return to direct network access and the default upstream mirrors, unset them before re-running install/update commands:
+
+```sh
+unset HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy
+unset ROS_APT_MIRROR PYTHON_BUILD_MIRROR_URL PYTHON_BUILD_MIRROR_URL_SKIP_CHECKSUM
+```
+
 Afterwards, run the following commands to install Arena:
 
 ### Basic Installation
@@ -22,12 +53,21 @@ and follow the prompts. This will create a ROS 2 workspace at your target locati
 ```sh
 cd ~/arena_ws # replace with your actual workspace path
 source arena
+arena update
 arena feature isaac install # optional
 arena feature gazebo install # optional
 arena feature training install # optional
 ```
 
 We recommend installing at least one simulator.
+
+After installation, run the minimum workspace check from the host shell:
+
+```sh
+cd ~/arena_ws
+source arena
+arena minimum-test --include-installed-features --with-robot-launch --robot Ai2_Bot2 --world hospital_1 --launch-timeout 30
+```
 
 ### Isaac Sim clean-clone notes
 
@@ -55,6 +95,31 @@ arena launch sim:=isaac                          # Isaac Sim
 arena launch local_planner:=rosnav_rl agent_name:=<your_agent>  # DRL planner
 arena launch sim:=gazebo local_planner:=rosnav_rl env_n:=2 train_config:=<path to config.yaml> # DRL training 
 ```
+
+### Minimum Isaac smoke test
+
+For the minimal Isaac + `hospital_1` + `Ai2_Bot2` validation, start from the workspace and run the launch through the Arena container:
+
+```sh
+cd ~/arena_ws
+source arena
+arena feature isaac install
+
+arena launch \
+  sim:=isaac \
+  robot:=Ai2_Bot2 \
+  world:=hospital_1 \
+  headless:=2 \
+  tm_robots:=scenario \
+  episodes:=1 \
+  timeout:=10 \
+  timeout_wall_sec:=45.0 \
+  auto_reset:=false \
+  local_planner:=dwb \
+  global_planner:=navfn
+```
+
+`tm_robots:=scenario` is required for this smoke test.  The default `tm_robots:=explore` uses the demo robot setup, which currently spawns `jackal` robots instead of the requested `Ai2_Bot2`.
 
 ### DRL quick-start
 Place your trained agent folder inside `Arena/arena_training/agents/<agent_name>/` (must contain `training_config.yaml` and `best_model.zip`), then launch with `local_planner:=rosnav_rl agent_name:=<agent_name>`. Refer to the [arena_training](arena_training/README.md) for training instructions.

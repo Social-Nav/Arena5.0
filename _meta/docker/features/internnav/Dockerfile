@@ -12,9 +12,16 @@ ARG NO_PROXY
 ARG http_proxy
 ARG https_proxy
 ARG no_proxy
+ARG ROS_APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/ros2/ubuntu
 
 ENV ROS_DISTRO=${ROS_DISTRO}
 ENV DEBIAN_FRONTEND=noninteractive
+
+RUN if [ -n "${ROS_APT_MIRROR}" ]; then \
+        rm -f /etc/apt/sources.list.d/ros2.sources /etc/apt/sources.list.d/ros2.list && \
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros2-archive-keyring.gpg] ${ROS_APT_MIRROR} $(. /etc/os-release && echo "$VERSION_CODENAME") main" \
+            > /etc/apt/sources.list.d/ros2.list; \
+    fi
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \

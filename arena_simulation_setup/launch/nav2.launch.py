@@ -22,8 +22,6 @@ from launch import LaunchDescription
 def generate_launch_description():
     ss_root = FindPackageShare('arena_simulation_setup')
     robots_root = FindPackageShare('arena_robots')
-    pkg_nav2_bringup = FindPackageShare('nav2_bringup')
-
     ld_items = []
     LaunchArgument.auto_append(ld_items)
 
