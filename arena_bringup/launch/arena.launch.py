@@ -194,6 +194,24 @@ def generate_launch_description():
         description='Optional Python adapter target (module:attr) for custom model backends inside the InternNav wrapper'
     )
     dual_vln_adapter_target = declare_legacy_alias('dual_vln_adapter_target', internnav_adapter_target)
+    internnav_http_url = LaunchArgument(
+        name='internnav_http_url',
+        default_value=launch.substitutions.EnvironmentVariable(
+            'ARENA_EVAL_INTERNNAV_HTTP_URL',
+            default_value=launch.substitutions.EnvironmentVariable('ARENA_INTERNNAV_HTTP_URL', default_value=''),
+        ),
+        description='HTTP URL for InternVLA realworld /eval_dual adapter'
+    )
+    dual_vln_http_url = declare_legacy_alias('dual_vln_http_url', internnav_http_url)
+    internnav_http_timeout_sec = LaunchArgument(
+        name='internnav_http_timeout_sec',
+        # Keep launch-time float conversion deterministic; internnav_server and
+        # adapter read ARENA_*_HTTP_TIMEOUT_SEC directly and can recover from
+        # invalid env values.
+        default_value='0.0',
+        description='HTTP timeout in seconds for InternVLA realworld /eval_dual adapter'
+    )
+    dual_vln_http_timeout_sec = declare_legacy_alias('dual_vln_http_timeout_sec', internnav_http_timeout_sec)
     internnav_require_real_backend = LaunchArgument(
         name='internnav_require_real_backend',
         default_value='false',
@@ -481,6 +499,8 @@ def generate_launch_description():
                     **dual_vln_camera_info_topic.dict,
                     **dual_vln_python_executable.dict,
                     **dual_vln_adapter_target.dict,
+                    **dual_vln_http_url.dict,
+                    **dual_vln_http_timeout_sec.dict,
                     **dual_vln_require_real_backend.dict,
                     **dual_vln_strict_device.dict,
                     **dual_vln_model_output_policy.dict,

@@ -45,11 +45,13 @@ def _install_ros_import_stubs_if_needed():
     node_mod = types.ModuleType('rclpy.node')
     parameter_mod = types.ModuleType('rclpy.parameter')
     qos_mod = types.ModuleType('rclpy.qos')
+    time_mod = types.ModuleType('rclpy.time')
     node_mod.Node = _Node
     parameter_mod.Parameter = _Parameter
     qos_mod.DurabilityPolicy = SimpleNamespace(TRANSIENT_LOCAL=1, VOLATILE=2)
     qos_mod.ReliabilityPolicy = SimpleNamespace(RELIABLE=1, BEST_EFFORT=2)
     qos_mod.QoSProfile = lambda *args, **kwargs: SimpleNamespace(**kwargs)
+    time_mod.Time = type('Time', (), {})
 
     geometry_msgs_mod = types.ModuleType('geometry_msgs')
     geometry_msgs_msg_mod = types.ModuleType('geometry_msgs.msg')
@@ -76,11 +78,16 @@ def _install_ros_import_stubs_if_needed():
     std_msgs_msg_mod = types.ModuleType('std_msgs.msg')
     std_msgs_msg_mod.String = _String
 
+    tf2_ros_mod = types.ModuleType('tf2_ros')
+    tf2_ros_mod.Buffer = type('Buffer', (), {})
+    tf2_ros_mod.TransformListener = type('TransformListener', (), {})
+
     sys.modules.update({
         'rclpy': rclpy_mod,
         'rclpy.node': node_mod,
         'rclpy.parameter': parameter_mod,
         'rclpy.qos': qos_mod,
+        'rclpy.time': time_mod,
         'geometry_msgs': geometry_msgs_mod,
         'geometry_msgs.msg': geometry_msgs_msg_mod,
         'nav_msgs': nav_msgs_mod,
@@ -91,6 +98,7 @@ def _install_ros_import_stubs_if_needed():
         'rosnav_rl_msgs.srv': rosnav_srv_mod,
         'std_msgs': std_msgs_mod,
         'std_msgs.msg': std_msgs_msg_mod,
+        'tf2_ros': tf2_ros_mod,
     })
 
 
@@ -107,10 +115,18 @@ from arena_vln_models.backends import HeuristicBackend, ModelSimDecision, Pose2D
 from arena_vln_models import internnav as internnav_module
 from arena_vln_models.internnav import (
     InternNavAdapter,
+    InternVLARealworldHttpAdapter,
     available_backends,
     load_internnav_adapter,
+    load_internvla_realworld_http_adapter,
 )
-from arena_vln_models.internnav_server import InternNavServer, _normalize_internnav_adapter_target
+from arena_vln_models.internnav_server import (
+    InternNavServer,
+    _normalize_internnav_adapter_target,
+    _resolve_adapter_target_for_http_adapter,
+    _resolve_float,
+    _resolve_mode_for_http_adapter,
+)
 from arena_vln_models.visualization import image_msg_to_numpy, numpy_to_image_msg, render_debug_overlay
 
 
@@ -170,6 +186,166 @@ def test_internnav_mock_mode_returns_command_mapping():
     assert result['status'] == 'mock_internnav_command'
     assert result['discrete_action'] in {0, 1, 2, 3}
     assert result['debug']['wrapper_package'] == 'arena_vln_models'
+
+
+def test_internvla_realworld_http_adapter_posts_arena_observation(monkeypatch):
+    captured = {}
+
+    class _Response:
+        text = '{"output_trajectory": [[0.1, 0.0, 0.0]]}'
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                'status': 'internvla_realworld_http_command',
+                'output_trajectory': [[0.1, 0.0, 0.0]],
+                'output_pixel': [2, 3],
+                'debug': {'server_compute_sec': 0.01},
+            }
+
+    def _post(url, *, files, data, timeout):
+        captured['url'] = url
+        captured['files'] = files
+        captured['data'] = json.loads(data['json'])
+        captured['timeout'] = timeout
+        return _Response()
+
+    monkeypatch.setitem(sys.modules, 'requests', SimpleNamespace(post=_post))
+    adapter = load_internvla_realworld_http_adapter(params={
+        'internnav_http_url': 'http://internnav:5801/eval_dual',
+        'internnav_http_timeout_sec': 3.0,
+        'model_output_policy': 'trajectory',
+    })
+
+    result = adapter.compute(_observation())
+
+    assert isinstance(adapter, InternVLARealworldHttpAdapter)
+    assert captured['url'] == 'http://internnav:5801/eval_dual'
+    assert captured['timeout'] == 3.0
+    assert captured['data']['reset'] is True
+    assert captured['data']['instruction'] == 'go forward'
+    assert captured['data']['client'] == 'arena_ros2_get_command_async_worker'
+    assert 'image' in captured['files']
+    assert 'depth' in captured['files']
+    assert result['output_trajectory'] == [[0.1, 0.0, 0.0]]
+    assert result['debug']['realworld_http_client'] is True
+    assert result['debug']['system1_http_server'] is True
+    assert result['debug']['system2_http_server'] is True
+
+
+def test_internvla_realworld_http_adapter_prefers_eval_env_and_positive_timeout(monkeypatch):
+    monkeypatch.setenv('ARENA_INTERNNAV_HTTP_URL', 'http://generic:5801/eval_dual')
+    monkeypatch.setenv('ARENA_EVAL_INTERNNAV_HTTP_URL', 'http://eval:5801/eval_dual')
+    monkeypatch.setenv('ARENA_INTERNNAV_HTTP_TIMEOUT_SEC', '1.0')
+    monkeypatch.setenv('ARENA_EVAL_INTERNNAV_HTTP_TIMEOUT_SEC', '2.0')
+
+    adapter = load_internvla_realworld_http_adapter(params={})
+
+    assert adapter._url == 'http://eval:5801/eval_dual'  # noqa: SLF001 - intentional internal test hook
+    assert adapter._timeout == 2.0  # noqa: SLF001 - intentional internal test hook
+
+
+def test_internvla_realworld_http_adapter_non_positive_timeout_falls_back_to_inference_timeout():
+    adapter = load_internvla_realworld_http_adapter(params={
+        'internnav_http_timeout_sec': '0.0',
+        'inference_timeout_sec': 7.5,
+    })
+
+    assert adapter._timeout == 7.5  # noqa: SLF001 - intentional internal test hook
+
+
+def test_internvla_realworld_http_adapter_missing_rgb_safe_stops_without_post(monkeypatch):
+    called = {'post': False}
+
+    def _post_eval_dual(*args, **kwargs):
+        called['post'] = True
+        raise AssertionError('HTTP should not be called when RGB is missing')
+
+    monkeypatch.setattr(InternVLARealworldHttpAdapter, '_post_eval_dual', staticmethod(_post_eval_dual))
+    adapter = load_internvla_realworld_http_adapter(params={
+        'internnav_http_url': 'http://internnav:5801/eval_dual',
+    })
+
+    result = adapter.compute(_observation(rgb_image=None))
+
+    assert called['post'] is False
+    assert result['status'] == 'internnav_http_missing_rgb'
+    assert result['degraded'] is True
+    assert result['discrete_action'] == 0
+    assert result['debug']['safe_stop'] is True
+    assert result['debug']['realworld_http_client'] is True
+
+
+def test_internvla_realworld_http_adapter_reset_flag_tracks_session(monkeypatch):
+    resets = []
+    request_ids = []
+
+    def _post_eval_dual(url, *, files, payload, timeout):
+        resets.append(payload['reset'])
+        request_ids.append(payload['request_id'])
+        return {'output_trajectory': [[0.1, 0.0, 0.0]]}
+
+    monkeypatch.setattr(InternVLARealworldHttpAdapter, '_post_eval_dual', staticmethod(_post_eval_dual))
+    adapter = load_internvla_realworld_http_adapter(params={
+        'internnav_http_url': 'http://internnav:5801/eval_dual',
+    })
+
+    adapter.compute(_observation())
+    adapter.compute(_observation())
+    adapter.compute(_observation(instruction='turn right'))
+    adapter.compute(_observation(goal=SimpleNamespace(x=2.0, y=0.0, yaw=0.0)))
+
+    assert resets == [True, False, True, True]
+    assert request_ids == [1, 2, 3, 4]
+
+
+def test_internvla_realworld_http_adapter_urllib_fallback_posts_multipart(monkeypatch):
+    import urllib.request
+
+    captured = {}
+    original_import_module = internnav_module.importlib.import_module
+
+    def _import_module(name, *args, **kwargs):
+        if name == 'requests':
+            raise ModuleNotFoundError(name)
+        return original_import_module(name, *args, **kwargs)
+
+    class _UrlopenResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return b'{"output_trajectory": [[0.2, 0.0, 0.0]], "debug": {"source": "urllib-test"}}'
+
+    def _urlopen(request, timeout):
+        captured['request'] = request
+        captured['timeout'] = timeout
+        captured['body'] = request.data
+        captured['headers'] = dict(request.header_items())
+        return _UrlopenResponse()
+
+    monkeypatch.setattr(internnav_module.importlib, 'import_module', _import_module)
+    monkeypatch.setattr(urllib.request, 'urlopen', _urlopen)
+    adapter = load_internvla_realworld_http_adapter(params={
+        'internnav_http_url': 'http://internnav:5801/eval_dual',
+        'internnav_http_timeout_sec': 3.0,
+    })
+
+    result = adapter.compute(_observation())
+
+    assert captured['timeout'] == 3.0
+    assert captured['request'].get_method() == 'POST'
+    assert 'multipart/form-data' in captured['headers']['Content-type']
+    assert b'name="json"' in captured['body']
+    assert b'name="image"; filename="rgb_image.jpg"' in captured['body']
+    assert b'name="depth"; filename="depth_image.png"' in captured['body']
+    assert result['output_trajectory'] == [[0.2, 0.0, 0.0]]
+    assert result['debug']['realworld_http_client'] is True
 
 
 def test_internnav_model_path_falls_back_to_env(monkeypatch, tmp_path):
@@ -410,6 +586,46 @@ def test_internnav_server_normalizes_legacy_native_adapter_target():
     )
     assert adapter_target == 'arena_vln_models.internnav:load_internnav_adapter'
     assert source == 'legacy:internnav.agent.internvla_n1_agent_realworld.InternVLAN1AsyncAgent'
+
+
+def test_internnav_server_invalid_float_env_falls_back_to_raw_value(monkeypatch):
+    monkeypatch.setenv('ARENA_EVAL_INTERNNAV_HTTP_TIMEOUT_SEC', 'not-a-float')
+
+    value, source = _resolve_float(4.5, env_names=('ARENA_EVAL_INTERNNAV_HTTP_TIMEOUT_SEC',))
+
+    assert value == 4.5
+    assert source == 'invalid-env:ARENA_EVAL_INTERNNAV_HTTP_TIMEOUT_SEC'
+
+
+def test_internnav_server_http_url_forces_internnav_mode():
+    mode, source = _resolve_mode_for_http_adapter('heuristic', 'http://internnav:5801/eval_dual')
+
+    assert mode == 'internnav'
+    assert source == 'internnav_http_url'
+
+
+def test_internnav_server_http_url_keeps_existing_internnav_mode():
+    mode, source = _resolve_mode_for_http_adapter('internnav', 'http://internnav:5801/eval_dual')
+
+    assert mode == 'internnav'
+    assert source is None
+
+
+def test_internnav_server_http_url_selects_realworld_http_adapter_for_empty_target():
+    adapter_target, source = _resolve_adapter_target_for_http_adapter('', 'http://internnav:5801/eval_dual')
+
+    assert adapter_target == 'arena_vln_models.internnav:load_internvla_realworld_http_adapter'
+    assert source == 'internnav_http_url'
+
+
+def test_internnav_server_http_url_replaces_legacy_local_adapter_target():
+    adapter_target, source = _resolve_adapter_target_for_http_adapter(
+        'internnav.agent.internvla_n1_agent_realworld.InternVLAN1AsyncAgent',
+        'http://internnav:5801/eval_dual',
+    )
+
+    assert adapter_target == 'arena_vln_models.internnav:load_internvla_realworld_http_adapter'
+    assert source == 'internnav_http_url'
 
 
 def test_internnav_instruction_gate_blocks_generic_default_instruction():

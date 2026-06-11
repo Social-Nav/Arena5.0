@@ -153,6 +153,21 @@ def generate_launch_description():
         default_value="",
     )
     dual_vln_adapter_target = declare_legacy_alias("dual_vln_adapter_target", internnav_adapter_target)
+    internnav_http_url = LaunchArgument(
+        name="internnav_http_url",
+        default_value=launch.substitutions.EnvironmentVariable(
+            "ARENA_EVAL_INTERNNAV_HTTP_URL",
+            default_value=launch.substitutions.EnvironmentVariable("ARENA_INTERNNAV_HTTP_URL", default_value=""),
+        ),
+    )
+    dual_vln_http_url = declare_legacy_alias("dual_vln_http_url", internnav_http_url)
+    internnav_http_timeout_sec = LaunchArgument(
+        name="internnav_http_timeout_sec",
+        # Avoid launch-time float conversion of arbitrary env strings; runtime
+        # nodes read ARENA_*_HTTP_TIMEOUT_SEC and apply their own fallback.
+        default_value="0.0",
+    )
+    dual_vln_http_timeout_sec = declare_legacy_alias("dual_vln_http_timeout_sec", internnav_http_timeout_sec)
     internnav_require_real_backend = LaunchArgument(
         name="internnav_require_real_backend",
         default_value="false",
@@ -168,6 +183,13 @@ def generate_launch_description():
         default_value="false",
     )
     dual_vln_look_down = declare_legacy_alias("dual_vln_look_down", internnav_look_down)
+    internnav_model_output_policy = LaunchArgument(
+        name="internnav_model_output_policy",
+        default_value="trajectory",
+    )
+    dual_vln_model_output_policy = declare_legacy_alias(
+        "dual_vln_model_output_policy", internnav_model_output_policy
+    )
     internnav_enable_visualization = LaunchArgument(
         name="internnav_enable_visualization",
         default_value="false",
@@ -336,9 +358,12 @@ def generate_launch_description():
                 'internnav_camera_info_topic': dual_vln_camera_info_topic.param_value(str),
                 'internnav_python_executable': dual_vln_python_executable.param_value(str),
                 'internnav_adapter_target': dual_vln_adapter_target.param_value(str),
+                'internnav_http_url': dual_vln_http_url.param_value(str),
+                'internnav_http_timeout_sec': dual_vln_http_timeout_sec.param_value(float),
                 'internnav_require_real_backend': dual_vln_require_real_backend.param_value(bool),
                 'internnav_strict_device': dual_vln_strict_device.param_value(bool),
                 'internnav_look_down': dual_vln_look_down.param_value(bool),
+                'internnav_model_output_policy': dual_vln_model_output_policy.param_value(str),
                 'internnav_enable_visualization': dual_vln_enable_visualization.param_value(bool),
                 'internnav_visualization_topic': dual_vln_visualization_topic.param_value(str),
                 'internnav_action_visualization_topic': dual_vln_action_visualization_topic.param_value(str),
@@ -357,9 +382,12 @@ def generate_launch_description():
                 **dual_vln_camera_info_topic.str_param,
                 **dual_vln_python_executable.str_param,
                 **dual_vln_adapter_target.str_param,
+                **dual_vln_http_url.str_param,
+                **dual_vln_http_timeout_sec.param(float),
                 **dual_vln_require_real_backend.param(bool),
                 **dual_vln_strict_device.param(bool),
                 **dual_vln_look_down.param(bool),
+                **dual_vln_model_output_policy.str_param,
                 **dual_vln_enable_visualization.param(bool),
                 **dual_vln_visualization_topic.str_param,
                 **dual_vln_action_visualization_topic.str_param,
@@ -403,9 +431,12 @@ def generate_launch_description():
                 'internnav_camera_info_topic': dual_vln_camera_info_topic.param_value(str),
                 'internnav_python_executable': dual_vln_python_executable.param_value(str),
                 'internnav_adapter_target': dual_vln_adapter_target.param_value(str),
+                'internnav_http_url': dual_vln_http_url.param_value(str),
+                'internnav_http_timeout_sec': dual_vln_http_timeout_sec.param_value(float),
                 'internnav_require_real_backend': dual_vln_require_real_backend.param_value(bool),
                 'internnav_strict_device': dual_vln_strict_device.param_value(bool),
                 'internnav_look_down': dual_vln_look_down.param_value(bool),
+                'internnav_model_output_policy': dual_vln_model_output_policy.param_value(str),
                 'internnav_enable_visualization': dual_vln_enable_visualization.param_value(bool),
                 'internnav_visualization_topic': dual_vln_visualization_topic.param_value(str),
                 'internnav_action_visualization_topic': dual_vln_action_visualization_topic.param_value(str),
@@ -424,9 +455,12 @@ def generate_launch_description():
                 **dual_vln_camera_info_topic.str_param,
                 **dual_vln_python_executable.str_param,
                 **dual_vln_adapter_target.str_param,
+                **dual_vln_http_url.str_param,
+                **dual_vln_http_timeout_sec.param(float),
                 **dual_vln_require_real_backend.param(bool),
                 **dual_vln_strict_device.param(bool),
                 **dual_vln_look_down.param(bool),
+                **dual_vln_model_output_policy.str_param,
                 **dual_vln_enable_visualization.param(bool),
                 **dual_vln_visualization_topic.str_param,
                 **dual_vln_action_visualization_topic.str_param,

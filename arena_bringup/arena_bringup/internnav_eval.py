@@ -14,8 +14,13 @@ from ament_index_python.packages import get_package_share_directory
 
 
 DEFAULT_INTERNNAV_ADAPTER_TARGET = 'arena_vln_models.internnav:load_internnav_adapter'
+REALWORLD_HTTP_ADAPTER_TARGET = 'arena_vln_models.internnav:load_internvla_realworld_http_adapter'
 LEGACY_INTERNNAV_ADAPTER_TARGETS = {
     'internnav.agent.internvla_n1_agent_realworld.InternVLAN1AsyncAgent': DEFAULT_INTERNNAV_ADAPTER_TARGET,
+}
+HTTP_ADAPTER_REPLACED_TARGETS = {
+    DEFAULT_INTERNNAV_ADAPTER_TARGET,
+    *LEGACY_INTERNNAV_ADAPTER_TARGETS.keys(),
 }
 
 
@@ -847,10 +852,17 @@ def _is_internnav_run(args) -> bool:
     adapter_target = str(args.dual_vln_adapter_target or '').lower()
     mode = str(args.dual_vln_mode or '').lower()
     model_path = str(args.dual_vln_model_path or '').lower()
+    http_url = str(
+        getattr(args, 'dual_vln_http_url', '')
+        or os.environ.get('ARENA_EVAL_INTERNNAV_HTTP_URL')
+        or os.environ.get('ARENA_INTERNNAV_HTTP_URL')
+        or ''
+    ).strip()
     return (
         'internnav' in adapter_target
         or mode == 'internnav'
         or ('internvla' in model_path or 'internnav' in model_path)
+        or bool(http_url)
     )
 
 
@@ -1864,6 +1876,32 @@ def _apply_runtime_defaults(args) -> dict:
         adjustments['dual_vln_status_topic'] = args.dual_vln_status_topic
 
     if _is_internnav_run(args):
+        env_http_url, env_http_url_name = _first_env_value(
+            'ARENA_EVAL_INTERNNAV_HTTP_URL',
+            'ARENA_INTERNNAV_HTTP_URL',
+        )
+        if env_http_url and not getattr(args, 'dual_vln_http_url', ''):
+            args.dual_vln_http_url = env_http_url
+            adjustments['dual_vln_http_url'] = f'{env_http_url} ({env_http_url_name})'
+        env_http_timeout, env_http_timeout_name = _first_env_value(
+            'ARENA_EVAL_INTERNNAV_HTTP_TIMEOUT_SEC',
+            'ARENA_INTERNNAV_HTTP_TIMEOUT_SEC',
+        )
+        if env_http_timeout and float(getattr(args, 'dual_vln_http_timeout_sec', 0.0) or 0.0) <= 0.0:
+            try:
+                args.dual_vln_http_timeout_sec = float(env_http_timeout)
+                adjustments['dual_vln_http_timeout_sec'] = f'{args.dual_vln_http_timeout_sec} ({env_http_timeout_name})'
+            except (TypeError, ValueError):
+                adjustments['dual_vln_http_timeout_sec_invalid'] = f'{env_http_timeout} ({env_http_timeout_name})'
+        if getattr(args, 'dual_vln_http_url', ''):
+            raw_adapter_target = str(getattr(args, 'dual_vln_adapter_target', '') or '').strip()
+            normalized_http_target, _ = _normalize_internnav_adapter_target(raw_adapter_target)
+            if not raw_adapter_target or raw_adapter_target in HTTP_ADAPTER_REPLACED_TARGETS or normalized_http_target == DEFAULT_INTERNNAV_ADAPTER_TARGET:
+                args.dual_vln_adapter_target = REALWORLD_HTTP_ADAPTER_TARGET
+                adjustments['dual_vln_adapter_target'] = f'{REALWORLD_HTTP_ADAPTER_TARGET} (http-url)'
+            if str(getattr(args, 'dual_vln_mode', '')).strip().lower() == 'heuristic':
+                args.dual_vln_mode = 'adapter'
+                adjustments['dual_vln_mode'] = 'adapter (http-url)'
         normalized_adapter_target, adapter_target_source = _normalize_internnav_adapter_target(
             getattr(args, 'dual_vln_adapter_target', '')
         )
@@ -2081,6 +2119,21 @@ def main() -> int:
     parser.add_argument('--internnav-camera-info-topic', '--dual-vln-camera-info-topic', dest='dual_vln_camera_info_topic', default='')
     parser.add_argument('--internnav-python-executable', '--dual-vln-python-executable', dest='dual_vln_python_executable', default='')
     parser.add_argument('--internnav-adapter-target', '--dual-vln-adapter-target', dest='dual_vln_adapter_target', default='')
+    parser.add_argument(
+        '--internnav-http-url',
+        '--dual-vln-http-url',
+        dest='dual_vln_http_url',
+        default='',
+        help='HTTP URL for InternVLA realworld /eval_dual adapter, e.g. http://127.0.0.1:5801/eval_dual.',
+    )
+    parser.add_argument(
+        '--internnav-http-timeout-sec',
+        '--dual-vln-http-timeout-sec',
+        dest='dual_vln_http_timeout_sec',
+        type=float,
+        default=0.0,
+        help='HTTP request timeout for InternVLA realworld adapter. Defaults to inference timeout when unset.',
+    )
     parser.add_argument('--internnav-require-real-backend', '--dual-vln-require-real-backend', dest='dual_vln_require_real_backend', action='store_true')
     parser.add_argument('--internnav-strict-device', '--dual-vln-strict-device', dest='dual_vln_strict_device', action='store_true')
     parser.add_argument(
@@ -2139,7 +2192,8 @@ def main() -> int:
     parser.add_argument('--skip-metrics', action='store_true')
     parser.add_argument('extra_launch_args', nargs='*', help='Additional KEY:=VALUE launch arguments')
     args = parser.parse_args()
-    if str(args.dual_vln_mode).strip().lower() == 'internnav':
+    runtime_adjustments = _apply_runtime_defaults(args)
+    if str(args.dual_vln_mode).strip().lower() == 'internnav' and not str(getattr(args, 'dual_vln_http_url', '') or '').strip():
         args.internnav_external_server = True
         args.dual_vln_require_real_backend = False
         args.dual_vln_strict_device = False
@@ -2150,7 +2204,6 @@ def main() -> int:
             args.tm_obstacles = 'scenario'
         if not args.scenario_file:
             args.scenario_file = 'normal'
-    runtime_adjustments = _apply_runtime_defaults(args)
 
     arena_eval_share = get_package_share_directory('arena_evaluation')
     bringup_share = get_package_share_directory('arena_bringup')
@@ -2261,6 +2314,10 @@ def main() -> int:
         launch_cmd.append(f'dual_vln_python_executable:={args.dual_vln_python_executable}')
     if args.dual_vln_adapter_target:
         launch_cmd.append(f'dual_vln_adapter_target:={args.dual_vln_adapter_target}')
+    if args.dual_vln_http_url:
+        launch_cmd.append(f'dual_vln_http_url:={args.dual_vln_http_url}')
+    if args.dual_vln_http_timeout_sec and args.dual_vln_http_timeout_sec > 0.0:
+        launch_cmd.append(f'dual_vln_http_timeout_sec:={args.dual_vln_http_timeout_sec}')
     if args.dual_vln_model_output_policy:
         launch_cmd.append(f'dual_vln_model_output_policy:={args.dual_vln_model_output_policy}')
     if args.dual_vln_command_service:
@@ -2348,6 +2405,8 @@ def main() -> int:
             'dual_vln_python_executable': args.dual_vln_python_executable,
             'eval_python_executable': sys.executable,
             'dual_vln_adapter_target': args.dual_vln_adapter_target,
+            'dual_vln_http_url': args.dual_vln_http_url,
+            'dual_vln_http_timeout_sec': args.dual_vln_http_timeout_sec,
             'dual_vln_require_real_backend': args.dual_vln_require_real_backend,
             'dual_vln_strict_device': args.dual_vln_strict_device,
             'dual_vln_model_output_policy': args.dual_vln_model_output_policy,
@@ -2426,6 +2485,18 @@ def main() -> int:
     env['ARENA_EVAL_INTERNNAV_DEPTH_TOPIC'] = str(args.dual_vln_depth_topic or '')
     env['ARENA_EVAL_INTERNNAV_CAMERA_INFO_TOPIC'] = str(args.dual_vln_camera_info_topic or '')
     env['ARENA_EVAL_INTERNNAV_ADAPTER_TARGET'] = str(args.dual_vln_adapter_target or '')
+    if args.dual_vln_http_url:
+        env['ARENA_EVAL_INTERNNAV_HTTP_URL'] = str(args.dual_vln_http_url)
+    else:
+        # Do not export an empty high-priority override: launch files also look
+        # at ARENA_INTERNNAV_HTTP_URL, and an empty ARENA_EVAL_* value would mask
+        # that fallback in EnvironmentVariable substitutions.
+        env.pop('ARENA_EVAL_INTERNNAV_HTTP_URL', None)
+    env['ARENA_EVAL_INTERNNAV_HTTP_TIMEOUT_SEC'] = str(
+        args.dual_vln_http_timeout_sec
+        if float(args.dual_vln_http_timeout_sec or 0.0) > 0.0
+        else args.dual_vln_inference_timeout_sec
+    )
     env['ARENA_EVAL_INTERNNAV_REQUIRE_REAL_BACKEND'] = str(bool(args.dual_vln_require_real_backend)).lower()
     env['ARENA_EVAL_INTERNNAV_STRICT_DEVICE'] = str(bool(args.dual_vln_strict_device)).lower()
     env['ARENA_EVAL_INTERNNAV_MODEL_OUTPUT_POLICY'] = str(args.dual_vln_model_output_policy or 'trajectory')

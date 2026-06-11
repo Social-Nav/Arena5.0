@@ -116,6 +116,7 @@ install_runtime(){
     fi
 
     uv pip install --python "$py" -r "$repo_path/requirements/core_requirements.txt"
+    uv pip install --python "$py" flask
     rm -rf "$build_repo_path"
     cp -a "$repo_path" "$build_repo_path"
     rm -rf "$build_repo_path"/internnav.egg-info "$build_repo_path"/*.egg-info
@@ -224,7 +225,7 @@ source_fn(){
 }
 
 launch(){
-    local robot namespace mode model_path device rgb_topic depth_topic camera_info_topic instruction_topic trace_path status_topic visualization_topic action_visualization_topic model_output_topic model_output_policy visualization_rate_hz enable_visualization inference_rate_hz inference_timeout_sec camera_ready_timeout_sec extra_ros_args
+    local robot namespace mode model_path device rgb_topic depth_topic camera_info_topic instruction_topic trace_path status_topic visualization_topic action_visualization_topic model_output_topic model_output_policy visualization_rate_hz enable_visualization inference_rate_hz inference_timeout_sec camera_ready_timeout_sec internnav_http_url internnav_http_timeout_sec adapter_target extra_ros_args
     robot="${ARENA_INTERNNAV_ROBOT:-Ai2_Bot2}"
     namespace="${ARENA_INTERNNAV_NAMESPACE:-/task_generator_node/$robot}"
     mode="${ARENA_INTERNNAV_MODE:-internnav}"
@@ -244,6 +245,9 @@ launch(){
     enable_visualization="${ARENA_INTERNNAV_ENABLE_VISUALIZATION:-true}"
     inference_rate_hz="${ARENA_INTERNNAV_INFERENCE_RATE_HZ:-10.0}"
     inference_timeout_sec="${ARENA_INTERNNAV_INFERENCE_TIMEOUT_SEC:-120.0}"
+    internnav_http_url="${ARENA_INTERNNAV_HTTP_URL:-}"
+    internnav_http_timeout_sec="${ARENA_INTERNNAV_HTTP_TIMEOUT_SEC:-}"
+    adapter_target="${ARENA_INTERNNAV_ADAPTER_TARGET:-arena_vln_models.internnav:load_internnav_adapter}"
     camera_ready_timeout_sec="${ARENA_INTERNNAV_CAMERA_READY_TIMEOUT_SEC:-480.0}"
     extra_ros_args="${ARENA_INTERNNAV_EXTRA_ROS_ARGS:-}"
 
@@ -269,6 +273,8 @@ launch(){
             --disable-visualization) enable_visualization="false"; shift ;;
             --inference-rate-hz) inference_rate_hz="$2"; shift 2 ;;
             --inference-timeout-sec) inference_timeout_sec="$2"; shift 2 ;;
+            --realworld-http-url|--http-url) internnav_http_url="$2"; adapter_target="arena_vln_models.internnav:load_internvla_realworld_http_adapter"; shift 2 ;;
+            --realworld-http-timeout-sec|--http-timeout-sec) internnav_http_timeout_sec="$2"; shift 2 ;;
             --camera-ready-timeout-sec) camera_ready_timeout_sec="$2"; shift 2 ;;
             --) shift; extra_ros_args="$*"; break ;;
             *) echo "Unknown launch option: $1" >&2; return 1 ;;
@@ -278,17 +284,24 @@ launch(){
     visualization_rate_hz="$(ros_double "$visualization_rate_hz")"
     inference_rate_hz="$(ros_double "$inference_rate_hz")"
     inference_timeout_sec="$(ros_double "$inference_timeout_sec")"
+    if [ -z "$internnav_http_timeout_sec" ]; then
+        internnav_http_timeout_sec="$inference_timeout_sec"
+    fi
+    internnav_http_timeout_sec="$(ros_double "$internnav_http_timeout_sec")"
     camera_ready_timeout_sec="$(ros_double "$camera_ready_timeout_sec")"
+    if [ -n "$internnav_http_url" ] && [ "${ARENA_INTERNNAV_ADAPTER_TARGET:-}" = "" ]; then
+        adapter_target="arena_vln_models.internnav:load_internvla_realworld_http_adapter"
+    fi
 
     arena_docker_compose up -d --remove-orphans --no-recreate internnav
     trap 'arena_docker_compose stop internnav || true' EXIT INT TERM
 
     local cmd
-    cmd="export ROS_DOMAIN_ID='${ROS_DOMAIN_ID:-1}'; export RMW_IMPLEMENTATION='${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}'; export ROS_AUTOMATIC_DISCOVERY_RANGE='${ROS_AUTOMATIC_DISCOVERY_RANGE:-SUBNET}'; export ROS_LOCALHOST_ONLY='${ROS_LOCALHOST_ONLY:-0}'; export FASTDDS_BUILTIN_TRANSPORTS='${FASTDDS_BUILTIN_TRANSPORTS:-UDPv4}'; export ARENA_INTERNNAV_MODEL_PATH='$model_path'; export ARENA_VLN_MODEL_PATH='$model_path'; export INTERNNAV_DEPTH_ANYTHING_CKPT='$(default_depth_ckpt)'; export ARENA_VLN_MODEL_PYTHON='$(venv_path)/bin/python'; export ARENA_INTERNNAV_PYTHON='$(venv_path)/bin/python';"
+    cmd="export ROS_DOMAIN_ID='${ROS_DOMAIN_ID:-1}'; export RMW_IMPLEMENTATION='${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}'; export ROS_AUTOMATIC_DISCOVERY_RANGE='${ROS_AUTOMATIC_DISCOVERY_RANGE:-SUBNET}'; export ROS_LOCALHOST_ONLY='${ROS_LOCALHOST_ONLY:-0}'; export FASTDDS_BUILTIN_TRANSPORTS='${FASTDDS_BUILTIN_TRANSPORTS:-UDPv4}'; export NO_PROXY='127.0.0.1,localhost,${NO_PROXY:-}'; export no_proxy='127.0.0.1,localhost,${no_proxy:-}'; export ARENA_INTERNNAV_MODEL_PATH='$model_path'; export ARENA_VLN_MODEL_PATH='$model_path'; export INTERNNAV_DEPTH_ANYTHING_CKPT='$(default_depth_ckpt)'; export ARENA_VLN_MODEL_PYTHON='$(venv_path)/bin/python'; export ARENA_INTERNNAV_PYTHON='$(venv_path)/bin/python';"
     if [ -n "$trace_path" ]; then
         cmd="$cmd export ARENA_EVAL_INTERNNAV_TRACE_PATH='$trace_path';"
     fi
-    cmd="$cmd $(venv_path)/bin/python /opt/arena_ws/install/arena_vln_models/lib/arena_vln_models/dual_vln_server --ros-args -r __ns:='$namespace' -r __node:=internnav_server -p namespace:='$namespace' -p mode:='$mode' -p model_path:='$model_path' -p device:='$device' -p goal_topic:=episode_goal_pose -p instruction_topic:='$instruction_topic' -p rgb_topic:='$rgb_topic' -p depth_topic:='$depth_topic' -p camera_info_topic:='$camera_info_topic' -p adapter_target:=arena_vln_models.internnav:load_internnav_adapter -p require_real_backend:=true -p strict_device:=true -p camera_ready_timeout_sec:='$camera_ready_timeout_sec' -p status_topic:='$status_topic' -p enable_visualization:='$enable_visualization' -p visualization_topic:='$visualization_topic' -p action_visualization_topic:='$action_visualization_topic' -p model_output_topic:='$model_output_topic' -p model_output_policy:='$model_output_policy' -p visualization_rate_hz:='$visualization_rate_hz' -p inference_rate_hz:='$inference_rate_hz' -p inference_timeout_sec:='$inference_timeout_sec' $extra_ros_args"
+    cmd="$cmd $(venv_path)/bin/python /opt/arena_ws/install/arena_vln_models/lib/arena_vln_models/dual_vln_server --ros-args -r __ns:='$namespace' -r __node:=internnav_server -p namespace:='$namespace' -p mode:='$mode' -p model_path:='$model_path' -p device:='$device' -p goal_topic:=episode_goal_pose -p instruction_topic:='$instruction_topic' -p rgb_topic:='$rgb_topic' -p depth_topic:='$depth_topic' -p camera_info_topic:='$camera_info_topic' -p adapter_target:='$adapter_target' -p internnav_http_url:='$internnav_http_url' -p internnav_http_timeout_sec:='$internnav_http_timeout_sec' -p require_real_backend:=true -p strict_device:=true -p camera_ready_timeout_sec:='$camera_ready_timeout_sec' -p status_topic:='$status_topic' -p enable_visualization:='$enable_visualization' -p visualization_topic:='$visualization_topic' -p action_visualization_topic:='$action_visualization_topic' -p model_output_topic:='$model_output_topic' -p model_output_policy:='$model_output_policy' -p visualization_rate_hz:='$visualization_rate_hz' -p inference_rate_hz:='$inference_rate_hz' -p inference_timeout_sec:='$inference_timeout_sec' $extra_ros_args"
 
     arena_docker_compose exec -T internnav /entrypoint.sh bash -lc "$cmd"
 }
@@ -320,14 +333,14 @@ Launch options:
   --status-topic TOPIC          Default: internnav/status
   --enable-visualization        Publish debug overlay frames (default)
   --disable-visualization       Disable debug overlay frames
-  --invert-discrete-turns       Execute native action 2 as right, 3 as left (default)
-  --no-invert-discrete-turns    Preserve native action 2 as left, 3 as right
   --visualization-topic TOPIC   Default: internnav/debug_image
   --action-visualization-topic TOPIC Default: internnav/action_image
   --model-output-topic TOPIC    Default: internnav/model_output
   --visualization-rate-hz HZ    Default: 5.0
   --inference-rate-hz HZ        Default: 10.0
   --inference-timeout-sec SEC   Default: 120.0
+  --realworld-http-url URL      Use InternVLA-N1 realworld HTTP /eval_dual via Arena ROS2 get_command
+  --realworld-http-timeout-sec SEC Default: ARENA_INTERNNAV_HTTP_TIMEOUT_SEC or --inference-timeout-sec
   --camera-ready-timeout-sec SEC Default: 480.0
 EOF
 }

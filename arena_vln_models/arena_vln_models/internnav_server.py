@@ -48,8 +48,13 @@ from arena_vln_models.visualization import image_msg_to_numpy, numpy_to_image_ms
 
 
 DEFAULT_INTERNNAV_ADAPTER_TARGET = 'arena_vln_models.internnav:load_internnav_adapter'
+REALWORLD_HTTP_ADAPTER_TARGET = 'arena_vln_models.internnav:load_internvla_realworld_http_adapter'
 LEGACY_INTERNNAV_ADAPTER_TARGETS = {
     'internnav.agent.internvla_n1_agent_realworld.InternVLAN1AsyncAgent': DEFAULT_INTERNNAV_ADAPTER_TARGET,
+}
+HTTP_ADAPTER_REPLACED_TARGETS = {
+    DEFAULT_INTERNNAV_ADAPTER_TARGET,
+    *LEGACY_INTERNNAV_ADAPTER_TARGETS.keys(),
 }
 
 
@@ -71,7 +76,10 @@ def _resolve_bool(raw_value, *, env_names: tuple[str, ...] = ()) -> tuple[bool, 
 def _resolve_float(raw_value, *, env_names: tuple[str, ...] = ()) -> tuple[float, str | None]:
     env_value, env_name = _env_override(*env_names)
     if env_name is not None:
-        return float(env_value), f'env:{env_name}'
+        try:
+            return float(env_value), f'env:{env_name}'
+        except (TypeError, ValueError):
+            return float(raw_value), f'invalid-env:{env_name}'
     return float(raw_value), None
 
 
@@ -96,6 +104,23 @@ def _normalize_internnav_adapter_target(mode: str, adapter_target: str) -> tuple
         return mapped_target, f'legacy:{normalized_target}'
 
     return normalized_target, None
+
+
+def _resolve_mode_for_http_adapter(mode: str, internnav_http_url: str) -> tuple[str, str | None]:
+    normalized_mode = str(mode or '').strip().lower()
+    if str(internnav_http_url or '').strip() and normalized_mode != 'internnav':
+        return 'internnav', 'internnav_http_url'
+    return mode, None
+
+
+def _resolve_adapter_target_for_http_adapter(adapter_target: str, internnav_http_url: str) -> tuple[str, str | None]:
+    normalized_target = str(adapter_target or '').strip()
+    if not str(internnav_http_url or '').strip():
+        return normalized_target, None
+    if not normalized_target or normalized_target in HTTP_ADAPTER_REPLACED_TARGETS:
+        return REALWORLD_HTTP_ADAPTER_TARGET, 'internnav_http_url'
+    return normalized_target, None
+
 
 def _yaw_from_quat(x: float, y: float, z: float, w: float) -> float:
     # yaw (Z) from quaternion
@@ -154,6 +179,8 @@ class BaseModelSimServer(Node):
         self.declare_parameter('model_path', '')
         self.declare_parameter('device', 'cpu')
         self.declare_parameter('adapter_target', '')
+        self.declare_parameter('internnav_http_url', '')
+        self.declare_parameter('internnav_http_timeout_sec', 0.0)
         self.declare_parameter('require_real_backend', False)
         self.declare_parameter('strict_device', False)
         self.declare_parameter('look_down', False)
@@ -343,6 +370,25 @@ class BaseModelSimServer(Node):
             env_names=('ARENA_EVAL_INTERNNAV_ADAPTER_TARGET',),
             allow_empty=True,
         )
+        internnav_http_url, internnav_http_url_source = _resolve_string(
+            self.get_parameter('internnav_http_url').value,
+            env_names=('ARENA_EVAL_INTERNNAV_HTTP_URL', 'ARENA_INTERNNAV_HTTP_URL'),
+            allow_empty=True,
+        )
+        internnav_http_timeout_sec, internnav_http_timeout_sec_source = _resolve_float(
+            self.get_parameter('internnav_http_timeout_sec').value,
+            env_names=('ARENA_EVAL_INTERNNAV_HTTP_TIMEOUT_SEC', 'ARENA_INTERNNAV_HTTP_TIMEOUT_SEC'),
+        )
+        resolved_mode, http_mode_source = _resolve_mode_for_http_adapter(mode, internnav_http_url)
+        if http_mode_source is not None:
+            mode = resolved_mode
+            mode_source = http_mode_source
+        adapter_target_raw, http_adapter_target_source = _resolve_adapter_target_for_http_adapter(
+            adapter_target_raw,
+            internnav_http_url,
+        )
+        if http_adapter_target_source is not None:
+            adapter_target_env_source = http_adapter_target_source
         adapter_target, adapter_target_source = _normalize_internnav_adapter_target(
             mode,
             adapter_target_raw,
@@ -374,6 +420,8 @@ class BaseModelSimServer(Node):
             ('action_visualization_topic', action_visualization_topic, action_visualization_topic_source),
             ('visualization_rate_hz', visualization_rate_hz, visualization_rate_hz_source),
             ('model_output_topic', model_output_topic, model_output_topic_source),
+            ('internnav_http_url', internnav_http_url, internnav_http_url_source),
+            ('internnav_http_timeout_sec', internnav_http_timeout_sec, internnav_http_timeout_sec_source),
         ):
             if source is not None:
                 parameter_overrides.append(Parameter(name, value=value))
@@ -390,6 +438,8 @@ class BaseModelSimServer(Node):
             'model_path': model_path,
             'device': device,
             'adapter_target': adapter_target,
+            'internnav_http_url': internnav_http_url,
+            'internnav_http_timeout_sec': internnav_http_timeout_sec if internnav_http_timeout_sec > 0.0 else inference_timeout_sec,
             'require_real_backend': require_real_backend,
             'strict_device': strict_device,
             'look_down': look_down,
@@ -535,6 +585,8 @@ class BaseModelSimServer(Node):
             ('action_visualization_topic', action_visualization_topic_source),
             ('visualization_rate_hz', visualization_rate_hz_source),
             ('model_output_topic', model_output_topic_source),
+            ('internnav_http_url', internnav_http_url_source),
+            ('internnav_http_timeout_sec', internnav_http_timeout_sec_source),
         ):
             if source is not None:
                 self.get_logger().info(f'Using InternNav {label} override from {source}')

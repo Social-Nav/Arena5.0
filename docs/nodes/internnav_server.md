@@ -60,8 +60,11 @@ InternNavServer 是 VLN/VLA 模型与 ROS 2 Nav2 之间的桥接节点。它：
 | `require_real_backend` | bool | false | 是否要求真实模型后端 |
 | `strict_device` | bool | false | 是否严格匹配 device |
 | `enable_visualization` | bool | false | 是否发布 debug/action 图像 |
+| `adapter_target` | string | `""` | Python adapter target；`mode=internnav` 且为空时默认 `arena_vln_models.internnav:load_internnav_adapter`；配置 `internnav_http_url` 且为空时自动选择 HTTP adapter `arena_vln_models.internnav:load_internvla_realworld_http_adapter` |
+| `internnav_http_url` | string | `""` | InternVLA realworld HTTP `/eval_dual` URL；非空时自动切换 `mode=internnav`；空值时 HTTP adapter 默认 `http://127.0.0.1:5801/eval_dual` |
+| `internnav_http_timeout_sec` | float | 0.0 | HTTP 请求超时；0.0 时继承 `inference_timeout_sec` |
 | `model_output_policy` | string | `"trajectory"` | 模型输出策略 |
-| `invert_discrete_turns` | bool | true | 是否反转离散转向动作 |
+| `discrete_arc_turn` | bool | false | 离散转向是否使用前进弧线；默认原地转向 |
 | `goal_tolerance` | float | 0.45 | 目标到达容差（米） |
 | `angle_tolerance` | float | 0.25 | 角度容差（弧度） |
 | `max_linear` | float | 0.6 | 最大线速度 |

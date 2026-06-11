@@ -77,6 +77,22 @@ def generate_launch_description():
     dual_vln_python_executable = declare_legacy_alias('dual_vln_python_executable', internnav_python_executable)
     internnav_adapter_target = LaunchArgument('internnav_adapter_target', default_value='')
     dual_vln_adapter_target = declare_legacy_alias('dual_vln_adapter_target', internnav_adapter_target)
+    internnav_http_url = LaunchArgument(
+        'internnav_http_url',
+        default_value=launch.substitutions.EnvironmentVariable(
+            'ARENA_EVAL_INTERNNAV_HTTP_URL',
+            default_value=launch.substitutions.EnvironmentVariable('ARENA_INTERNNAV_HTTP_URL', default_value=''),
+        ),
+    )
+    dual_vln_http_url = declare_legacy_alias('dual_vln_http_url', internnav_http_url)
+    internnav_http_timeout_sec = LaunchArgument(
+        'internnav_http_timeout_sec',
+        # Keep launch-time float conversion deterministic; internnav_server and
+        # adapter read ARENA_*_HTTP_TIMEOUT_SEC directly and can recover from
+        # invalid env values.
+        default_value='0.0',
+    )
+    dual_vln_http_timeout_sec = declare_legacy_alias('dual_vln_http_timeout_sec', internnav_http_timeout_sec)
     internnav_require_real_backend = LaunchArgument('internnav_require_real_backend', default_value='false')
     dual_vln_require_real_backend = declare_legacy_alias('dual_vln_require_real_backend', internnav_require_real_backend)
     internnav_strict_device = LaunchArgument('internnav_strict_device', default_value='false')
@@ -209,42 +225,46 @@ def generate_launch_description():
     internnav_server_parameters = [
         {
             'namespace': namespace.substitution,
-            'mode': internnav_mode.substitution,
-            'model_path': internnav_model_path.substitution,
-            'device': internnav_device.substitution,
+            'mode': dual_vln_mode.substitution,
+            'model_path': dual_vln_model_path.substitution,
+            'device': dual_vln_device.substitution,
             'goal_topic': 'episode_goal_pose',
             'instruction_topic': PythonExpression(['"', task_generator_node.substitution, '/vln_instruction"']),
-            'rgb_topic': internnav_rgb_topic.substitution,
-            'depth_topic': internnav_depth_topic.substitution,
-            'camera_info_topic': internnav_camera_info_topic.substitution,
+            'rgb_topic': dual_vln_rgb_topic.substitution,
+            'depth_topic': dual_vln_depth_topic.substitution,
+            'camera_info_topic': dual_vln_camera_info_topic.substitution,
             'base_frame': internnav_base_frame,
             'odom_frame': internnav_odom_frame,
             'global_frame': 'map',
-            'adapter_target': internnav_adapter_target.substitution,
+            'adapter_target': dual_vln_adapter_target.substitution,
+            'internnav_http_url': dual_vln_http_url.substitution,
+            'internnav_http_timeout_sec': launch_ros.parameter_descriptions.ParameterValue(
+                dual_vln_http_timeout_sec.substitution, value_type=float
+            ),
             'require_real_backend': launch_ros.parameter_descriptions.ParameterValue(
-                internnav_require_real_backend.substitution, value_type=bool
+                dual_vln_require_real_backend.substitution, value_type=bool
             ),
             'strict_device': launch_ros.parameter_descriptions.ParameterValue(
-                internnav_strict_device.substitution, value_type=bool
+                dual_vln_strict_device.substitution, value_type=bool
             ),
             'look_down': launch_ros.parameter_descriptions.ParameterValue(
-                internnav_look_down.substitution, value_type=bool
+                dual_vln_look_down.substitution, value_type=bool
             ),
-            'model_output_policy': internnav_model_output_policy.substitution,
+            'model_output_policy': dual_vln_model_output_policy.substitution,
             'enable_visualization': launch_ros.parameter_descriptions.ParameterValue(
-                internnav_enable_visualization.substitution, value_type=bool
+                dual_vln_enable_visualization.substitution, value_type=bool
             ),
-            'visualization_topic': internnav_visualization_topic.substitution,
-            'action_visualization_topic': internnav_action_visualization_topic.substitution,
+            'visualization_topic': dual_vln_visualization_topic.substitution,
+            'action_visualization_topic': dual_vln_action_visualization_topic.substitution,
             'visualization_rate_hz': launch_ros.parameter_descriptions.ParameterValue(
-                internnav_visualization_rate_hz.substitution, value_type=float
+                dual_vln_visualization_rate_hz.substitution, value_type=float
             ),
-            'model_output_topic': internnav_model_output_topic.substitution,
+            'model_output_topic': dual_vln_model_output_topic.substitution,
             'inference_rate_hz': launch_ros.parameter_descriptions.ParameterValue(
-                internnav_inference_rate_hz.substitution, value_type=float
+                dual_vln_inference_rate_hz.substitution, value_type=float
             ),
             'inference_timeout_sec': launch_ros.parameter_descriptions.ParameterValue(
-                internnav_inference_timeout_sec.substitution, value_type=float
+                dual_vln_inference_timeout_sec.substitution, value_type=float
             ),
         }
     ]

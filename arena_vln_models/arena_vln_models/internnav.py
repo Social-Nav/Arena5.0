@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import io
 import json
 import os
 import site
@@ -236,6 +237,220 @@ def _resolve_runtime_device(requested_device: str, *, strict_device: bool = Fals
         if strict_device:
             raise RuntimeError(f"Failed to validate requested device '{requested}': {exc}") from exc
         return 'cpu', f"Failed to validate requested device '{requested}': {exc}; falling back to cpu"
+
+
+def _pose_matrix_from_observation(observation: Any) -> list[list[float]]:
+    pose = pose_vector(observation)
+    x = float(pose[0]) if len(pose) > 0 else 0.0
+    y = float(pose[1]) if len(pose) > 1 else 0.0
+    yaw = float(pose[2]) if len(pose) > 2 else 0.0
+    c = float(np.cos(yaw))
+    s = float(np.sin(yaw))
+    return [
+        [c, -s, 0.0, x],
+        [s, c, 0.0, y],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+
+
+class InternVLARealworldHttpAdapter:
+    """Arena adapter for InternNav's official realworld HTTP `/eval_dual` service.
+
+    This keeps the Arena side as a ROS2 `get_command` server/client while the
+    heavy InternVLA-N1 System-2/System-1 model lives behind the upstream
+    realworld HTTP API.  `internnav_server` already invokes adapter compute in a
+    background worker, so the simulator/control loop returns cached/fallback
+    commands while slow HTTP model inference is running.
+    """
+
+    capability = INTERNNAV_REALWORLD_CAPABILITY
+
+    def __init__(self, logger=None, params: Optional[dict[str, Any]] = None) -> None:
+        self._logger = logger
+        self._params = params or {}
+        self._url = str(
+            self._params.get('internnav_http_url')
+            or os.environ.get('ARENA_EVAL_INTERNNAV_HTTP_URL')
+            or os.environ.get('ARENA_INTERNNAV_HTTP_URL')
+            or 'http://127.0.0.1:5801/eval_dual'
+        ).strip()
+        timeout_value = (
+            self._params.get('internnav_http_timeout_sec')
+            or os.environ.get('ARENA_EVAL_INTERNNAV_HTTP_TIMEOUT_SEC')
+            or os.environ.get('ARENA_INTERNNAV_HTTP_TIMEOUT_SEC')
+            or self._params.get('inference_timeout_sec', 120.0)
+        )
+        try:
+            self._timeout = float(timeout_value)
+        except (TypeError, ValueError):
+            self._log('warn', f'Invalid internnav_http_timeout_sec={timeout_value!r}; using inference_timeout_sec')
+            self._timeout = float(self._params.get('inference_timeout_sec', 120.0) or 120.0)
+        if self._timeout <= 0.0:
+            self._timeout = float(self._params.get('inference_timeout_sec', 120.0) or 120.0)
+        self._session_key: Optional[tuple[str, Optional[tuple[float, float, float]]]] = None
+        self._seq = 0
+
+    def _log(self, level: str, message: str) -> None:
+        if self._logger is None:
+            return
+        if level == 'debug':
+            self._logger.debug(message)
+        elif level == 'info':
+            self._logger.info(message)
+        elif level in ('warn', 'warning'):
+            self._logger.warn(message)
+        elif level == 'error':
+            self._logger.error(message)
+
+    def _session_reset_required(self, observation: Any) -> bool:
+        goal = getattr(observation, 'goal', None)
+        goal_key = None
+        if goal is not None:
+            goal_key = (
+                round(float(getattr(goal, 'x', 0.0)), 2),
+                round(float(getattr(goal, 'y', 0.0)), 2),
+                round(float(getattr(goal, 'yaw', 0.0)), 2),
+            )
+        session_key = (str(getattr(observation, 'instruction', '')), goal_key)
+        if session_key == self._session_key:
+            return False
+        self._session_key = session_key
+        return True
+
+    @staticmethod
+    def _image_payloads(rgb: np.ndarray, depth: np.ndarray) -> tuple[io.BytesIO, io.BytesIO]:
+        from PIL import Image as PILImage
+
+        rgb_bytes = io.BytesIO()
+        PILImage.fromarray(rgb).save(rgb_bytes, format='JPEG')
+        rgb_bytes.seek(0)
+
+        depth_m = np.asarray(depth, dtype=np.float32)
+        depth_m[~np.isfinite(depth_m)] = 0.0
+        depth_u16 = np.clip(depth_m * 10000.0, 0.0, 65535.0).astype(np.uint16)
+        depth_bytes = io.BytesIO()
+        PILImage.fromarray(depth_u16).save(depth_bytes, format='PNG')
+        depth_bytes.seek(0)
+        return rgb_bytes, depth_bytes
+
+    @staticmethod
+    def _post_eval_dual(url: str, *, files: dict[str, tuple[str, io.BytesIO, str]], payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+        try:
+            requests = importlib.import_module('requests')
+        except ModuleNotFoundError:
+            requests = None
+
+        if requests is not None:
+            response = requests.post(url, files=files, data={'json': json.dumps(payload)}, timeout=timeout)
+            response.raise_for_status()
+            return response.json()
+
+        import urllib.request
+        import uuid
+
+        boundary = f'----arena-internvla-{uuid.uuid4().hex}'
+        body = bytearray()
+
+        def _add_field(name: str, value: str) -> None:
+            body.extend(f'--{boundary}\r\n'.encode())
+            body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
+            body.extend(value.encode())
+            body.extend(b'\r\n')
+
+        def _add_file(name: str, filename: str, fileobj: io.BytesIO, content_type: str) -> None:
+            body.extend(f'--{boundary}\r\n'.encode())
+            body.extend(
+                f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'
+                f'Content-Type: {content_type}\r\n\r\n'.encode()
+            )
+            body.extend(fileobj.getvalue())
+            body.extend(b'\r\n')
+
+        _add_field('json', json.dumps(payload))
+        for field_name, (filename, fileobj, content_type) in files.items():
+            _add_file(field_name, filename, fileobj, content_type)
+        body.extend(f'--{boundary}--\r\n'.encode())
+        request = urllib.request.Request(
+            url,
+            data=bytes(body),
+            headers={'Content-Type': f'multipart/form-data; boundary={boundary}'},
+            method='POST',
+        )
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode('utf-8'))
+
+    def compute(self, observation: Any) -> dict[str, Any]:
+        rgb = normalize_rgb(getattr(observation, 'rgb_image', None))
+        if rgb is None:
+            return safe_stop(
+                'internnav_http_missing_rgb',
+                'rgb_image is required for InternVLA realworld HTTP client',
+                debug={'http_url': self._url, 'realworld_http_client': True},
+            )
+        depth = normalize_depth(getattr(observation, 'depth_image', None), reference_shape=(rgb.shape[0], rgb.shape[1]))
+        if depth is None:
+            return safe_stop(
+                'internnav_http_missing_depth',
+                'depth_image must be HxW or HxWx1 for InternVLA realworld HTTP client',
+                debug={'http_url': self._url, 'realworld_http_client': True},
+            )
+
+        self._seq += 1
+        request_id = self._seq
+        reset = self._session_reset_required(observation)
+        rgb_bytes, depth_bytes = self._image_payloads(rgb, depth)
+        payload = {
+            'reset': reset,
+            'idx': request_id - 1,
+            'request_id': request_id,
+            'instruction': str(getattr(observation, 'instruction', '')),
+            'pose': to_jsonable(pose_vector(observation)),
+            'camera_pose': _pose_matrix_from_observation(observation),
+            'intrinsic': to_jsonable(camera_intrinsic_matrix(observation, rgb)),
+            'look_down': bool(getattr(observation, 'look_down', False)),
+            'model_output_policy': str(self._params.get('model_output_policy', 'trajectory')),
+            'client': 'arena_ros2_get_command_async_worker',
+        }
+        files = {
+            'image': ('rgb_image.jpg', rgb_bytes, 'image/jpeg'),
+            'depth': ('depth_image.png', depth_bytes, 'image/png'),
+        }
+
+        start = time.monotonic()
+        try:
+            raw = self._post_eval_dual(self._url, files=files, payload=payload, timeout=self._timeout)
+        except Exception as exc:
+            return safe_stop(
+                'internnav_http_request_failed',
+                str(exc),
+                debug={
+                    'http_url': self._url,
+                    'http_timeout_sec': self._timeout,
+                    'request_id': request_id,
+                    'realworld_http_client': True,
+                },
+            )
+
+        elapsed = time.monotonic() - start
+        result = normalize_backend_output(raw, default_status='internnav_http_command')
+        result.setdefault('debug', {})
+        result['debug'].update({
+            'http_url': self._url,
+            'http_timeout_sec': self._timeout,
+            'http_request_id': request_id,
+            'http_reset': reset,
+            'http_elapsed_sec': elapsed,
+            'realworld_http_client': True,
+            'arena_async_boundary': 'ros2_get_command_returns_cached_command_while_http_compute_runs',
+            'system2_http_server': True,
+            'system1_http_server': True,
+            **depth_debug(depth),
+        })
+        return result
+
+    def predict(self, observation: Any) -> dict[str, Any]:
+        return self.compute(observation)
 
 
 class InternNavSubprocessAdapter:
@@ -1036,5 +1251,19 @@ def load_internnav_adapter(logger=None, params: Optional[dict[str, Any]] = None)
     return InternNavAdapter(logger=logger, params=params)
 
 
+def load_internvla_realworld_http_adapter(logger=None, params: Optional[dict[str, Any]] = None) -> InternVLARealworldHttpAdapter:
+    return InternVLARealworldHttpAdapter(logger=logger, params=params)
+
+
 def available_backends() -> list[dict[str, Any]]:
-    return [to_jsonable(INTERNNAV_REALWORLD_CAPABILITY.__dict__)]
+    http_capability = BackendCapability(
+        name='internvla_n1_realworld_http',
+        required_inputs=INTERNNAV_REALWORLD_CAPABILITY.required_inputs,
+        output_modes=INTERNNAV_REALWORLD_CAPABILITY.output_modes,
+        supports_batch=False,
+        notes='Posts Arena RGB/depth/instruction/pose observations to InternNav realworld HTTP /eval_dual.',
+    )
+    return [
+        to_jsonable(INTERNNAV_REALWORLD_CAPABILITY.__dict__),
+        to_jsonable(http_capability.__dict__),
+    ]

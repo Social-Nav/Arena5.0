@@ -36,6 +36,16 @@ from task_generator.shared import Orientation, Pose, Position, Robot
 
 import rclpy.node
 
+DEFAULT_INTERNNAV_ADAPTER_TARGET = 'arena_vln_models.internnav:load_internnav_adapter'
+REALWORLD_HTTP_ADAPTER_TARGET = 'arena_vln_models.internnav:load_internvla_realworld_http_adapter'
+LEGACY_INTERNNAV_ADAPTER_TARGETS = {
+    'internnav.agent.internvla_n1_agent_realworld.InternVLAN1AsyncAgent',
+}
+HTTP_ADAPTER_REPLACED_TARGETS = {
+    DEFAULT_INTERNNAV_ADAPTER_TARGET,
+    *LEGACY_INTERNNAV_ADAPTER_TARGETS,
+}
+
 try:
     import yaml
 except ModuleNotFoundError:  # pragma: no cover - PyYAML is present in ROS images
@@ -1270,6 +1280,17 @@ class RobotManager(NodeInterface):
             internnav_adapter_target = self._get_compat_rosparam(
                 str, 'internnav_adapter_target', 'dual_vln_adapter_target', '', empty_is_missing=True
             )
+            internnav_http_url = self._get_compat_rosparam(
+                str, 'internnav_http_url', 'dual_vln_http_url', '', empty_is_missing=True
+            )
+            internnav_http_timeout_sec = self._get_compat_rosparam(
+                float, 'internnav_http_timeout_sec', 'dual_vln_http_timeout_sec', 0.0
+            )
+            if internnav_http_url:
+                if internnav_mode.strip().lower() != 'internnav':
+                    internnav_mode = 'internnav'
+                if not internnav_adapter_target or internnav_adapter_target.strip() in HTTP_ADAPTER_REPLACED_TARGETS:
+                    internnav_adapter_target = REALWORLD_HTTP_ADAPTER_TARGET
             internnav_require_real_backend = self._get_compat_rosparam(
                 bool, 'internnav_require_real_backend', 'dual_vln_require_real_backend', False
             )
@@ -1278,6 +1299,13 @@ class RobotManager(NodeInterface):
             )
             internnav_look_down = self._get_compat_rosparam(
                 bool, 'internnav_look_down', 'dual_vln_look_down', False
+            )
+            internnav_model_output_policy = self._get_compat_rosparam(
+                str,
+                'internnav_model_output_policy',
+                'dual_vln_model_output_policy',
+                'trajectory',
+                empty_is_missing=True,
             )
             internnav_enable_visualization = self._get_compat_rosparam(
                 bool, 'internnav_enable_visualization', 'dual_vln_enable_visualization', False
@@ -1292,11 +1320,25 @@ class RobotManager(NodeInterface):
             internnav_visualization_rate_hz = self._get_compat_rosparam(
                 float, 'internnav_visualization_rate_hz', 'dual_vln_visualization_rate_hz', 5.0
             )
+            internnav_action_visualization_topic = self._get_compat_rosparam(
+                str,
+                'internnav_action_visualization_topic',
+                'dual_vln_action_visualization_topic',
+                'internnav/action_image',
+                empty_is_missing=True,
+            )
+            internnav_model_output_topic = self._get_compat_rosparam(
+                str,
+                'internnav_model_output_topic',
+                'dual_vln_model_output_topic',
+                'internnav/model_output',
+                empty_is_missing=True,
+            )
             internnav_external_server = self._get_compat_rosparam(
                 bool, 'internnav_external_server', 'dual_vln_external_server', False
             )
             if (
-                internnav_mode.strip().lower() == 'internnav'
+                (internnav_mode.strip().lower() == 'internnav' and not internnav_http_url)
                 or os.environ.get('ARENA_INTERNNAV_EXTERNAL_SERVER', '').strip().lower() in {'1', 'true', 'yes', 'on'}
             ):
                 internnav_external_server = True
@@ -1337,18 +1379,28 @@ class RobotManager(NodeInterface):
                 'dual_vln_python_executable': internnav_python_executable,
                 'internnav_adapter_target': internnav_adapter_target,
                 'dual_vln_adapter_target': internnav_adapter_target,
+                'internnav_http_url': internnav_http_url,
+                'dual_vln_http_url': internnav_http_url,
+                'internnav_http_timeout_sec': str(internnav_http_timeout_sec),
+                'dual_vln_http_timeout_sec': str(internnav_http_timeout_sec),
                 'internnav_require_real_backend': str(internnav_require_real_backend).lower(),
                 'dual_vln_require_real_backend': str(internnav_require_real_backend).lower(),
                 'internnav_strict_device': str(internnav_strict_device).lower(),
                 'dual_vln_strict_device': str(internnav_strict_device).lower(),
                 'internnav_look_down': str(internnav_look_down).lower(),
                 'dual_vln_look_down': str(internnav_look_down).lower(),
+                'internnav_model_output_policy': internnav_model_output_policy,
+                'dual_vln_model_output_policy': internnav_model_output_policy,
                 'internnav_enable_visualization': str(internnav_enable_visualization).lower(),
                 'dual_vln_enable_visualization': str(internnav_enable_visualization).lower(),
                 'internnav_visualization_topic': internnav_visualization_topic,
                 'dual_vln_visualization_topic': internnav_visualization_topic,
+                'internnav_action_visualization_topic': internnav_action_visualization_topic,
+                'dual_vln_action_visualization_topic': internnav_action_visualization_topic,
                 'internnav_visualization_rate_hz': str(internnav_visualization_rate_hz),
                 'dual_vln_visualization_rate_hz': str(internnav_visualization_rate_hz),
+                'internnav_model_output_topic': internnav_model_output_topic,
+                'dual_vln_model_output_topic': internnav_model_output_topic,
                 'internnav_external_server': str(internnav_external_server).lower(),
                 'dual_vln_external_server': str(internnav_external_server).lower(),
                 # Nav2 Jazzy collision_monitor currently rejects the model-wrapper
