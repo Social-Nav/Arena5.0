@@ -92,6 +92,12 @@ def generate_launch_description():
         'export RMW_IMPLEMENTATION=rmw_fastrtps_cpp; '
         'export ARENA_ISAAC_HEADLESS="${ARENA_ISAAC_HEADLESS:-1}"; '
         'export ARENA_ISAAC_RENDERER="${ARENA_ISAAC_RENDERER:-RayTracedLighting}"; '
+        # Keep paused Isaac responsive to ROS service requests.  After robot
+        # spawn the Replicator camera/render products can make every idle
+        # simulation_app.update() expensive enough to starve the single-threaded
+        # rclpy service loop, causing SpawnFloors/Walls/Doors/Elevators calls to
+        # time out before the task generator can release eval readiness.
+        'export ARENA_ISAAC_IDLE_SIMULATION_APP_UPDATE="${ARENA_ISAAC_IDLE_SIMULATION_APP_UPDATE:-0}"; '
         'export ARENA_DISABLE_ISAAC_ODOM_GRAPH="${ARENA_DISABLE_ISAAC_ODOM_GRAPH:-0}"; '
         'export ARENA_SPAWN_USD_ROBOT_ENABLE_ISAAC_ODOM_GRAPH="${ARENA_SPAWN_USD_ROBOT_ENABLE_ISAAC_ODOM_GRAPH:-1}"; '
         'python3 /opt/arena_ws/src/Arena/arena_isaac/arena_isaac/arena_isaac/run_isaacsim.py '

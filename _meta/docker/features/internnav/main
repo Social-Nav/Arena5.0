@@ -116,7 +116,7 @@ install_runtime(){
     fi
 
     uv pip install --python "$py" -r "$repo_path/requirements/core_requirements.txt"
-    uv pip install --python "$py" flask
+    uv pip install --python "$py" flask casadi scipy
     rm -rf "$build_repo_path"
     cp -a "$repo_path" "$build_repo_path"
     rm -rf "$build_repo_path"/internnav.egg-info "$build_repo_path"/*.egg-info
@@ -225,7 +225,7 @@ source_fn(){
 }
 
 launch(){
-    local robot namespace mode model_path device rgb_topic depth_topic camera_info_topic instruction_topic trace_path status_topic visualization_topic action_visualization_topic model_output_topic model_output_policy visualization_rate_hz enable_visualization inference_rate_hz inference_timeout_sec camera_ready_timeout_sec internnav_http_url internnav_http_timeout_sec adapter_target extra_ros_args
+    local robot namespace mode model_path device rgb_topic depth_topic camera_info_topic instruction_topic task_reset_topic scenario_reset_topic trace_path status_topic visualization_topic action_visualization_topic model_output_topic model_output_policy visualization_rate_hz enable_visualization inference_rate_hz inference_timeout_sec camera_ready_timeout_sec internnav_http_url internnav_http_timeout_sec adapter_target extra_ros_args cmd_vel_topic odom_topic
     robot="${ARENA_INTERNNAV_ROBOT:-Ai2_Bot2}"
     namespace="${ARENA_INTERNNAV_NAMESPACE:-/task_generator_node/$robot}"
     mode="${ARENA_INTERNNAV_MODE:-internnav}"
@@ -234,20 +234,29 @@ launch(){
     rgb_topic="${ARENA_INTERNNAV_RGB_TOPIC:-head_camera/image}"
     depth_topic="${ARENA_INTERNNAV_DEPTH_TOPIC:-head_camera/depth}"
     camera_info_topic="${ARENA_INTERNNAV_CAMERA_INFO_TOPIC:-head_camera/camera_info}"
+    odom_topic="${ARENA_INTERNNAV_ODOM_TOPIC:-odom}"
+    cmd_vel_topic="${ARENA_INTERNNAV_CMD_VEL_TOPIC:-cmd_vel}"
     instruction_topic="${ARENA_INTERNNAV_INSTRUCTION_TOPIC:-/task_generator_node/vln_instruction}"
-    trace_path="${ARENA_INTERNNAV_TRACE_PATH:-}"
-    status_topic="${ARENA_INTERNNAV_STATUS_TOPIC:-internnav/status}"
+    task_reset_topic="${ARENA_INTERNNAV_TASK_RESET_TOPIC:-/task_generator_node/task_reset}"
+    scenario_reset_topic="${ARENA_INTERNNAV_SCENARIO_RESET_TOPIC:-}"
+    trace_path="${ARENA_INTERNNAV_TRACE_PATH:-${ARENA_EVAL_INTERNNAV_TRACE_PATH:-}}"
+    status_topic="${ARENA_INTERNNAV_STATUS_TOPIC:-${ARENA_EVAL_INTERNNAV_STATUS_TOPIC:-internnav/status}}"
     visualization_topic="${ARENA_INTERNNAV_VISUALIZATION_TOPIC:-internnav/debug_image}"
     action_visualization_topic="${ARENA_INTERNNAV_ACTION_VISUALIZATION_TOPIC:-internnav/action_image}"
-    model_output_topic="${ARENA_INTERNNAV_MODEL_OUTPUT_TOPIC:-internnav/model_output}"
+    model_output_topic="${ARENA_INTERNNAV_MODEL_OUTPUT_TOPIC:-${ARENA_EVAL_INTERNNAV_MODEL_OUTPUT_TOPIC:-internnav/model_output}}"
     model_output_policy="${ARENA_INTERNNAV_MODEL_OUTPUT_POLICY:-${ARENA_EVAL_INTERNNAV_MODEL_OUTPUT_POLICY:-trajectory}}"
     visualization_rate_hz="${ARENA_INTERNNAV_VISUALIZATION_RATE_HZ:-5.0}"
     enable_visualization="${ARENA_INTERNNAV_ENABLE_VISUALIZATION:-true}"
     inference_rate_hz="${ARENA_INTERNNAV_INFERENCE_RATE_HZ:-10.0}"
     inference_timeout_sec="${ARENA_INTERNNAV_INFERENCE_TIMEOUT_SEC:-120.0}"
+    official_http="${ARENA_INTERNNAV_OFFICIAL_HTTP:-true}"
+    http_host="${ARENA_INTERNNAV_HTTP_HOST:-127.0.0.1}"
+    http_port="${ARENA_INTERNNAV_HTTP_PORT:-5801}"
+    http_output_dir="${ARENA_INTERNNAV_HTTP_OUTPUT_DIR:-/tmp/internvla_http_output}"
+    http_health_timeout_sec="${ARENA_INTERNNAV_HTTP_HEALTH_TIMEOUT_SEC:-600.0}"
     internnav_http_url="${ARENA_INTERNNAV_HTTP_URL:-}"
     internnav_http_timeout_sec="${ARENA_INTERNNAV_HTTP_TIMEOUT_SEC:-}"
-    adapter_target="${ARENA_INTERNNAV_ADAPTER_TARGET:-arena_vln_models.internnav:load_internnav_adapter}"
+    adapter_target="${ARENA_INTERNNAV_ADAPTER_TARGET:-}"
     camera_ready_timeout_sec="${ARENA_INTERNNAV_CAMERA_READY_TIMEOUT_SEC:-480.0}"
     extra_ros_args="${ARENA_INTERNNAV_EXTRA_ROS_ARGS:-}"
 
@@ -261,7 +270,11 @@ launch(){
             --rgb-topic) rgb_topic="$2"; shift 2 ;;
             --depth-topic) depth_topic="$2"; shift 2 ;;
             --camera-info-topic) camera_info_topic="$2"; shift 2 ;;
+            --odom-topic) odom_topic="$2"; shift 2 ;;
+            --cmd-vel-topic) cmd_vel_topic="$2"; shift 2 ;;
             --instruction-topic) instruction_topic="$2"; shift 2 ;;
+            --task-reset-topic) task_reset_topic="$2"; shift 2 ;;
+            --scenario-reset-topic) scenario_reset_topic="$2"; shift 2 ;;
             --trace-path) trace_path="$2"; shift 2 ;;
             --status-topic) status_topic="$2"; shift 2 ;;
             --visualization-topic) visualization_topic="$2"; shift 2 ;;
@@ -273,6 +286,12 @@ launch(){
             --disable-visualization) enable_visualization="false"; shift ;;
             --inference-rate-hz) inference_rate_hz="$2"; shift 2 ;;
             --inference-timeout-sec) inference_timeout_sec="$2"; shift 2 ;;
+            --official-http) official_http="true"; shift ;;
+            --no-official-http) official_http="false"; shift ;;
+            --http-host) http_host="$2"; shift 2 ;;
+            --http-port) http_port="$2"; shift 2 ;;
+            --http-output-dir) http_output_dir="$2"; shift 2 ;;
+            --http-health-timeout-sec) http_health_timeout_sec="$2"; shift 2 ;;
             --realworld-http-url|--http-url) internnav_http_url="$2"; adapter_target="arena_vln_models.internnav:load_internvla_realworld_http_adapter"; shift 2 ;;
             --realworld-http-timeout-sec|--http-timeout-sec) internnav_http_timeout_sec="$2"; shift 2 ;;
             --camera-ready-timeout-sec) camera_ready_timeout_sec="$2"; shift 2 ;;
@@ -289,19 +308,37 @@ launch(){
     fi
     internnav_http_timeout_sec="$(ros_double "$internnav_http_timeout_sec")"
     camera_ready_timeout_sec="$(ros_double "$camera_ready_timeout_sec")"
-    if [ -n "$internnav_http_url" ] && [ "${ARENA_INTERNNAV_ADAPTER_TARGET:-}" = "" ]; then
-        adapter_target="arena_vln_models.internnav:load_internvla_realworld_http_adapter"
+    http_health_timeout_sec="$(ros_double "$http_health_timeout_sec")"
+    if [ "$official_http" = "true" ] && [ -z "$internnav_http_url" ]; then
+        internnav_http_url="http://$http_host:$http_port/eval_dual"
     fi
-
     arena_docker_compose up -d --remove-orphans --no-recreate internnav
     trap 'arena_docker_compose stop internnav || true' EXIT INT TERM
 
     local cmd
-    cmd="export ROS_DOMAIN_ID='${ROS_DOMAIN_ID:-1}'; export RMW_IMPLEMENTATION='${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}'; export ROS_AUTOMATIC_DISCOVERY_RANGE='${ROS_AUTOMATIC_DISCOVERY_RANGE:-SUBNET}'; export ROS_LOCALHOST_ONLY='${ROS_LOCALHOST_ONLY:-0}'; export FASTDDS_BUILTIN_TRANSPORTS='${FASTDDS_BUILTIN_TRANSPORTS:-UDPv4}'; export NO_PROXY='127.0.0.1,localhost,${NO_PROXY:-}'; export no_proxy='127.0.0.1,localhost,${no_proxy:-}'; export ARENA_INTERNNAV_MODEL_PATH='$model_path'; export ARENA_VLN_MODEL_PATH='$model_path'; export INTERNNAV_DEPTH_ANYTHING_CKPT='$(default_depth_ckpt)'; export ARENA_VLN_MODEL_PYTHON='$(venv_path)/bin/python'; export ARENA_INTERNNAV_PYTHON='$(venv_path)/bin/python';"
+    cmd="set -e; export ROS_DOMAIN_ID='${ROS_DOMAIN_ID:-1}'; export RMW_IMPLEMENTATION='${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}'; export ROS_AUTOMATIC_DISCOVERY_RANGE='${ROS_AUTOMATIC_DISCOVERY_RANGE:-SUBNET}'; export ROS_LOCALHOST_ONLY='${ROS_LOCALHOST_ONLY:-0}'; export FASTDDS_BUILTIN_TRANSPORTS='${FASTDDS_BUILTIN_TRANSPORTS:-UDPv4}'; export NO_PROXY='127.0.0.1,localhost,${NO_PROXY:-}'; export no_proxy='127.0.0.1,localhost,${no_proxy:-}'; export ARENA_INTERNNAV_MODEL_PATH='$model_path'; export ARENA_VLN_MODEL_PATH='$model_path'; export INTERNNAV_DEPTH_ANYTHING_CKPT='$(default_depth_ckpt)'; export ARENA_VLN_MODEL_PYTHON='$(venv_path)/bin/python'; export ARENA_INTERNNAV_PYTHON='$(venv_path)/bin/python'; export PYTHONPATH='/opt/arena_ws/deps/InternNav:/opt/arena_ws/deps/InternNav/third_party/diffusion-policy:'\"\${PYTHONPATH:-}\";"
     if [ -n "$trace_path" ]; then
         cmd="$cmd export ARENA_EVAL_INTERNNAV_TRACE_PATH='$trace_path';"
     fi
-    cmd="$cmd $(venv_path)/bin/python /opt/arena_ws/install/arena_vln_models/lib/arena_vln_models/dual_vln_server --ros-args -r __ns:='$namespace' -r __node:=internnav_server -p namespace:='$namespace' -p mode:='$mode' -p model_path:='$model_path' -p device:='$device' -p goal_topic:=episode_goal_pose -p instruction_topic:='$instruction_topic' -p rgb_topic:='$rgb_topic' -p depth_topic:='$depth_topic' -p camera_info_topic:='$camera_info_topic' -p adapter_target:='$adapter_target' -p internnav_http_url:='$internnav_http_url' -p internnav_http_timeout_sec:='$internnav_http_timeout_sec' -p require_real_backend:=true -p strict_device:=true -p camera_ready_timeout_sec:='$camera_ready_timeout_sec' -p status_topic:='$status_topic' -p enable_visualization:='$enable_visualization' -p visualization_topic:='$visualization_topic' -p action_visualization_topic:='$action_visualization_topic' -p model_output_topic:='$model_output_topic' -p model_output_policy:='$model_output_policy' -p visualization_rate_hz:='$visualization_rate_hz' -p inference_rate_hz:='$inference_rate_hz' -p inference_timeout_sec:='$inference_timeout_sec' $extra_ros_args"
+    if [ "$official_http" = "true" ]; then
+        cmd="$cmd $(venv_path)/bin/python -u /opt/arena_ws/deps/InternNav/scripts/realworld/http_internvla_server.py --host '0.0.0.0' --port '$http_port' --device '$device' --model_path '$model_path' --output_dir '$http_output_dir' & official_http_pid=\$!; trap 'kill \$official_http_pid 2>/dev/null || true' EXIT INT TERM; health_attempts=\$($(venv_path)/bin/python -c \"import math; print(max(1, int(math.ceil(float('$http_health_timeout_sec') / 2.0))))\"); health_i=0; while ! $(venv_path)/bin/python -c \"import json, urllib.request; data=json.loads(urllib.request.urlopen('http://127.0.0.1:$http_port/health', timeout=2).read().decode('utf-8')); raise SystemExit(0 if data.get('status') == 'ready' else 1)\"; do health_i=\$((health_i + 1)); if [ \$health_i -ge \$health_attempts ]; then echo 'official InternVLA HTTP server did not become ready at http://127.0.0.1:$http_port/health' >&2; exit 1; fi; sleep 2; done;"
+    fi
+    case "$rgb_topic" in /*) ;; *) rgb_topic="$namespace/$rgb_topic" ;; esac
+    case "$depth_topic" in /*) ;; *) depth_topic="$namespace/$depth_topic" ;; esac
+    case "$camera_info_topic" in /*) ;; *) camera_info_topic="$namespace/$camera_info_topic" ;; esac
+    case "$odom_topic" in /*) ;; *) odom_topic="$namespace/$odom_topic" ;; esac
+    case "$cmd_vel_topic" in /*) ;; *) cmd_vel_topic="$namespace/$cmd_vel_topic" ;; esac
+    case "$status_topic" in ''|/*) ;; *) status_topic="$namespace/$status_topic" ;; esac
+    case "$model_output_topic" in ''|/*) ;; *) model_output_topic="$namespace/$model_output_topic" ;; esac
+    if [ -z "$scenario_reset_topic" ]; then
+        # Arena's task_generator publishes /task_generator_node/task_reset as
+        # the canonical episode boundary for this direct-cmd_vel eval path.
+        # There is no per-robot scenario_reset publisher in
+        # internnav_async_eval.launch.py, so default to task_reset instead of a
+        # dead namespaced topic.
+        scenario_reset_topic="$task_reset_topic"
+    fi
+    cmd="$cmd cd /opt/arena_ws/deps/InternNav/scripts/realworld; $(venv_path)/bin/python -u http_internvla_client.py --url '$internnav_http_url' --rgb-topic '$rgb_topic' --depth-topic '$depth_topic' --odom-topic '$odom_topic' --cmd-vel-topic '$cmd_vel_topic' --instruction-topic '$instruction_topic' --camera-info-topic '$camera_info_topic' --task-reset-topic '$task_reset_topic' --scenario-reset-topic '$scenario_reset_topic' --status-topic '$status_topic' --model-output-topic '$model_output_topic' --trace-path '$trace_path' $extra_ros_args"
 
     arena_docker_compose exec -T internnav /entrypoint.sh bash -lc "$cmd"
 }
@@ -328,7 +365,11 @@ Launch options:
   --rgb-topic TOPIC             Default: head_camera/image
   --depth-topic TOPIC           Default: head_camera/depth
   --camera-info-topic TOPIC     Default: head_camera/camera_info
+  --odom-topic TOPIC            Default: odom
+  --cmd-vel-topic TOPIC         Default: cmd_vel
   --instruction-topic TOPIC     Default: /task_generator_node/vln_instruction
+  --task-reset-topic TOPIC      Default: /task_generator_node/task_reset
+  --scenario-reset-topic TOPIC  Default: <namespace>/scenario_reset
   --trace-path PATH             Optional JSONL trace path
   --status-topic TOPIC          Default: internnav/status
   --enable-visualization        Publish debug overlay frames (default)
@@ -339,6 +380,12 @@ Launch options:
   --visualization-rate-hz HZ    Default: 5.0
   --inference-rate-hz HZ        Default: 10.0
   --inference-timeout-sec SEC   Default: 120.0
+  --official-http               Start upstream InternNav realworld HTTP server first (default)
+  --no-official-http            Do not start upstream HTTP server; use an already running --realworld-http-url
+  --http-host HOST              Hostname used by the ROS adapter URL. Default: 127.0.0.1
+  --http-port PORT              Upstream HTTP server port. Default: 5801
+  --http-output-dir DIR         Upstream HTTP server output dir. Default: /tmp/internvla_http_output
+  --http-health-timeout-sec SEC Default: 600.0
   --realworld-http-url URL      Use InternVLA-N1 realworld HTTP /eval_dual via Arena ROS2 get_command
   --realworld-http-timeout-sec SEC Default: ARENA_INTERNNAV_HTTP_TIMEOUT_SEC or --inference-timeout-sec
   --camera-ready-timeout-sec SEC Default: 480.0

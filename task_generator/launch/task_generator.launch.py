@@ -222,6 +222,11 @@ def generate_launch_description():
         default_value="false",
     )
     dual_vln_external_server = declare_legacy_alias("dual_vln_external_server", internnav_external_server)
+    internnav_direct_cmd_vel = LaunchArgument(
+        name="internnav_direct_cmd_vel",
+        default_value="false",
+    )
+    dual_vln_direct_cmd_vel = declare_legacy_alias("dual_vln_direct_cmd_vel", internnav_direct_cmd_vel)
     internnav_command_service = LaunchArgument(
         name="internnav_command_service",
         default_value="",
@@ -235,6 +240,10 @@ def generate_launch_description():
     enable_collision_monitor = LaunchArgument(
         name="enable_collision_monitor",
         default_value="true",
+    )
+    robot_launch_file = LaunchArgument(
+        name="robot_launch_file",
+        default_value="robot.launch.py",
     )
 
     parameter_file = LaunchArgument(name="parameter_file")
@@ -370,6 +379,7 @@ def generate_launch_description():
                 'internnav_visualization_rate_hz': dual_vln_visualization_rate_hz.param_value(float),
                 'internnav_model_output_topic': dual_vln_model_output_topic.param_value(str),
                 'internnav_external_server': internnav_external_server.param_value(bool),
+                'internnav_direct_cmd_vel': internnav_direct_cmd_vel.param_value(bool),
                 'internnav_command_service': dual_vln_command_service.param_value(str),
                 'internnav_status_topic': dual_vln_status_topic.param_value(str),
                 **dual_vln_mode.str_param,
@@ -397,7 +407,10 @@ def generate_launch_description():
                 **dual_vln_status_topic.str_param,
                 **internnav_external_server.param(bool),
                 **dual_vln_external_server.param(bool),
+                **internnav_direct_cmd_vel.param(bool),
+                **dual_vln_direct_cmd_vel.param(bool),
                 **enable_collision_monitor.param(bool),
+                **robot_launch_file.str_param,
                 **reference.param(typing.List[float]),
                 **prefix.str_param,
                 **debug.param(bool),
@@ -443,6 +456,7 @@ def generate_launch_description():
                 'internnav_visualization_rate_hz': dual_vln_visualization_rate_hz.param_value(float),
                 'internnav_model_output_topic': dual_vln_model_output_topic.param_value(str),
                 'internnav_external_server': internnav_external_server.param_value(bool),
+                'internnav_direct_cmd_vel': internnav_direct_cmd_vel.param_value(bool),
                 'internnav_command_service': dual_vln_command_service.param_value(str),
                 'internnav_status_topic': dual_vln_status_topic.param_value(str),
                 **dual_vln_mode.str_param,
@@ -469,7 +483,9 @@ def generate_launch_description():
                 **dual_vln_command_service.str_param,
                 **dual_vln_status_topic.str_param,
                 'dual_vln_external_server': dual_vln_external_server.param_value(bool),
+                'dual_vln_direct_cmd_vel': dual_vln_direct_cmd_vel.param_value(bool),
                 **enable_collision_monitor.param(bool),
+                **robot_launch_file.str_param,
             },
         ],
     )

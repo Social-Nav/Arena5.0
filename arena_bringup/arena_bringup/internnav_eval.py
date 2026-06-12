@@ -13,15 +13,18 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 
 
-DEFAULT_INTERNNAV_ADAPTER_TARGET = 'arena_vln_models.internnav:load_internnav_adapter'
 REALWORLD_HTTP_ADAPTER_TARGET = 'arena_vln_models.internnav:load_internvla_realworld_http_adapter'
+LEGACY_NATIVE_ADAPTER_TARGET = 'arena_vln_models.internnav:load_internnav_adapter'
+DEFAULT_INTERNNAV_ADAPTER_TARGET = REALWORLD_HTTP_ADAPTER_TARGET
 LEGACY_INTERNNAV_ADAPTER_TARGETS = {
-    'internnav.agent.internvla_n1_agent_realworld.InternVLAN1AsyncAgent': DEFAULT_INTERNNAV_ADAPTER_TARGET,
+    LEGACY_NATIVE_ADAPTER_TARGET: REALWORLD_HTTP_ADAPTER_TARGET,
+    'internnav.agent.internvla_n1_agent_realworld.InternVLAN1AsyncAgent': REALWORLD_HTTP_ADAPTER_TARGET,
 }
 HTTP_ADAPTER_REPLACED_TARGETS = {
-    DEFAULT_INTERNNAV_ADAPTER_TARGET,
+    LEGACY_NATIVE_ADAPTER_TARGET,
     *LEGACY_INTERNNAV_ADAPTER_TARGETS.keys(),
 }
+GENERIC_VLN_INSTRUCTIONS = {'', 'navigate', 'go', 'start', 'default', 'none', 'null'}
 
 
 def _write_yaml(path: str, data) -> None:
@@ -233,6 +236,141 @@ def _read_text_if_exists(path: str) -> str | None:
             return f.read()
     except Exception:
         return None
+
+
+def _is_generic_vln_instruction(value: str | None) -> bool:
+    return str(value or '').strip().lower() in GENERIC_VLN_INSTRUCTIONS
+
+
+def _workspace_root_from_runtime() -> str:
+    for env_name in ('ARENA_WS_DIR', 'HOST_ARENA_WS_DIR', 'ARENA_OUTPUT_WORKSPACE'):
+        value = str(os.environ.get(env_name, '') or '').strip()
+        if value and os.path.isdir(value):
+            return os.path.abspath(value)
+    cwd = os.getcwd()
+    if os.path.isdir(os.path.join(cwd, 'src', 'Arena')):
+        return os.path.abspath(cwd)
+    return os.path.abspath(cwd)
+
+
+def _scenario_key(value: str | None) -> str:
+    raw = str(value or '').strip()
+    if not raw:
+        return ''
+    base = os.path.basename(raw)
+    if base in {'scenario.yaml', 'scenario.yml', 'scenario.json'}:
+        parent = os.path.basename(os.path.dirname(raw.rstrip(os.sep)))
+        return parent or os.path.splitext(base)[0]
+    stem, ext = os.path.splitext(base)
+    return stem if ext in {'.yaml', '.yml'} else base
+
+
+def _candidate_grscenes_instruction_manifests(workspace_root: str) -> list[str]:
+    candidates = []
+    for value in (
+        os.environ.get('ARENA_GRSCENES_INSTRUCTION_MANIFEST', ''),
+        os.environ.get('GRSCENES_INSTRUCTION_MANIFEST', ''),
+    ):
+        value = str(value or '').strip()
+        if value:
+            candidates.append(value)
+    candidates.extend([
+        os.path.join(
+            workspace_root,
+            'data',
+            'grscenes_trajectories',
+            '20260609_uploaded_instructions_txt',
+            'uploaded_grscenes_test_entries.json',
+        ),
+        os.path.join(
+            workspace_root,
+            'data',
+            'grscenes_trajectories',
+            'uploaded_grscenes_test_entries.json',
+        ),
+    ])
+    unique = []
+    seen = set()
+    for path in candidates:
+        normalized = os.path.abspath(os.path.expanduser(path))
+        if normalized not in seen:
+            unique.append(normalized)
+            seen.add(normalized)
+    return unique
+
+
+def _resolve_existing_manifest_path(manifest_arg: str, workspace_root: str) -> tuple[str, list[str]]:
+    attempts = []
+    if manifest_arg:
+        raw = os.path.expanduser(str(manifest_arg).strip())
+        candidates = [raw if os.path.isabs(raw) else os.path.join(workspace_root, raw)]
+    else:
+        candidates = _candidate_grscenes_instruction_manifests(workspace_root)
+    for candidate in candidates:
+        normalized = os.path.abspath(candidate)
+        attempts.append(normalized)
+        if os.path.exists(normalized):
+            return normalized, attempts
+    return '', attempts
+
+
+def _lookup_grscenes_instruction_from_manifest(
+    manifest_path: str,
+    *,
+    world: str,
+    scenario: str,
+    episode: str,
+    timestamp: str,
+) -> dict:
+    data = _read_json_if_exists(manifest_path)
+    if not isinstance(data, list):
+        return {'ok': False, 'reason': 'manifest_not_list', 'manifest_path': manifest_path}
+
+    world_key = str(world or '').strip()
+    scenario_key = _scenario_key(scenario)
+    episode_key = str(episode or '').strip()
+    timestamp_key = str(timestamp or '').strip()
+
+    matches = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        if world_key and str(entry.get('world') or '').strip() != world_key:
+            continue
+        if scenario_key and str(entry.get('scenario') or '').strip() != scenario_key:
+            continue
+        if episode_key and str(entry.get('episode') or '').strip() != episode_key:
+            continue
+        if timestamp_key and str(entry.get('timestamp') or '').strip() != timestamp_key:
+            continue
+        instruction = str(entry.get('instruction') or '').strip()
+        if instruction:
+            matches.append(entry)
+
+    if not matches:
+        return {
+            'ok': False,
+            'reason': 'no_matching_instruction',
+            'manifest_path': manifest_path,
+            'world': world_key,
+            'scenario': scenario_key,
+            'episode': episode_key,
+            'timestamp': timestamp_key,
+        }
+
+    selected = matches[0]
+    return {
+        'ok': True,
+        'manifest_path': manifest_path,
+        'match_count': len(matches),
+        'ambiguous': len(matches) > 1,
+        'world': str(selected.get('world') or ''),
+        'scenario': str(selected.get('scenario') or ''),
+        'episode': str(selected.get('episode') or ''),
+        'timestamp': str(selected.get('timestamp') or ''),
+        'instruction_file': str(selected.get('instruction_file') or ''),
+        'instruction': str(selected.get('instruction') or '').strip(),
+    }
 
 
 def _wait_for_file(path: str, timeout_sec: float) -> bool:
@@ -984,6 +1122,14 @@ except AttributeError:
 
 
 def _load_video_backend():
+    # Prefer OpenCV when available. Some container images include the imageio
+    # package but not the ffmpeg/pyav writer plugins, which makes get_writer()
+    # fail only after the episode starts and leaves empty video artifacts.
+    try:
+        import cv2  # type: ignore
+        return 'cv2', cv2
+    except Exception:
+        pass
     try:
         import imageio.v2 as imageio  # type: ignore
         return 'imageio', imageio
@@ -994,11 +1140,7 @@ def _load_video_backend():
         return 'imageio', imageio
     except Exception:
         pass
-    try:
-        import cv2  # type: ignore
-        return 'cv2', cv2
-    except Exception:
-        return None, None
+    return None, None
 
 
 BACKEND_NAME, BACKEND_MODULE = _load_video_backend()
@@ -1634,6 +1776,19 @@ class EvalVideoRecorder(Node):
             and self.latest_sim_top_down is not None
             and self.latest_sim_top_down_generation == self.reset_generation
         ):
+            # Isaac's top-down Replicator stream can emit one pre-settled frame
+            # right after task_reset while the camera/render product is being
+            # positioned.  Do not let that stale/incorrect frame become t=0 of
+            # sim_top_down.mp4; the visual validator samples t=0 as the episode
+            # baseline and expects an actual top-down camera view.
+            sim_started_at = float(self.current_episode_info.get('started_at_wall_time') or 0.0)
+            if time.time() - sim_started_at < 0.5:
+                self.current_episode_info['sim_top_down_warmup_skipped'] = True
+                self.current_episode_info['sim_top_down_warmup_sec'] = 0.5
+                self.current_episode_info['last_frame_wall_time'] = time.time()
+                self.last_frame_time = now
+                self._write_index()
+                return
             sim_top_down_frame = np.asarray(self.latest_sim_top_down, dtype=np.uint8)
             self.sim_top_down_writer.write(sim_top_down_frame)
             self.current_episode_info['sim_top_down_frames'] += 1
@@ -1848,6 +2003,43 @@ raise SystemExit(exit_code)
 
 def _apply_runtime_defaults(args) -> dict:
     adjustments = {}
+
+    if (
+        not str(getattr(args, 'vln_instruction_file', '') or '').strip()
+        and _is_generic_vln_instruction(getattr(args, 'vln_instruction', ''))
+        and str(getattr(args, 'world', '') or '').strip().startswith('grscenes_')
+    ):
+        workspace_root = _workspace_root_from_runtime()
+        manifest_path, manifest_attempts = _resolve_existing_manifest_path(
+            str(getattr(args, 'vln_instruction_manifest', '') or ''),
+            workspace_root,
+        )
+        if manifest_path:
+            lookup = _lookup_grscenes_instruction_from_manifest(
+                manifest_path,
+                world=getattr(args, 'world', ''),
+                scenario=getattr(args, 'scenario_file', ''),
+                episode=getattr(args, 'vln_instruction_episode', ''),
+                timestamp=getattr(args, 'vln_instruction_timestamp', ''),
+            )
+            if lookup.get('ok') and lookup.get('instruction'):
+                args.vln_instruction = str(lookup['instruction'])
+                args.vln_instruction_manifest = manifest_path
+                adjustments['vln_instruction'] = {
+                    'source': 'grscenes_manifest',
+                    'manifest_path': manifest_path,
+                    'world': lookup.get('world'),
+                    'scenario': lookup.get('scenario'),
+                    'episode': lookup.get('episode'),
+                    'timestamp': lookup.get('timestamp'),
+                    'instruction_file': lookup.get('instruction_file'),
+                    'match_count': lookup.get('match_count'),
+                    'ambiguous': lookup.get('ambiguous'),
+                }
+            else:
+                adjustments['vln_instruction_manifest_lookup_failed'] = lookup
+        else:
+            adjustments['vln_instruction_manifest_not_found'] = manifest_attempts
 
     env_python, env_python_name = _first_env_value(
         'ARENA_VLN_MODEL_PYTHON',
@@ -2109,6 +2301,25 @@ def main() -> int:
     parser.add_argument('--log-level', default='warn')
     parser.add_argument('--vln-instruction', default='navigate')
     parser.add_argument('--vln-instruction-file', default='')
+    parser.add_argument(
+        '--vln-instruction-manifest',
+        default='',
+        help=(
+            'Optional GRScenes uploaded test entries manifest. When vln_instruction is generic and no '
+            'vln_instruction_file is set, internnav_eval will auto-select the matching entry by world, '
+            'scenario_file, episode, and optional timestamp.'
+        ),
+    )
+    parser.add_argument(
+        '--vln-instruction-episode',
+        default='episode_00',
+        help='Episode key used when auto-selecting a GRScenes instruction from --vln-instruction-manifest.',
+    )
+    parser.add_argument(
+        '--vln-instruction-timestamp',
+        default='',
+        help='Optional timestamp disambiguator for GRScenes instruction manifest lookup.',
+    )
     parser.add_argument('--internnav-mode', '--dual-vln-mode', dest='dual_vln_mode', default='heuristic')
     parser.add_argument('--internnav-model-path', '--dual-vln-model-path', dest='dual_vln_model_path', default='')
     parser.add_argument('--internnav-device', '--dual-vln-device', dest='dual_vln_device', default='cpu')
@@ -2153,6 +2364,14 @@ def main() -> int:
         action='store_true',
         help='Use the dedicated internnav-1 model server. This is the required/default mode for real InternNav eval.',
     )
+    parser.add_argument(
+        '--internnav-official-client',
+        '--internnav-direct-cmd-vel',
+        '--dual-vln-direct-cmd-vel',
+        dest='internnav_direct_cmd_vel',
+        action='store_true',
+        help='Use upstream InternNav realworld ROS2 client publishing cmd_vel directly; skip Arena get_command/status wrapper checks.',
+    )
     parser.add_argument('--internnav-command-service', '--dual-vln-command-service', dest='dual_vln_command_service', default='')
     parser.add_argument('--internnav-visualization-topic', '--dual-vln-visualization-topic', dest='dual_vln_visualization_topic', default='internnav/debug_image')
     parser.add_argument('--internnav-action-visualization-topic', '--dual-vln-action-visualization-topic', dest='dual_vln_action_visualization_topic', default='internnav/action_image')
@@ -2193,6 +2412,11 @@ def main() -> int:
     parser.add_argument('extra_launch_args', nargs='*', help='Additional KEY:=VALUE launch arguments')
     args = parser.parse_args()
     runtime_adjustments = _apply_runtime_defaults(args)
+    if args.internnav_direct_cmd_vel:
+        args.internnav_external_server = True
+        args.skip_external_server_preflight = True
+        args.dual_vln_require_real_backend = False
+        args.dual_vln_strict_device = False
     if str(args.dual_vln_mode).strip().lower() == 'internnav' and not str(getattr(args, 'dual_vln_http_url', '') or '').strip():
         args.internnav_external_server = True
         args.dual_vln_require_real_backend = False
@@ -2204,6 +2428,15 @@ def main() -> int:
             args.tm_obstacles = 'scenario'
         if not args.scenario_file:
             args.scenario_file = 'normal'
+    if args.scenario_file:
+        normalized_scenario_file = _scenario_key(args.scenario_file)
+        if normalized_scenario_file and normalized_scenario_file != args.scenario_file:
+            runtime_adjustments['scenario_file'] = {
+                'source': 'normalized_scenario_identifier',
+                'input': args.scenario_file,
+                'value': normalized_scenario_file,
+            }
+            args.scenario_file = normalized_scenario_file
 
     arena_eval_share = get_package_share_directory('arena_evaluation')
     bringup_share = get_package_share_directory('arena_bringup')
@@ -2295,6 +2528,8 @@ def main() -> int:
         f'dual_vln_enable_visualization:={str(args.dual_vln_enable_visualization).lower()}',
         f'internnav_external_server:={str(args.internnav_external_server).lower()}',
         f'dual_vln_external_server:={str(args.internnav_external_server).lower()}',
+        f'internnav_direct_cmd_vel:={str(args.internnav_direct_cmd_vel).lower()}',
+        f'dual_vln_direct_cmd_vel:={str(args.internnav_direct_cmd_vel).lower()}',
         f'dual_vln_require_real_backend:={str(args.dual_vln_require_real_backend).lower()}',
         f'dual_vln_strict_device:={str(args.dual_vln_strict_device).lower()}',
         f'dual_vln_visualization_topic:={args.dual_vln_visualization_topic}',
@@ -2304,6 +2539,8 @@ def main() -> int:
     ]
     if args.local_planner == 'dual_vln':
         launch_cmd.append('enable_collision_monitor:=false')
+    if args.internnav_direct_cmd_vel:
+        launch_cmd.append('robot_launch_file:=internnav_async_eval.launch.py')
     if args.dual_vln_rgb_topic:
         launch_cmd.append(f'dual_vln_rgb_topic:={args.dual_vln_rgb_topic}')
     if args.dual_vln_depth_topic:
@@ -2394,6 +2631,9 @@ def main() -> int:
             } if args.social_eval else None,
             'vln_instruction': args.vln_instruction,
             'vln_instruction_file': args.vln_instruction_file,
+            'vln_instruction_manifest': args.vln_instruction_manifest,
+            'vln_instruction_episode': args.vln_instruction_episode,
+            'vln_instruction_timestamp': args.vln_instruction_timestamp,
             'dual_vln_mode': args.dual_vln_mode,
             'dual_vln_model_path': args.dual_vln_model_path,
             'dual_vln_device': args.dual_vln_device,
@@ -2413,6 +2653,7 @@ def main() -> int:
             'dual_vln_look_down': args.dual_vln_look_down,
             'dual_vln_enable_visualization': args.dual_vln_enable_visualization,
             'internnav_external_server': args.internnav_external_server,
+            'internnav_direct_cmd_vel': args.internnav_direct_cmd_vel,
             'external_server_preflight_timeout_sec': args.external_server_preflight_timeout_sec,
             'skip_external_server_preflight': args.skip_external_server_preflight,
             'dual_vln_visualization_topic': args.dual_vln_visualization_topic,
@@ -2510,6 +2751,7 @@ def main() -> int:
     env['ARENA_EVAL_INTERNNAV_INFERENCE_TIMEOUT_SEC'] = str(args.dual_vln_inference_timeout_sec)
     env['ARENA_EVAL_INTERNNAV_TRACE_PATH'] = internnav_trace_path
     env['ARENA_INTERNNAV_EXTERNAL_SERVER'] = '1' if args.internnav_external_server else '0'
+    env['ARENA_INTERNNAV_DIRECT_CMD_VEL'] = '1' if args.internnav_direct_cmd_vel else '0'
     if args.dual_vln_python_executable:
         # The InternNav adapter itself looks for these variables when deciding
         # whether to launch the heavy model in a separate Python environment.
@@ -2557,7 +2799,7 @@ def main() -> int:
         manifest['result']['external_server_preflight'] = {
             'pass': None,
             'skipped': True,
-            'reason': 'skip_external_server_preflight',
+            'reason': 'internnav_direct_cmd_vel' if args.internnav_direct_cmd_vel else 'skip_external_server_preflight',
             'expected_service': robot_command_service,
             'expected_status_topic': args.dual_vln_status_topic,
             'timeout_sec': args.external_server_preflight_timeout_sec,
@@ -2610,7 +2852,7 @@ def main() -> int:
         args.task_reset_topic,
         robot_scenario_reset_topic,
     )
-    status_proc = _start_status_watcher(env, args.dual_vln_status_topic, dual_vln_status_path, internnav_trace_path)
+    status_proc = None if args.internnav_direct_cmd_vel else _start_status_watcher(env, args.dual_vln_status_topic, dual_vln_status_path, internnav_trace_path)
     launch_proc = subprocess.Popen(
         launch_cmd,
         env=env,
@@ -2669,7 +2911,7 @@ def main() -> int:
     finally:
         if finished_proc.poll() is None:
             _terminate_process_tree(finished_proc, grace_period_sec=2.0)
-        if status_proc.poll() is None:
+        if status_proc is not None and status_proc.poll() is None:
             _terminate_process_tree(status_proc, grace_period_sec=2.0)
         if video_proc is not None and video_proc.poll() is None:
             _terminate_process_tree(video_proc, grace_period_sec=5.0)

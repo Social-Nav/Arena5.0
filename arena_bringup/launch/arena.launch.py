@@ -276,6 +276,13 @@ def generate_launch_description():
         description='Use the dedicated internnav-1 InternNav server instead of starting a model server in arena-1'
     )
     dual_vln_external_server = declare_legacy_alias('dual_vln_external_server', internnav_external_server)
+    internnav_direct_cmd_vel = LaunchArgument(
+        name='internnav_direct_cmd_vel',
+        default_value='false',
+        choices=['true', 'false'],
+        description='Use upstream InternNav realworld ROS2 client publishing cmd_vel directly; no Arena get_command wrapper.'
+    )
+    dual_vln_direct_cmd_vel = declare_legacy_alias('dual_vln_direct_cmd_vel', internnav_direct_cmd_vel)
     internnav_command_service = LaunchArgument(
         name='internnav_command_service',
         default_value='',
@@ -292,6 +299,11 @@ def generate_launch_description():
         name='enable_collision_monitor',
         default_value='true',
         description='Enable Nav2 collision_monitor for robot navigation launch'
+    )
+    robot_launch_file = LaunchArgument(
+        name='robot_launch_file',
+        default_value='robot.launch.py',
+        description='Robot-level launch file in arena_simulation_setup/launch for the selected run case'
     )
     tm_robots = LaunchArgument(
         name='tm_robots',
@@ -512,9 +524,12 @@ def generate_launch_description():
                     **dual_vln_model_output_topic.dict,
                     **internnav_external_server.dict,
                     **dual_vln_external_server.dict,
+                    **internnav_direct_cmd_vel.dict,
+                    **dual_vln_direct_cmd_vel.dict,
                     **dual_vln_command_service.dict,
                     **dual_vln_status_topic.dict,
                     **enable_collision_monitor.dict,
+                    **robot_launch_file.dict,
                     **debug.dict,
                     **save_data.dict,
                     'namespace': namespace,

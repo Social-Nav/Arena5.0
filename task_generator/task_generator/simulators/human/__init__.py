@@ -51,7 +51,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self,
         obstacles: Sequence[Obstacle],
         layer: ObstacleLayer = ObstacleLayer.INUSE
-    ):
+    ) -> bool:
         """Spawns static obstacles.
 
         Args:
@@ -90,9 +90,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
                 to_spawn.append(known.obstacle)
             known.layer = layer
 
-        if to_spawn:
-            futures.append(self._simulator.obstacle_spawn(to_spawn))
-        await asyncio.gather(*futures)
+        results = await asyncio.gather(*futures) if futures else []
+        return all(self._all_truthy(result) for result in results)
 
     async def spawn_dynamic_obstacles(
         self,
@@ -145,7 +144,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self,
         walls: Sequence[Wall],
         doors: Sequence[Door],
-    ):
+    ) -> bool:
         """Spawns world elements.
 
         Args:
@@ -153,12 +152,23 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             doors (Sequence[Door]): _description_
         """
         self._logger.debug(f'spawning {len(walls)} walls and {len(doors)} doors')
-        await asyncio.gather(
+        results = await asyncio.gather(
             self._simulator.spawn_doors(doors),
             self._simulator.spawn_walls(walls),
             self._spawn_walls_impl(walls),
             self._spawn_doors_impl(doors),
         )
+        return all(self._all_truthy(result) for result in results)
+
+    @staticmethod
+    def _all_truthy(result) -> bool:
+        if result is None:
+            return True
+        if isinstance(result, bool):
+            return result
+        if isinstance(result, (list, tuple)):
+            return all(bool(item) for item in result)
+        return bool(result)
 
     async def unuse_obstacles(self):
         """

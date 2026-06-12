@@ -1,4 +1,5 @@
 import asyncio
+import json
 import traceback
 
 import arena_robots.Robot
@@ -71,14 +72,14 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         self._completed_episodes = 0
         self._finished_published = False
         self._world_geometry_spawned = False
-        # Start unblocked until a real world-spawn callback begins.  The world
-        # manager can emit the callback before episode entity gates are used, but
-        # when that callback blocks on a heavyweight Isaac USD load the robot
-        # manager must still be allowed to create the robot/cameras that some
-        # eval paths need for readiness.  _spawn_current_world_geometry clears
-        # this event for the actual static-world spawn transaction.
+        # Static world geometry is the first eval barrier.  Keep it blocked
+        # until WorldManager's initial world callback has loaded/spawned the
+        # environment into Isaac.  Robot/model/video consumers are only allowed
+        # to progress after this event is set, otherwise direct-control VLN can
+        # start against an empty stage or contend with the same single-threaded
+        # Isaac service loop used for static-world spawning.
         self._world_geometry_ready: asyncio.Event = asyncio.Event()
-        self._world_geometry_ready.set()
+        self._world_geometry_error: str = ''
         self._episode_entities_ready: asyncio.Event = asyncio.Event()
         self._human_states_ready: asyncio.Event = asyncio.Event()
         self._last_human_states_count = 0
@@ -87,6 +88,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         # VLN instruction interface (published per-episode)
         self._vln_instruction = self.rosparam[str].get('vln_instruction', 'navigate')
         self._vln_instruction_file = self.rosparam[str].get('vln_instruction_file', '')
+        self._vln_instruction_republish_task: asyncio.Task | None = None
         self._pub_vln_instruction = self.create_publisher(
             String,
             self.service_namespace('vln_instruction'),
@@ -117,6 +119,17 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
                 durability=DurabilityPolicy.TRANSIENT_LOCAL,
             ),
         )
+
+        self._pub_eval_ready = self.create_publisher(
+            String,
+            self.service_namespace('eval_ready'),
+            QoSProfile(
+                depth=1,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            ),
+        )
+        self._publish_eval_ready('startup', False, reason='task_generator_constructed')
 
         self.create_subscription(
             Agents,
@@ -205,6 +218,12 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         self._world_manager.on_world_change(world_change_cb)
         await self._world_manager.start()
 
+        initial_geometry_timeout_s = float(
+            self.rosparam[float].get('world_geometry_ready_timeout_sec', 600.0)
+        )
+        if not await self.wait_for_world_geometry_ready(timeout_s=initial_geometry_timeout_s):
+            raise RuntimeError('Initial world geometry did not report ready before robot manager setup.')
+
         self._logger.info("Setting up robots manager")
         self._robots_manager = RobotsManagerROS(
             node=self,
@@ -216,19 +235,49 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
     async def _spawn_current_world_geometry(self):
         self.get_logger().info("Spawning static world geometry into simulator")
         self._world_geometry_ready.clear()
+        self._world_geometry_error = ''
+        self._publish_eval_ready('world_geometry', False, reason='spawn_started')
         await self._environment_manager.reset(ObstacleLayer.WORLD)
-        await self._environment_manager.spawn_world_obstacles(self._world_manager.world)
+        success = await self._environment_manager.spawn_world_obstacles(self._world_manager.world)
+        if not success:
+            self._world_geometry_error = 'world_geometry_spawn_failed'
+            self._publish_eval_ready('world_geometry', False, reason=self._world_geometry_error)
+            raise RuntimeError(
+                'World geometry failed to load/spawn completely; refusing to release task_reset or VLN instruction.'
+            )
         self._world_geometry_spawned = True
         self._world_geometry_ready.set()
+        self._publish_eval_ready('world_geometry', True, reason='spawn_complete')
 
     async def wait_for_world_geometry_ready(self, timeout_s: float) -> bool:
         if self._world_geometry_ready.is_set():
             return True
+        if self._world_geometry_error:
+            self.get_logger().error(f'World geometry readiness failed: {self._world_geometry_error}')
+            return False
         try:
             await asyncio.wait_for(self._world_geometry_ready.wait(), timeout=max(float(timeout_s), 0.0))
             return True
         except asyncio.TimeoutError:
             return False
+
+    def _publish_eval_ready(self, stage: str, ready: bool, **details) -> None:
+        try:
+            msg = String()
+            msg.data = json.dumps(
+                {
+                    'stage': stage,
+                    'ready': bool(ready),
+                    'episode': self._number_of_resets,
+                    'world_geometry_ready': self._world_geometry_ready.is_set(),
+                    'episode_entities_ready': self._episode_entities_ready.is_set(),
+                    'details': details,
+                },
+                ensure_ascii=False,
+            )
+            self._pub_eval_ready.publish(msg)
+        except Exception as exc:
+            self.get_logger().warn(f'Failed to publish eval_ready status: {exc}')
 
     async def wait_for_episode_entities_ready(self, timeout_s: float) -> bool:
         if self._episode_entities_ready.is_set():
@@ -262,12 +311,48 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
                 "continuing to avoid hanging the eval."
             )
 
+    def _current_vln_instruction(self) -> str:
+        instruction = self._vln_instruction
+        if self._vln_instruction_file:
+            try:
+                with open(self._vln_instruction_file, 'r', encoding='utf-8') as f:
+                    instruction = f.read().strip() or instruction
+            except Exception as e:
+                self.get_logger().warn(f"Failed to read vln_instruction_file='{self._vln_instruction_file}': {e}")
+        return instruction
+
+    async def _republish_vln_instruction_window(self, instruction: str, reset_index: int) -> None:
+        """Bridge discovery/QoS races for late-starting external VLN clients.
+
+        The official InternNav ROS2 HTTP client can be started outside this
+        launch graph.  Publishing the instruction once at episode release is
+        not sufficient if DDS discovery completes just after that edge or if a
+        consumer uses volatile QoS.  Keep re-publishing the same per-episode
+        instruction for a short bounded window after task_reset, without moving
+        the public episode boundary away from task_reset.
+        """
+        for _ in range(8):
+            await asyncio.sleep(0.25)
+            if reset_index + 1 != self._number_of_resets:
+                return
+            self._pub_vln_instruction.publish(String(data=instruction))
+
+    def _publish_vln_instruction_for_episode(self, reset_index: int) -> None:
+        instruction = self._current_vln_instruction()
+        self._pub_vln_instruction.publish(String(data=instruction))
+        if self._vln_instruction_republish_task is not None:
+            self._vln_instruction_republish_task.cancel()
+        self._vln_instruction_republish_task = asyncio.create_task(
+            self._republish_vln_instruction_window(instruction, reset_index)
+        )
+
     # RUNTIME
     async def _reset_task_unlocked(self, **kwargs):
         self._start_time = self.sim_time
         self._episode_entities_ready.clear()
         self._human_states_ready.clear()
         self._last_human_states_count = 0
+        self._publish_eval_ready('episode', False, reason='reset_started')
 
         await self._simulator.before_reset_task()
 
@@ -298,19 +383,14 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
 
         self._episode_entities_ready.set()
         self._pub_task_reset.publish(Int16(data=self._number_of_resets))
+        self._publish_eval_ready('episode', True, reason='task_reset_published')
 
         # Publish instruction only after the simulator reports post-reset ready so
         # eval/video/model consumers treat task_reset as the first moment the new
-        # episode is actually ready to observe and control.
-        instruction = self._vln_instruction
-        if self._vln_instruction_file:
-            try:
-                with open(self._vln_instruction_file, 'r', encoding='utf-8') as f:
-                    instruction = f.read().strip() or instruction
-            except Exception as e:
-                self.get_logger().warn(f"Failed to read vln_instruction_file='{self._vln_instruction_file}': {e}")
-
-        self._pub_vln_instruction.publish(String(data=instruction))
+        # episode is actually ready to observe and control.  Re-publish for a
+        # short bounded window to let external InternNav clients that discover
+        # the topic slightly late still synchronize before first inference.
+        self._publish_vln_instruction_for_episode(self._number_of_resets)
 
         self._number_of_resets += 1
 

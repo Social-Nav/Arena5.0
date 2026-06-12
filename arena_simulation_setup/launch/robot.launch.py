@@ -113,6 +113,8 @@ def generate_launch_description():
     dual_vln_model_output_topic = declare_legacy_alias('dual_vln_model_output_topic', internnav_model_output_topic)
     internnav_external_server = LaunchArgument('internnav_external_server', default_value='false')
     dual_vln_external_server = declare_legacy_alias('dual_vln_external_server', internnav_external_server)
+    internnav_direct_cmd_vel = LaunchArgument('internnav_direct_cmd_vel', default_value='false')
+    dual_vln_direct_cmd_vel = declare_legacy_alias('dual_vln_direct_cmd_vel', internnav_direct_cmd_vel)
     enable_collision_monitor = LaunchArgument('enable_collision_monitor', default_value='true')
     agents_dir = LaunchArgument(
         'agents_dir',
@@ -145,6 +147,8 @@ def generate_launch_description():
             **frame.dict,
             **amcl.dict,
             **train_mode.dict,
+            **internnav_direct_cmd_vel.dict,
+            **dual_vln_direct_cmd_vel.dict,
             **enable_collision_monitor.dict,
         }.items(),
     )
@@ -273,7 +277,9 @@ def generate_launch_description():
             "'", local_planner.substitution, "' == 'dual_vln' and '",
             train_mode.substitution, "' == 'false' and '",
             internnav_external_server.substitution, "'.lower() != 'true' and '",
-            dual_vln_external_server.substitution, "'.lower() != 'true' and ",
+            dual_vln_external_server.substitution, "'.lower() != 'true' and '",
+            internnav_direct_cmd_vel.substitution, "'.lower() != 'true' and '",
+            dual_vln_direct_cmd_vel.substitution, "'.lower() != 'true' and ",
             "os.environ.get('ARENA_INTERNNAV_EXTERNAL_SERVER', '').strip().lower() not in {'1', 'true', 'yes', 'on'}",
         ], ['os'])
     )

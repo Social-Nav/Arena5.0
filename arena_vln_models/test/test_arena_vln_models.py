@@ -575,7 +575,7 @@ def test_trajectory_policy_goal_guided_synthetic_trajectory_not_official_primiti
 
 def test_internnav_server_defaults_empty_adapter_target_for_internnav_mode():
     adapter_target, source = _normalize_internnav_adapter_target('internnav', '')
-    assert adapter_target == 'arena_vln_models.internnav:load_internnav_adapter'
+    assert adapter_target == 'arena_vln_models.internnav:load_internvla_realworld_http_adapter'
     assert source == 'default'
 
 
@@ -584,7 +584,7 @@ def test_internnav_server_normalizes_legacy_native_adapter_target():
         'internnav',
         'internnav.agent.internvla_n1_agent_realworld.InternVLAN1AsyncAgent',
     )
-    assert adapter_target == 'arena_vln_models.internnav:load_internnav_adapter'
+    assert adapter_target == 'arena_vln_models.internnav:load_internvla_realworld_http_adapter'
     assert source == 'legacy:internnav.agent.internvla_n1_agent_realworld.InternVLAN1AsyncAgent'
 
 

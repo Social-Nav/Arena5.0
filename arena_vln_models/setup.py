@@ -24,12 +24,7 @@ setup(
     zip_safe=True,
     maintainer='dev',
     maintainer_email='dev@example.com',
-    description='Arena model-sim wrappers and InternNav server package.',
+    description='Arena model-sim adapters and InternNav HTTP client helpers.',
     license='MIT',
-    entry_points={
-        'console_scripts': [
-            'internnav_server = arena_vln_models.internnav_server:main',
-            'dual_vln_server = arena_vln_models.internnav_server:main',
-        ],
-    },
+    entry_points={'console_scripts': []},
 )

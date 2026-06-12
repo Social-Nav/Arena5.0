@@ -203,7 +203,7 @@ class EnvironmentManager(NodeInterface, _Realizer):
 
         self.id_generator = itertools.count(434)
 
-    async def spawn_world_obstacles(self, world: Union[WorldDescription, USDWorldDescription]):
+    async def spawn_world_obstacles(self, world: Union[WorldDescription, USDWorldDescription]) -> bool:
         """
         Loads given obstacles into the simulator,
         the map file is retrieved from launch parameter "world"
@@ -237,15 +237,17 @@ class EnvironmentManager(NodeInterface, _Realizer):
                         self._logger.info(f"USD scene loaded successfully: {usd_path}")
                     else:
                         self._logger.error(f"Failed to load USD scene: {usd_path}")
+                        return False
                 else:
                     self._logger.warning("Simulator does not support USD scene loading")
+                    return False
 
             # For USD worlds, still initialize HuNav but without walls/doors
-            await self._human_simulator.spawn_world(
+            human_ready = await self._human_simulator.spawn_world(
                 walls=tuple(),
                 doors=tuple(),
             )
-            return
+            return bool(human_ready)
 
 
         # Arena based Yaml world spawning
@@ -281,7 +283,23 @@ class EnvironmentManager(NodeInterface, _Realizer):
                 )
             )
 
-        await asyncio.gather(*futures)
+        results = await asyncio.gather(*futures)
+        if not all(self._all_truthy(result) for result in results):
+            self._logger.error(
+                'World geometry spawn did not fully complete; refusing to release eval episode readiness.'
+            )
+            return False
+        return True
+
+    @staticmethod
+    def _all_truthy(result) -> bool:
+        if result is None:
+            return True
+        if isinstance(result, bool):
+            return result
+        if isinstance(result, (list, tuple)):
+            return all(bool(item) for item in result)
+        return bool(result)
 
     async def spawn_dynamic_obstacles(self, setups: Collection[DynamicObstacle]):
         """

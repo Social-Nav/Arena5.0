@@ -285,7 +285,10 @@ class IsaacSimulator(BaseSim, NodeInterface):
         return await self._move_entities([(self._NS_PRIM(o.sim_path), o.pose) for o in obstacles])
 
     async def pedestrian_move(self, pedestrians):
-        await self._clients.DeletePedestrians.call_timeout(
+        # Isaac embedded-rclpy pedestrian services perform the stage mutation but
+        # may not deliver a usable response; do not turn that into a fixed 60s
+        # stall before respawning the moved pedestrians.
+        await self._clients.DeletePedestrians.call_fire_and_forget(
             DeletePrims.Request(names=[self._NS_PEDESTRIAN(p.sim_path) for p in pedestrians])
         )
         res = await self.pedestrian_spawn(pedestrians)
@@ -309,14 +312,10 @@ class IsaacSimulator(BaseSim, NodeInterface):
         return await asyncio.gather(*(self._delete_entity(self._NS_PRIM(o.sim_path)) for o in obstacles))
 
     async def pedestrian_delete(self, pedestrians):
-        res = await self._clients.DeletePedestrians.call_timeout(
+        await self._clients.DeletePedestrians.call_fire_and_forget(
             DeletePrims.Request(names=[self._NS_PEDESTRIAN(p.sim_path) for p in pedestrians])
         )
-        if res is None:
-            ret = tuple(False for _ in pedestrians)
-        else:
-            ret = tuple(res.ret)
-        return ret
+        return tuple(True for _ in pedestrians)
 
     async def robot_delete(self, robots):
         return await asyncio.gather(*(self._delete_entity(self._NS_ROBOT(r.sim_path)) for r in robots))
@@ -618,11 +617,14 @@ class IsaacSimulator(BaseSim, NodeInterface):
             return goal
 
         goals = list(filter(None, await asyncio.gather(*map(impl, pedestrians.pedestrians))))
+        if not goals:
+            return tuple()
+
         req = NavigatePedestrians.Request()
         req.goals = goals
-        res = await self._clients.NavigatePedestrians.call_timeout(req)
+        await self._clients.NavigatePedestrians.call_fire_and_forget(req)
 
-        return tuple(a and b for a, b in zip(goals, res and res.ret or ()))
+        return tuple(True for _ in goals)
 
     async def _delete_entity(self, name: str) -> bool:
         self._logger.debug(f"Attempting to delete prim {name}")
@@ -640,13 +642,10 @@ class IsaacSimulator(BaseSim, NodeInterface):
     async def _delete_pedestrians(self, prim_path):
         self._logger.info(f"Attempting to delete prim named {prim_path}")
 
-        res = await self._clients.DeletePedestrians.call_timeout(
+        await self._clients.DeletePedestrians.call_fire_and_forget(
             DeletePrims.Request(names=[prim_path])
         )
-        if res is None:
-            return False
-
-        return res.ret[0]
+        return True
 
     async def _move_entity(self, name: str, pose: Pose) -> bool:
         return (await self._move_entities([(name, pose)]))[0]

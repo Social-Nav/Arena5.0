@@ -1,7 +1,9 @@
 
 import asyncio
 import os
+import shutil
 import tempfile
+import time
 import traceback
 import typing
 from pathlib import Path
@@ -138,18 +140,70 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         )
         origin[0] = shifted_origin.x
         origin[1] = shifted_origin.y
-        map_yaml['origin'] = origin
+        map_yaml['origin'] = [float(value) for value in origin]
         with open(Path(map_tmpdir.name) / 'map.yaml', 'w') as f:
             yaml.safe_dump(map_yaml, f)
 
-        # symlink all non-targets
+        # Copy all non-YAML assets into the temporary directory instead of
+        # symlinking them. Jazzy's map_server is stricter about transient map
+        # metadata / asset resolution during LoadMap, and using concrete files
+        # keeps the shifted map self-contained.
         for item in os.listdir(map_dir):
             base = map_dir / item
             if base == target:
                 continue
-            os.symlink(base, Path(map_tmpdir.name) / item)
+            destination = Path(map_tmpdir.name) / item
+            if base.is_dir():
+                shutil.copytree(base, destination, symlinks=True)
+            else:
+                shutil.copy2(base, destination)
 
         return map_tmpdir
+
+    def _load_world_map_from_yaml(self, map_yaml_path: str) -> WorldMap:
+        """Load a WorldMap directly from a map.yaml file.
+
+        The launch-time map server already starts with the requested world map,
+        but in slow Docker/Isaac startups the LoadMap service can time out while
+        the map topic is still usable.  Build the task-generator WorldMap from
+        the same YAML/image on disk so random start/goal generation never falls
+        back to the dummy 0,0 map when only the service response is delayed.
+        """
+        with open(map_yaml_path, 'r') as f:
+            metadata = yaml.safe_load(f) or {}
+        image_path = Path(map_yaml_path).parent / str(metadata.get('image', ''))
+
+        from PIL import Image
+
+        image = np.asarray(Image.open(image_path).convert('L'), dtype=np.float32)
+        negate = int(metadata.get('negate', 0))
+        free_thresh = float(metadata.get('free_thresh', 0.196))
+        occupied_thresh = float(metadata.get('occupied_thresh', 0.65))
+        if negate:
+            occ = image / 255.0
+        else:
+            occ = (255.0 - image) / 255.0
+
+        data = np.full(occ.shape, -1, dtype=np.int8)
+        data[occ > occupied_thresh] = 100
+        data[occ < free_thresh] = 0
+
+        grid = nav_msgs.msg.OccupancyGrid()
+        grid.info.height = int(data.shape[0])
+        grid.info.width = int(data.shape[1])
+        grid.info.resolution = float(metadata.get('resolution', 0.05))
+        origin = list(metadata.get('origin', [0.0, 0.0, 0.0]))
+        grid.info.origin.position.x = float(origin[0])
+        grid.info.origin.position.y = float(origin[1])
+        grid.info.origin.orientation.w = 1.0
+        grid.info.map_load_time = self.node.sim_time.to_msg()
+        grid.data = data.reshape(-1).astype(int).tolist()
+
+        world_map = WorldMap.from_costmap(grid)
+        if self._origin is not None:
+            world_map.origin = self._origin
+            self._origin = None
+        return world_map
 
     def _world_callback(self, value: typing.Any) -> bool:
         """Handle world change events.
@@ -185,21 +239,25 @@ class WorldManagerROS(MapServerHandler, WorldManager):
             'map.yaml',
         )
 
-        response = self._cli.call_timeout_sync(
-            nav2_msgs.srv.LoadMap.Request(
-                map_url=f'{map_yaml}'
+        try:
+            # Avoid blocking the task_generator event loop on LoadMap during
+            # Isaac startup.  The map_server is launched for this world already;
+            # update the task-generator world model directly from the same
+            # shifted map.yaml so episode generation can proceed deterministically.
+            self._logger.warn(
+                f'Using direct map.yaml load for world {world_name} instead of synchronous LoadMap service'
             )
-        )
-
-        tmp_map.cleanup()
-
-        if response is None:
-            raise RuntimeError(
-                f'failed to load map for world {world_name}: service timed out')
-
-        if response.result > 0:
-            raise RuntimeError(
-                f'failed to load map for world {world_name}: status code {response.result}')
+            DynamicPaths.WORLD.path = world.path
+            self.update_world(
+                world_map=self._load_world_map_from_yaml(map_yaml),
+                world_description=world.load(),
+            )
+            self._map_name = self.world_name
+            for callback in self._callbacks:
+                asyncio.run_coroutine_threadsafe(callback(), self.node.event_loop)
+            return True
+        finally:
+            tmp_map.cleanup()
 
         return True
 

@@ -8,6 +8,13 @@
 - Context7 MCP 文档查询约定
 违反 AGENTS.md 中的约束可能导致环境损坏或无效操作。
 
+# Run Case Launch 隔离规则
+每个特定 run case 必须有自己的 `xxx.launch.py`。不要为了某个实验/评测场景去修改通用 `robot.launch.py` / `arena.launch.py` / `task_generator.launch.py` 的共享节点集合、启动顺序或初始化逻辑。
+
+当某个 use case 需要不同 ROS nodes、需要禁用某些 nodes（例如 InternNav official realworld direct `cmd_vel` eval 需要完全不启动 Nav2）、需要额外 readiness gate 或不同初始化流程时，必须新增 case-specific launch 文件，并由评测/运行入口显式选择它（例如 `robot_launch_file:=internnav_async_eval.launch.py`）。
+
+InternNav official realworld ROS2 client 的 async/direct `cmd_vel` eval 使用 `arena_simulation_setup/launch/internnav_async_eval.launch.py`，不得再通过修改通用 `robot.launch.py` 来跳过 Nav2，避免影响普通 Nav2 / Arena wrapper / DRL 等其他应用。
+
 # GRScenes 天花板渲染可视化开关
 GRScenes 室内 USD 场景的 `sim_top_down` debug 视频默认需要能透过天花板看到室内过程；相关逻辑位于 `arena_isaac/arena_isaac/isaac_utils/usd_scene_loader.py`，通过隐藏匹配到的 ceiling/roof `UsdGeom.Imageable` prim 实现，只影响渲染可见性，不删除 prim，也不修改 collision/physics。
 
@@ -22,4 +29,3 @@ GRScenes 室内 USD 场景的 `sim_top_down` debug 视频默认需要能透过�
 调试建议：
 - 若 `sim_top_down.mp4` 被天花板完全遮挡，确认 `ARENA_ISAAC_HIDE_CEILING_PRIMS` 未被设为 `0`，并检查 `ceiling_name_patterns` 是否覆盖了当前资产中的 ceiling/roof 命名。
 - 若需要验证原始资产天花板效果，可临时设置 `ARENA_ISAAC_HIDE_CEILING_PRIMS=0` 后重跑 eval；重跑前仍必须遵守 AGENTS.md 的 Isaac/eval 残留进程清理流程。
-

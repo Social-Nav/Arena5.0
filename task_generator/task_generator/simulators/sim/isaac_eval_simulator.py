@@ -358,9 +358,14 @@ class IsaacEvalSimulator(IsaacSimulator):
             )
         )
 
-        walls_res = await self._clients.SpawnWalls.call_timeout(walls_req) if walls_req.walls else None
+        walls_res = await self._call_spawn_service_subprocess(
+            'SpawnWalls',
+            self._clients.SpawnWalls.client.srv_name,
+            walls_req,
+            timeout_sec=180.0,
+        ) if walls_req.walls else None
         prims_res = await self._clients.SpawnPrims.call_timeout(prims_req) if prims_req.prims else None
-        if walls_req.walls and (walls_res is None or not all(walls_res.ret)):
+        if walls_req.walls and (walls_res is None or not all(walls_res)):
             return False
         if prims_req.prims and (prims_res is None or not all(prims_res.ret)):
             return False
@@ -386,8 +391,13 @@ class IsaacEvalSimulator(IsaacSimulator):
 
         floors_req = SpawnFloors.Request(floors=list(filter(None, await asyncio.gather(*map(impl, floors)))))
         if floors_req.floors:
-            floors_res = await self._clients.SpawnFloors.call_timeout(floors_req)
-            if floors_res is None or not all(floors_res.ret):
+            floors_res = await self._call_spawn_service_subprocess(
+                'SpawnFloors',
+                self._clients.SpawnFloors.client.srv_name,
+                floors_req,
+                timeout_sec=180.0,
+            )
+            if floors_res is None or not all(floors_res):
                 return False
         self._logger.info('All floors spawned successfully.')
         return True
@@ -412,8 +422,13 @@ class IsaacEvalSimulator(IsaacSimulator):
 
         doors_req = SpawnDoors.Request(doors=list(filter(None, await asyncio.gather(*map(impl, doors)))))
         if doors_req.doors:
-            doors_res = await self._clients.SpawnDoors.call_timeout(doors_req)
-            if doors_res is None or not all(doors_res.ret):
+            doors_res = await self._call_spawn_service_subprocess(
+                'SpawnDoors',
+                self._clients.SpawnDoors.client.srv_name,
+                doors_req,
+                timeout_sec=180.0,
+            )
+            if doors_res is None or not all(doors_res):
                 return False
         self._logger.info('All doors spawned successfully.')
         return True
@@ -446,8 +461,13 @@ class IsaacEvalSimulator(IsaacSimulator):
 
         req = SpawnElevators.Request(elevators=list(filter(None, await asyncio.gather(*map(impl, elevators)))))
         if req.elevators:
-            elevators_res = await self._clients.SpawnElevators.call_timeout(req)
-            if elevators_res is None or not all(elevators_res.ret):
+            elevators_res = await self._call_spawn_service_subprocess(
+                'SpawnElevators',
+                self._clients.SpawnElevators.client.srv_name,
+                req,
+                timeout_sec=180.0,
+            )
+            if elevators_res is None or not all(elevators_res):
                 return False
         self._logger.debug('All elevators spawned successfully.')
         return True
@@ -526,8 +546,11 @@ class IsaacEvalSimulator(IsaacSimulator):
         if not goals:
             return tuple()
 
-        res = await self._clients.NavigatePedestrians.call_timeout(NavigatePedestrians.Request(goals=goals))
-        return tuple(a and b for a, b in zip(goals, res and res.ret or ()))
+        # The Isaac embedded-rclpy NavigatePedestrians callback updates state but
+        # can suppress/lose the response.  Treat it as a side-effect request to
+        # avoid fixed timeout stalls during eval startup.
+        await self._clients.NavigatePedestrians.call_fire_and_forget(NavigatePedestrians.Request(goals=goals))
+        return tuple(True for _ in goals)
 
     async def _delete_entity(self, name: str) -> bool:
         self._logger.debug(f'Skipping DeletePrims for fresh Isaac eval stage: {name}')
@@ -714,13 +737,18 @@ class IsaacEvalSimulator(IsaacSimulator):
         msg_pose = pose.to_msg() if hasattr(pose, 'to_msg') else pose
         timeout_sec = max(float(timeout_sec), 1.0)
 
+        ros_domain_id = os.environ.get('ROS_DOMAIN_ID', '1')
+        rmw_implementation = os.environ.get('RMW_IMPLEMENTATION', 'rmw_fastrtps_cpp')
+        discovery_range = os.environ.get('ROS_AUTOMATIC_DISCOVERY_RANGE', 'SUBNET')
+        fastdds_transports = os.environ.get('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4')
+
         script = (
             "import json, os, sys, time\n"
             "import rclpy\n"
-            "os.environ.setdefault('ROS_DOMAIN_ID', '0')\n"
-            "os.environ.setdefault('RMW_IMPLEMENTATION', 'rmw_fastrtps_cpp')\n"
-            "os.environ.setdefault('ROS_AUTOMATIC_DISCOVERY_RANGE', 'SUBNET')\n"
-            "os.environ.setdefault('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4')\n"
+            f"os.environ['ROS_DOMAIN_ID'] = {ros_domain_id!r}\n"
+            f"os.environ['RMW_IMPLEMENTATION'] = {rmw_implementation!r}\n"
+            f"os.environ['ROS_AUTOMATIC_DISCOVERY_RANGE'] = {discovery_range!r}\n"
+            f"os.environ['FASTDDS_BUILTIN_TRANSPORTS'] = {fastdds_transports!r}\n"
             "from isaacsim_msgs.srv import SpawnUsdRobot\n"
             "rclpy.init()\n"
             "node = rclpy.create_node('spawn_usd_robot_subprocess')\n"
@@ -761,7 +789,8 @@ class IsaacEvalSimulator(IsaacSimulator):
 
         self._logger.info(
             f'Calling SpawnUsdRobot via subprocess '
-            f'(srv={srv_name}, name={name}, timeout={timeout_sec:.0f}s)'
+            f'(srv={srv_name}, name={name}, timeout={timeout_sec:.0f}s, '
+            f'ROS_DOMAIN_ID={ros_domain_id}, RMW_IMPLEMENTATION={rmw_implementation})'
         )
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -809,6 +838,123 @@ class IsaacEvalSimulator(IsaacSimulator):
         self._logger.error(f'SpawnUsdRobot subprocess: could not parse output: {stdout_text[:200]}')
         return None
 
+    async def _call_spawn_service_subprocess(
+        self,
+        service_type_name: str,
+        srv_name: str,
+        request,
+        timeout_sec: float = 180.0,
+    ) -> list[bool] | None:
+        """Call an Isaac spawn service through a fresh DDS participant.
+
+        The long-lived task_generator rclpy participant can discover Isaac's
+        Python services but intermittently misses responses across the Docker /
+        FastDDS boundary.  This is especially visible for the initial static
+        world barrier where SpawnFloors/Walls/Doors/Elevators must complete
+        before robot/model consumers are allowed to start.  Use the same
+        subprocess pattern as SpawnUsdRobot/LoadUsdScene so readiness reflects
+        the real Isaac service result instead of a stale participant timeout.
+        """
+        import json
+        from rosidl_runtime_py.convert import message_to_ordereddict
+
+        timeout_sec = max(float(timeout_sec), 1.0)
+        request_payload = message_to_ordereddict(request)
+
+        ros_domain_id = os.environ.get('ROS_DOMAIN_ID', '1')
+        rmw_implementation = os.environ.get('RMW_IMPLEMENTATION', 'rmw_fastrtps_cpp')
+        discovery_range = os.environ.get('ROS_AUTOMATIC_DISCOVERY_RANGE', 'SUBNET')
+        fastdds_transports = os.environ.get('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4')
+
+        script = (
+            "import json, os, sys, time\n"
+            "import rclpy\n"
+            "from rosidl_runtime_py.set_message import set_message_fields\n"
+            "from isaacsim_msgs.srv import SpawnDoors, SpawnElevators, SpawnFloors, SpawnWalls\n"
+            f"os.environ['ROS_DOMAIN_ID'] = {ros_domain_id!r}\n"
+            f"os.environ['RMW_IMPLEMENTATION'] = {rmw_implementation!r}\n"
+            f"os.environ['ROS_LOCALHOST_ONLY'] = '0'\n"
+            f"os.environ['ROS_AUTOMATIC_DISCOVERY_RANGE'] = {discovery_range!r}\n"
+            f"os.environ['FASTDDS_BUILTIN_TRANSPORTS'] = {fastdds_transports!r}\n"
+            f"srv_type = {{'SpawnDoors': SpawnDoors, 'SpawnElevators': SpawnElevators, 'SpawnFloors': SpawnFloors, 'SpawnWalls': SpawnWalls}}[{service_type_name!r}]\n"
+            "rclpy.init()\n"
+            f"node = rclpy.create_node('isaac_{service_type_name.lower()}_subprocess')\n"
+            f"client = node.create_client(srv_type, {srv_name!r})\n"
+            f"service_wait_timeout = min(max({timeout_sec!r}, 30.0), 180.0)\n"
+            "if not client.wait_for_service(timeout_sec=service_wait_timeout):\n"
+            "    print(json.dumps({'success': False, 'message': 'Service unavailable', 'ret': []}), flush=True)\n"
+            "    node.destroy_node()\n"
+            "    rclpy.shutdown()\n"
+            "    sys.exit(1)\n"
+            "req = srv_type.Request()\n"
+            f"set_message_fields(req, json.loads({json.dumps(json.dumps(request_payload))}))\n"
+            "future = client.call_async(req)\n"
+            f"deadline = time.monotonic() + {timeout_sec!r}\n"
+            "while time.monotonic() < deadline and not future.done():\n"
+            "    rclpy.spin_once(node, timeout_sec=0.5)\n"
+            "if future.done():\n"
+            "    try:\n"
+            "        r = future.result()\n"
+            "        print(json.dumps({'success': True, 'message': '', 'ret': list(r.ret)}), flush=True)\n"
+            "    except Exception as exc:\n"
+            "        print(json.dumps({'success': False, 'message': str(exc), 'ret': []}), flush=True)\n"
+            "else:\n"
+            "    print(json.dumps({'success': False, 'message': 'Timeout', 'ret': []}), flush=True)\n"
+            "node.destroy_node()\n"
+            "rclpy.shutdown()\n"
+        )
+
+        self._logger.info(
+            f'Calling {service_type_name} via subprocess '
+            f'(srv={srv_name}, timeout={timeout_sec:.0f}s, '
+            f'ROS_DOMAIN_ID={ros_domain_id}, RMW_IMPLEMENTATION={rmw_implementation})'
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable,
+                '-c',
+                script,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec + 30.0)
+        except asyncio.TimeoutError:
+            proc.kill()
+            self._logger.error(f'{service_type_name} subprocess timed out after {timeout_sec:.0f}s')
+            return None
+
+        stdout_text = stdout.decode('utf-8', errors='replace').strip()
+        stderr_text = stderr.decode('utf-8', errors='replace').strip()
+
+        if stderr_text:
+            self._logger.debug(f'{service_type_name} subprocess stderr: {stderr_text[-500:]}')
+
+        if not stdout_text:
+            self._logger.error(f'{service_type_name} subprocess returned no output (rc={proc.returncode})')
+            return None
+
+        for line in reversed(stdout_text.split('\n')):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                result = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+
+            if result.get('success'):
+                ret = [bool(item) for item in result.get('ret', [])]
+                self._logger.info(f'{service_type_name} succeeded: ret={ret}')
+                return ret
+
+            self._logger.error(
+                f"{service_type_name} failed via subprocess: {result.get('message', '') or 'unknown error'}"
+            )
+            return None
+
+        self._logger.error(f'{service_type_name} subprocess: could not parse output: {stdout_text[:200]}')
+        return None
+
     async def _load_usd_scene_subprocess(
         self,
         usd_path: str,
@@ -826,12 +972,17 @@ class IsaacEvalSimulator(IsaacSimulator):
         ori = orientation or [0.0, 0.0, 0.0, 1.0]
         srv_name = self._load_usd_scene_client.client.srv_name
 
+        ros_domain_id = os.environ.get('ROS_DOMAIN_ID', '1')
+        rmw_implementation = os.environ.get('RMW_IMPLEMENTATION', 'rmw_fastrtps_cpp')
+        discovery_range = os.environ.get('ROS_AUTOMATIC_DISCOVERY_RANGE', 'SUBNET')
+        fastdds_transports = os.environ.get('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4')
+
         script = (
             "import rclpy, time, os, sys, json\n"
-            "os.environ.setdefault('ROS_DOMAIN_ID', '0')\n"
-            "os.environ.setdefault('RMW_IMPLEMENTATION', 'rmw_fastrtps_cpp')\n"
-            "os.environ.setdefault('ROS_AUTOMATIC_DISCOVERY_RANGE', 'SUBNET')\n"
-            "os.environ.setdefault('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4')\n"
+            f"os.environ['ROS_DOMAIN_ID'] = {ros_domain_id!r}\n"
+            f"os.environ['RMW_IMPLEMENTATION'] = {rmw_implementation!r}\n"
+            f"os.environ['ROS_AUTOMATIC_DISCOVERY_RANGE'] = {discovery_range!r}\n"
+            f"os.environ['FASTDDS_BUILTIN_TRANSPORTS'] = {fastdds_transports!r}\n"
             "from isaacsim_msgs.srv import LoadUsdScene\n"
             "rclpy.init()\n"
             f"node = rclpy.create_node('load_usd_scene_subprocess')\n"
@@ -862,7 +1013,10 @@ class IsaacEvalSimulator(IsaacSimulator):
             "rclpy.shutdown()\n"
         )
 
-        self._logger.info(f'Calling LoadUsdScene via subprocess (srv={srv_name}, timeout={timeout_sec:.0f}s)')
+        self._logger.info(
+            f'Calling LoadUsdScene via subprocess (srv={srv_name}, timeout={timeout_sec:.0f}s, '
+            f'ROS_DOMAIN_ID={ros_domain_id}, RMW_IMPLEMENTATION={rmw_implementation})'
+        )
         try:
             proc = await asyncio.create_subprocess_exec(
                 sys.executable, '-c', script,

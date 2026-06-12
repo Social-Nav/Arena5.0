@@ -185,15 +185,14 @@ global_costmap:
       transform_tolerance: 0.5
       footprint: ${footprint}
       resolution: 0.05
-      # The global costmap must cover the whole static map.  hospital_1 spans
-      # roughly x=[-0.25,25.25], y=[-0.25,34.45]; the old fixed 20m window
-      # centered at the origin clipped valid goals such as (18.2, 5.0), causing
-      # NavFn to abort with "failed to create plan" even though the map was
-      # loaded correctly.
-      width: 40
-      height: 45
-      origin_x: -5.0
-      origin_y: -5.0
+      # The global costmap must cover the whole static-map/scenario coordinate
+      # envelope. hospital_1 extends into positive coordinates while uploaded
+      # GRScenes trajectories can start around x=-16, y=-11.  Keep one generous
+      # fixed window so NavFn does not reject valid reset poses as out of bounds.
+      width: 50
+      height: 55
+      origin_x: -17.0
+      origin_y: -12.0
       track_unknown_space: true
       rolling_window: false
       # For VLN evaluation the global planner is used only to provide a coarse
@@ -262,6 +261,7 @@ recoveries_server:
     wait:
       plugin: "nav2_behaviors::Wait"
     global_frame: map
+    local_frame: ${frame:-}${robot_odom_frame:-odom}
     robot_base_frame: ${frame:-}${robot_base_frame:-base_link}
     transform_timeout: 0.0
     use_sim_time: true
@@ -283,6 +283,10 @@ behavior_server:
     wait:
       plugin: "nav2_behaviors::Wait"
     global_frame: map
+    # Nav2 Jazzy behavior_server uses local_frame for local behaviors and
+    # defaults it to plain "odom" when unset. Arena namespaces robot TF frames,
+    # so keep this aligned with the local costmap/Isaac odom graph.
+    local_frame: ${frame:-}${robot_odom_frame:-odom}
     robot_base_frame: ${frame:-}${robot_base_frame:-base_link}
     transform_timeout: 0.0
     use_sim_time: true
