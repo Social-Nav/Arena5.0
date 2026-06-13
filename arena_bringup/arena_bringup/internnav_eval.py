@@ -2502,7 +2502,7 @@ def main() -> int:
         f'local_planner:={args.local_planner}',
         f'inter_planner:={args.inter_planner}',
         f'global_planner:={args.global_planner}',
-        f'record_data_dir:={output_dir}',
+        *([] if args.skip_metrics else [f'record_data_dir:={output_dir}']),
         f'episodes:={args.episodes}',
         'auto_reset:=true',
         f'tm_robots:={args.tm_robots}',

@@ -1,6 +1,7 @@
 import asyncio
 import itertools
 import os
+import signal
 import sys
 import random
 import time
@@ -78,6 +79,56 @@ class IsaacEvalSimulator(IsaacSimulator):
     feature-branch evaluation deltas that are still needed for GRScenes +
     InternNav smoke/eval runs.
     """
+
+    async def _run_python_service_subprocess(
+        self,
+        label: str,
+        script: str,
+        timeout_sec: float,
+        grace_sec: float = 2.0,
+    ) -> tuple[bytes, bytes, int] | None:
+        """Run a short-lived rclpy client with a hard wall-clock timeout.
+
+        Under heavy Isaac/GRScenes load, rclpy shutdown can block after the
+        client has already printed its JSON timeout/result.  Keep each service
+        probe in a separate process group and kill the whole group if it
+        exceeds the requested service timeout plus a small teardown grace.
+        """
+        hard_timeout_sec = max(float(timeout_sec), 1.0) + max(float(grace_sec), 0.0)
+        proc = None
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable,
+                '-c',
+                script,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=hard_timeout_sec)
+            return stdout, stderr, int(proc.returncode or 0)
+        except asyncio.TimeoutError:
+            if proc is not None and proc.returncode is None:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                except Exception:
+                    proc.kill()
+                try:
+                    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=2.0)
+                    if stdout:
+                        self._logger.warning(
+                            f'{label} subprocess exceeded hard timeout but produced output; parsing it'
+                        )
+                        return stdout, stderr, int(proc.returncode or -signal.SIGKILL)
+                except Exception:
+                    pass
+            self._logger.error(
+                f'{label} subprocess exceeded hard timeout '
+                f'({hard_timeout_sec:.1f}s for requested {float(timeout_sec):.1f}s); killed it'
+            )
+            return None
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -478,12 +529,148 @@ class IsaacEvalSimulator(IsaacSimulator):
         return True
 
     async def _pause(self):
-        await super()._pause()
+        attempts = max(1, int(os.environ.get('ARENA_ISAAC_PAUSE_ATTEMPTS', '3')))
+        timeout_sec = float(os.environ.get('ARENA_ISAAC_PAUSE_TIMEOUT_SEC', '30.0'))
+        for attempt in range(1, attempts + 1):
+            ok = await self._call_trigger_service_subprocess(
+                'PauseSimulation',
+                self._clients.PauseSimulation.client.srv_name,
+                timeout_sec=timeout_sec,
+                timeout_is_success=True,
+            )
+            if not ok:
+                self._logger.warning(f'Isaac PauseSimulation attempt {attempt}/{attempts} failed')
+                continue
+
+            clock_advancing = await self._probe_clock_advancing(
+                observation_sec=float(os.environ.get('ARENA_ISAAC_PAUSE_CLOCK_OBSERVATION_SEC', '0.75')),
+                wait_first_sec=float(os.environ.get('ARENA_ISAAC_PAUSE_CLOCK_WAIT_FIRST_SEC', '1.5')),
+            )
+            if clock_advancing is False or clock_advancing is None:
+                return True
+
+            self._logger.warning(
+                f'Isaac PauseSimulation attempt {attempt}/{attempts} returned but /clock is still advancing; retrying'
+            )
+
+        self._logger.warning(
+            'Isaac PauseSimulation did not stop /clock after all attempts; '
+            'continuing reset in live-sim mode so episode rollover cannot deadlock.'
+        )
         return True
 
     async def _unpause(self):
-        await super()._unpause()
+        attempts = max(1, int(os.environ.get('ARENA_ISAAC_UNPAUSE_ATTEMPTS', '3')))
+        timeout_sec = float(os.environ.get('ARENA_ISAAC_UNPAUSE_TIMEOUT_SEC', '30.0'))
+        for attempt in range(1, attempts + 1):
+            ok = await self._call_trigger_service_subprocess(
+                'UnpauseSimulation',
+                self._clients.UnpauseSimulation.client.srv_name,
+                timeout_sec=timeout_sec,
+                timeout_is_success=True,
+            )
+            if not ok:
+                self._logger.warning(f'Isaac UnpauseSimulation attempt {attempt}/{attempts} failed')
+                continue
+
+            clock_advancing = await self._probe_clock_advancing(
+                observation_sec=float(os.environ.get('ARENA_ISAAC_UNPAUSE_CLOCK_OBSERVATION_SEC', '2.0')),
+                wait_first_sec=float(os.environ.get('ARENA_ISAAC_UNPAUSE_CLOCK_WAIT_FIRST_SEC', '8.0')),
+            )
+            if clock_advancing is True:
+                return True
+
+            self._logger.warning(
+                f'Isaac UnpauseSimulation attempt {attempt}/{attempts} returned but /clock did not advance; retrying'
+            )
+
+        self._logger.warning(
+            'Isaac UnpauseSimulation did not restart /clock after all attempts; '
+            'continuing because GRScenes can delay /clock publication after the side-effect-only unpause callback.'
+        )
         return True
+
+    async def _probe_clock_advancing(
+        self,
+        observation_sec: float = 1.0,
+        wait_first_sec: float = 2.0,
+    ) -> bool | None:
+        """Return whether /clock advances during a short fresh-DDS observation.
+
+        ``False`` means at least one /clock sample was observed but the stamp stayed
+        constant for the observation window. ``None`` means no sample arrived; for a
+        pause gate this is treated as paused because Isaac stops publishing /clock
+        while paused.
+        """
+        import json
+
+        ros_domain_id = os.environ.get('ROS_DOMAIN_ID', '1')
+        rmw_implementation = os.environ.get('RMW_IMPLEMENTATION', 'rmw_fastrtps_cpp')
+        discovery_range = os.environ.get('ROS_AUTOMATIC_DISCOVERY_RANGE', 'SUBNET')
+        fastdds_transports = os.environ.get('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4')
+        wait_first_sec = max(float(wait_first_sec), 0.1)
+        observation_sec = max(float(observation_sec), 0.1)
+        hard_timeout = wait_first_sec + observation_sec + 1.0
+
+        script = (
+            "import json, os, sys, time\n"
+            f"os.environ['ROS_DOMAIN_ID'] = {ros_domain_id!r}\n"
+            f"os.environ['RMW_IMPLEMENTATION'] = {rmw_implementation!r}\n"
+            "os.environ['ROS_LOCALHOST_ONLY'] = '0'\n"
+            f"os.environ['ROS_AUTOMATIC_DISCOVERY_RANGE'] = {discovery_range!r}\n"
+            f"os.environ['FASTDDS_BUILTIN_TRANSPORTS'] = {fastdds_transports!r}\n"
+            "import rclpy\n"
+            "from rosgraph_msgs.msg import Clock\n"
+            "first = None\n"
+            "last = None\n"
+            "first_wall = None\n"
+            "changed = False\n"
+            "def _cb(msg):\n"
+            "    global first, last, first_wall, changed\n"
+            "    stamp = (int(msg.clock.sec), int(msg.clock.nanosec))\n"
+            "    if first is None:\n"
+            "        first = stamp\n"
+            "        first_wall = time.monotonic()\n"
+            "    elif stamp != first:\n"
+            "        changed = True\n"
+            "    last = stamp\n"
+            "rclpy.init()\n"
+            "node = rclpy.create_node('isaac_clock_probe_subprocess')\n"
+            "node.create_subscription(Clock, '/clock', _cb, 10)\n"
+            f"wait_deadline = time.monotonic() + {wait_first_sec!r}\n"
+            "while rclpy.ok() and first is None and time.monotonic() < wait_deadline:\n"
+            "    rclpy.spin_once(node, timeout_sec=0.1)\n"
+            "if first is None:\n"
+            "    print(json.dumps({'observed': False, 'changed': False}), flush=True)\n"
+            "else:\n"
+            f"    observe_deadline = time.monotonic() + {observation_sec!r}\n"
+            "    while rclpy.ok() and not changed and time.monotonic() < observe_deadline:\n"
+            "        rclpy.spin_once(node, timeout_sec=0.1)\n"
+            "    print(json.dumps({'observed': True, 'changed': bool(changed), 'first': first, 'last': last}), flush=True)\n"
+            "node.destroy_node()\n"
+            "rclpy.shutdown()\n"
+        )
+
+        subprocess_result = await self._run_python_service_subprocess(
+            'ClockProbe', script, timeout_sec=hard_timeout, grace_sec=1.0
+        )
+        if subprocess_result is None:
+            return None
+        stdout, stderr, returncode = subprocess_result
+        stderr_text = stderr.decode('utf-8', errors='replace').strip()
+        if stderr_text:
+            self._logger.debug(f'ClockProbe subprocess stderr: {stderr_text[-500:]}')
+        stdout_text = stdout.decode('utf-8', errors='replace').strip()
+        for line in reversed(stdout_text.split('\n')):
+            try:
+                result = json.loads(line.strip())
+            except Exception:
+                continue
+            if not result.get('observed'):
+                return None
+            return bool(result.get('changed'))
+        self._logger.warning(f'ClockProbe subprocess returned no parseable output (rc={returncode})')
+        return None
 
     async def pedestrian_spawn(self, pedestrians):
         async def impl(pedestrian: DynamicObstacle) -> Pedestrian | None:
@@ -561,19 +748,22 @@ class IsaacEvalSimulator(IsaacSimulator):
         return True
 
     async def _move_entities(self, actions: Sequence[tuple[str, Pose]]) -> Sequence[bool]:
-        response = await self._clients.EditPrims.call_timeout(
-            EditPrims.Request(
-                prims=[
-                    Prim(name=name, pose=pose.to_msg() if hasattr(pose, 'to_msg') else pose)
-                    for name, pose in actions
-                ],
-                pose=True,
-            )
+        req = EditPrims.Request(
+            prims=[
+                Prim(name=name, pose=pose.to_msg() if hasattr(pose, 'to_msg') else pose)
+                for name, pose in actions
+            ],
+            pose=True,
+        )
+        response = await self._call_edit_prims_subprocess(
+            req,
+            timeout_sec=float(os.environ.get('ARENA_ISAAC_EDIT_PRIMS_TIMEOUT_SEC', '30.0')),
+            timeout_is_success=True,
         )
         if response is None:
             return [False] * len(actions)
 
-        return response.ret
+        return response
 
     async def setup(self):
         self._logger.info('Setting up IsaacEvalSimulator service clients...')
@@ -792,19 +982,12 @@ class IsaacEvalSimulator(IsaacSimulator):
             f'(srv={srv_name}, name={name}, timeout={timeout_sec:.0f}s, '
             f'ROS_DOMAIN_ID={ros_domain_id}, RMW_IMPLEMENTATION={rmw_implementation})'
         )
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                sys.executable,
-                '-c',
-                script,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec + 30.0)
-        except asyncio.TimeoutError:
-            proc.kill()
-            self._logger.error(f'SpawnUsdRobot subprocess timed out after {timeout_sec:.0f}s')
+        subprocess_result = await self._run_python_service_subprocess(
+            'SpawnUsdRobot', script, timeout_sec, grace_sec=2.0
+        )
+        if subprocess_result is None:
             return None
+        stdout, stderr, returncode = subprocess_result
 
         stdout_text = stdout.decode('utf-8', errors='replace').strip()
         stderr_text = stderr.decode('utf-8', errors='replace').strip()
@@ -813,7 +996,7 @@ class IsaacEvalSimulator(IsaacSimulator):
             self._logger.debug(f'SpawnUsdRobot subprocess stderr: {stderr_text[-500:]}')
 
         if not stdout_text:
-            self._logger.error(f'SpawnUsdRobot subprocess returned no output (rc={proc.returncode})')
+            self._logger.error(f'SpawnUsdRobot subprocess returned no output (rc={returncode})')
             return None
 
         for line in reversed(stdout_text.split('\n')):
@@ -836,6 +1019,203 @@ class IsaacEvalSimulator(IsaacSimulator):
             return None
 
         self._logger.error(f'SpawnUsdRobot subprocess: could not parse output: {stdout_text[:200]}')
+        return None
+
+    async def _call_trigger_service_subprocess(
+        self,
+        service_label: str,
+        srv_name: str,
+        timeout_sec: float = 180.0,
+        timeout_is_success: bool = False,
+    ) -> bool:
+        """Call an Isaac Trigger service through a fresh DDS participant."""
+        timeout_sec = max(float(timeout_sec), 1.0)
+        ros_domain_id = os.environ.get('ROS_DOMAIN_ID', '1')
+        rmw_implementation = os.environ.get('RMW_IMPLEMENTATION', 'rmw_fastrtps_cpp')
+        discovery_range = os.environ.get('ROS_AUTOMATIC_DISCOVERY_RANGE', 'SUBNET')
+        fastdds_transports = os.environ.get('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4')
+
+        script = (
+            "import json, os, sys, time\n"
+            f"os.environ['ROS_DOMAIN_ID'] = {ros_domain_id!r}\n"
+            f"os.environ['RMW_IMPLEMENTATION'] = {rmw_implementation!r}\n"
+            "os.environ['ROS_LOCALHOST_ONLY'] = '0'\n"
+            f"os.environ['ROS_AUTOMATIC_DISCOVERY_RANGE'] = {discovery_range!r}\n"
+            f"os.environ['FASTDDS_BUILTIN_TRANSPORTS'] = {fastdds_transports!r}\n"
+            "import rclpy\n"
+            "from std_srvs.srv import Trigger\n"
+            "rclpy.init()\n"
+            f"node = rclpy.create_node('isaac_{service_label.lower()}_subprocess')\n"
+            f"client = node.create_client(Trigger, {srv_name!r})\n"
+            f"service_wait_timeout = min(max({timeout_sec!r}, 30.0), 180.0)\n"
+            "if not client.wait_for_service(timeout_sec=service_wait_timeout):\n"
+            "    print(json.dumps({'success': False, 'message': 'Service unavailable'}), flush=True)\n"
+            "    node.destroy_node()\n"
+            "    rclpy.shutdown()\n"
+            "    sys.exit(1)\n"
+            "future = client.call_async(Trigger.Request())\n"
+            f"deadline = time.monotonic() + {timeout_sec!r}\n"
+            "while time.monotonic() < deadline and not future.done():\n"
+            "    rclpy.spin_once(node, timeout_sec=0.5)\n"
+            "if future.done():\n"
+            "    try:\n"
+            "        r = future.result()\n"
+            "        print(json.dumps({'success': bool(r.success), 'message': r.message}), flush=True)\n"
+            "    except Exception as exc:\n"
+            "        print(json.dumps({'success': False, 'message': str(exc)}), flush=True)\n"
+            "else:\n"
+            "    print(json.dumps({'success': False, 'message': 'Timeout'}), flush=True)\n"
+            "node.destroy_node()\n"
+            "rclpy.shutdown()\n"
+        )
+
+        self._logger.info(
+            f'Calling {service_label} via subprocess '
+            f'(srv={srv_name}, timeout={timeout_sec:.0f}s, '
+            f'ROS_DOMAIN_ID={ros_domain_id}, RMW_IMPLEMENTATION={rmw_implementation})'
+        )
+        subprocess_result = await self._run_python_service_subprocess(
+            service_label, script, timeout_sec, grace_sec=2.0
+        )
+        if subprocess_result is None:
+            return False
+        stdout, stderr, returncode = subprocess_result
+
+        stdout_text = stdout.decode('utf-8', errors='replace').strip()
+        stderr_text = stderr.decode('utf-8', errors='replace').strip()
+        if stderr_text:
+            self._logger.debug(f'{service_label} subprocess stderr: {stderr_text[-500:]}')
+        if not stdout_text:
+            self._logger.error(f'{service_label} subprocess returned no output (rc={returncode})')
+            return False
+
+        for line in reversed(stdout_text.split('\n')):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                import json
+                result = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if result.get('success'):
+                self._logger.info(f'{service_label} succeeded via subprocess')
+                return True
+            if timeout_is_success and str(result.get('message', '')).strip().lower() == 'timeout':
+                self._logger.warning(
+                    f'{service_label} subprocess timed out waiting for a service response; '
+                    'continuing because Isaac control Trigger callbacks are side-effect-only and '
+                    'responses can be lost under heavy GRScenes rendering load.'
+                )
+                return True
+            self._logger.error(
+                f"{service_label} failed via subprocess: {result.get('message', '') or 'unknown error'}"
+            )
+            return False
+
+        self._logger.error(f'{service_label} subprocess: could not parse output: {stdout_text[:200]}')
+        return False
+
+    async def _call_edit_prims_subprocess(
+        self,
+        request: EditPrims.Request,
+        timeout_sec: float = 300.0,
+        timeout_is_success: bool = False,
+    ) -> list[bool] | None:
+        """Call EditPrims through a fresh DDS participant for reset-pose barriers."""
+        import json
+        from rosidl_runtime_py.convert import message_to_ordereddict
+
+        timeout_sec = max(float(timeout_sec), 1.0)
+        request_payload = message_to_ordereddict(request)
+        srv_name = self._clients.EditPrims.client.srv_name
+        ros_domain_id = os.environ.get('ROS_DOMAIN_ID', '1')
+        rmw_implementation = os.environ.get('RMW_IMPLEMENTATION', 'rmw_fastrtps_cpp')
+        discovery_range = os.environ.get('ROS_AUTOMATIC_DISCOVERY_RANGE', 'SUBNET')
+        fastdds_transports = os.environ.get('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4')
+
+        script = (
+            "import json, os, sys, time\n"
+            f"os.environ['ROS_DOMAIN_ID'] = {ros_domain_id!r}\n"
+            f"os.environ['RMW_IMPLEMENTATION'] = {rmw_implementation!r}\n"
+            "os.environ['ROS_LOCALHOST_ONLY'] = '0'\n"
+            f"os.environ['ROS_AUTOMATIC_DISCOVERY_RANGE'] = {discovery_range!r}\n"
+            f"os.environ['FASTDDS_BUILTIN_TRANSPORTS'] = {fastdds_transports!r}\n"
+            "import rclpy\n"
+            "from rosidl_runtime_py.set_message import set_message_fields\n"
+            "from isaacsim_msgs.srv import EditPrims\n"
+            "rclpy.init()\n"
+            "node = rclpy.create_node('isaac_edit_prims_subprocess')\n"
+            f"client = node.create_client(EditPrims, {srv_name!r})\n"
+            f"service_wait_timeout = min(max({timeout_sec!r}, 30.0), 180.0)\n"
+            "if not client.wait_for_service(timeout_sec=service_wait_timeout):\n"
+            "    print(json.dumps({'success': False, 'message': 'Service unavailable', 'ret': []}), flush=True)\n"
+            "    node.destroy_node()\n"
+            "    rclpy.shutdown()\n"
+            "    sys.exit(1)\n"
+            "req = EditPrims.Request()\n"
+            f"set_message_fields(req, json.loads({json.dumps(json.dumps(request_payload))}))\n"
+            "future = client.call_async(req)\n"
+            f"deadline = time.monotonic() + {timeout_sec!r}\n"
+            "while time.monotonic() < deadline and not future.done():\n"
+            "    rclpy.spin_once(node, timeout_sec=0.5)\n"
+            "if future.done():\n"
+            "    try:\n"
+            "        r = future.result()\n"
+            "        print(json.dumps({'success': True, 'message': '', 'ret': list(r.ret)}), flush=True)\n"
+            "    except Exception as exc:\n"
+            "        print(json.dumps({'success': False, 'message': str(exc), 'ret': []}), flush=True)\n"
+            "else:\n"
+            "    print(json.dumps({'success': False, 'message': 'Timeout', 'ret': []}), flush=True)\n"
+            "node.destroy_node()\n"
+            "rclpy.shutdown()\n"
+        )
+
+        self._logger.info(
+            f'Calling EditPrims via subprocess '
+            f'(srv={srv_name}, count={len(request.prims)}, timeout={timeout_sec:.0f}s, '
+            f'ROS_DOMAIN_ID={ros_domain_id}, RMW_IMPLEMENTATION={rmw_implementation})'
+        )
+        subprocess_result = await self._run_python_service_subprocess(
+            'EditPrims', script, timeout_sec, grace_sec=2.0
+        )
+        if subprocess_result is None:
+            return None
+        stdout, stderr, returncode = subprocess_result
+
+        stdout_text = stdout.decode('utf-8', errors='replace').strip()
+        stderr_text = stderr.decode('utf-8', errors='replace').strip()
+        if stderr_text:
+            self._logger.debug(f'EditPrims subprocess stderr: {stderr_text[-500:]}')
+        if not stdout_text:
+            self._logger.error(f'EditPrims subprocess returned no output (rc={returncode})')
+            return None
+
+        for line in reversed(stdout_text.split('\n')):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                result = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if result.get('success'):
+                ret = [bool(item) for item in result.get('ret', [])]
+                self._logger.info(f'EditPrims succeeded: ret={ret}')
+                return ret
+            if timeout_is_success and str(result.get('message', '')).strip().lower() == 'timeout':
+                self._logger.warning(
+                    'EditPrims subprocess timed out waiting for a service response; '
+                    'continuing because Isaac reset-pose edits are applied as service side effects and '
+                    'responses can be lost under heavy GRScenes rendering load.'
+                )
+                return [True] * len(request.prims)
+            self._logger.error(
+                f"EditPrims failed via subprocess: {result.get('message', '') or 'unknown error'}"
+            )
+            return None
+
+        self._logger.error(f'EditPrims subprocess: could not parse output: {stdout_text[:200]}')
         return None
 
     async def _call_spawn_service_subprocess(
@@ -909,19 +1289,12 @@ class IsaacEvalSimulator(IsaacSimulator):
             f'(srv={srv_name}, timeout={timeout_sec:.0f}s, '
             f'ROS_DOMAIN_ID={ros_domain_id}, RMW_IMPLEMENTATION={rmw_implementation})'
         )
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                sys.executable,
-                '-c',
-                script,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec + 30.0)
-        except asyncio.TimeoutError:
-            proc.kill()
-            self._logger.error(f'{service_type_name} subprocess timed out after {timeout_sec:.0f}s')
+        subprocess_result = await self._run_python_service_subprocess(
+            service_type_name, script, timeout_sec, grace_sec=2.0
+        )
+        if subprocess_result is None:
             return None
+        stdout, stderr, returncode = subprocess_result
 
         stdout_text = stdout.decode('utf-8', errors='replace').strip()
         stderr_text = stderr.decode('utf-8', errors='replace').strip()
@@ -930,7 +1303,7 @@ class IsaacEvalSimulator(IsaacSimulator):
             self._logger.debug(f'{service_type_name} subprocess stderr: {stderr_text[-500:]}')
 
         if not stdout_text:
-            self._logger.error(f'{service_type_name} subprocess returned no output (rc={proc.returncode})')
+            self._logger.error(f'{service_type_name} subprocess returned no output (rc={returncode})')
             return None
 
         for line in reversed(stdout_text.split('\n')):
@@ -1017,17 +1390,12 @@ class IsaacEvalSimulator(IsaacSimulator):
             f'Calling LoadUsdScene via subprocess (srv={srv_name}, timeout={timeout_sec:.0f}s, '
             f'ROS_DOMAIN_ID={ros_domain_id}, RMW_IMPLEMENTATION={rmw_implementation})'
         )
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                sys.executable, '-c', script,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec + 30.0)
-        except asyncio.TimeoutError:
-            proc.kill()
-            self._logger.error(f'LoadUsdScene subprocess timed out after {timeout_sec:.0f}s')
+        subprocess_result = await self._run_python_service_subprocess(
+            'LoadUsdScene', script, timeout_sec, grace_sec=2.0
+        )
+        if subprocess_result is None:
             return False
+        stdout, stderr, returncode = subprocess_result
 
         stdout_text = stdout.decode('utf-8', errors='replace').strip()
         stderr_text = stderr.decode('utf-8', errors='replace').strip()
@@ -1036,7 +1404,7 @@ class IsaacEvalSimulator(IsaacSimulator):
             self._logger.debug(f'LoadUsdScene subprocess stderr: {stderr_text[-500:]}')
 
         if not stdout_text:
-            self._logger.error(f'LoadUsdScene subprocess returned no output (rc={proc.returncode})')
+            self._logger.error(f'LoadUsdScene subprocess returned no output (rc={returncode})')
             return False
 
         # Parse the last line of stdout as JSON

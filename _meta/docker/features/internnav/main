@@ -225,7 +225,7 @@ source_fn(){
 }
 
 launch(){
-    local robot namespace mode model_path device rgb_topic depth_topic camera_info_topic instruction_topic task_reset_topic scenario_reset_topic trace_path status_topic visualization_topic action_visualization_topic model_output_topic model_output_policy visualization_rate_hz enable_visualization inference_rate_hz inference_timeout_sec camera_ready_timeout_sec internnav_http_url internnav_http_timeout_sec adapter_target extra_ros_args cmd_vel_topic odom_topic
+    local robot namespace mode model_path device rgb_topic depth_topic camera_info_topic instruction_topic navigation_goal_topic eval_ready_topic task_reset_topic scenario_reset_topic trace_path status_topic visualization_topic action_visualization_topic model_output_topic model_output_policy visualization_rate_hz enable_visualization inference_rate_hz inference_timeout_sec camera_ready_timeout_sec internnav_http_url internnav_http_timeout_sec adapter_target extra_ros_args cmd_vel_topic odom_topic
     robot="${ARENA_INTERNNAV_ROBOT:-Ai2_Bot2}"
     namespace="${ARENA_INTERNNAV_NAMESPACE:-/task_generator_node/$robot}"
     mode="${ARENA_INTERNNAV_MODE:-internnav}"
@@ -237,6 +237,8 @@ launch(){
     odom_topic="${ARENA_INTERNNAV_ODOM_TOPIC:-odom}"
     cmd_vel_topic="${ARENA_INTERNNAV_CMD_VEL_TOPIC:-cmd_vel}"
     instruction_topic="${ARENA_INTERNNAV_INSTRUCTION_TOPIC:-/task_generator_node/vln_instruction}"
+    navigation_goal_topic="${ARENA_INTERNNAV_NAVIGATION_GOAL_TOPIC:-episode_goal_pose}"
+    eval_ready_topic="${ARENA_INTERNNAV_EVAL_READY_TOPIC:-/task_generator_node/eval_ready}"
     task_reset_topic="${ARENA_INTERNNAV_TASK_RESET_TOPIC:-/task_generator_node/task_reset}"
     scenario_reset_topic="${ARENA_INTERNNAV_SCENARIO_RESET_TOPIC:-}"
     trace_path="${ARENA_INTERNNAV_TRACE_PATH:-${ARENA_EVAL_INTERNNAV_TRACE_PATH:-}}"
@@ -273,6 +275,8 @@ launch(){
             --odom-topic) odom_topic="$2"; shift 2 ;;
             --cmd-vel-topic) cmd_vel_topic="$2"; shift 2 ;;
             --instruction-topic) instruction_topic="$2"; shift 2 ;;
+            --navigation-goal-topic) navigation_goal_topic="$2"; shift 2 ;;
+            --eval-ready-topic) eval_ready_topic="$2"; shift 2 ;;
             --task-reset-topic) task_reset_topic="$2"; shift 2 ;;
             --scenario-reset-topic) scenario_reset_topic="$2"; shift 2 ;;
             --trace-path) trace_path="$2"; shift 2 ;;
@@ -328,6 +332,7 @@ launch(){
     case "$camera_info_topic" in /*) ;; *) camera_info_topic="$namespace/$camera_info_topic" ;; esac
     case "$odom_topic" in /*) ;; *) odom_topic="$namespace/$odom_topic" ;; esac
     case "$cmd_vel_topic" in /*) ;; *) cmd_vel_topic="$namespace/$cmd_vel_topic" ;; esac
+    case "$navigation_goal_topic" in /*) ;; *) navigation_goal_topic="$namespace/$navigation_goal_topic" ;; esac
     case "$status_topic" in ''|/*) ;; *) status_topic="$namespace/$status_topic" ;; esac
     case "$model_output_topic" in ''|/*) ;; *) model_output_topic="$namespace/$model_output_topic" ;; esac
     if [ -z "$scenario_reset_topic" ]; then
@@ -338,7 +343,7 @@ launch(){
         # dead namespaced topic.
         scenario_reset_topic="$task_reset_topic"
     fi
-    cmd="$cmd cd /opt/arena_ws/deps/InternNav/scripts/realworld; $(venv_path)/bin/python -u http_internvla_client.py --url '$internnav_http_url' --rgb-topic '$rgb_topic' --depth-topic '$depth_topic' --odom-topic '$odom_topic' --cmd-vel-topic '$cmd_vel_topic' --instruction-topic '$instruction_topic' --camera-info-topic '$camera_info_topic' --task-reset-topic '$task_reset_topic' --scenario-reset-topic '$scenario_reset_topic' --status-topic '$status_topic' --model-output-topic '$model_output_topic' --trace-path '$trace_path' $extra_ros_args"
+    cmd="$cmd cd /opt/arena_ws/deps/InternNav/scripts/realworld; $(venv_path)/bin/python -u http_internvla_client.py --url '$internnav_http_url' --rgb-topic '$rgb_topic' --depth-topic '$depth_topic' --odom-topic '$odom_topic' --cmd-vel-topic '$cmd_vel_topic' --instruction-topic '$instruction_topic' --camera-info-topic '$camera_info_topic' --navigation-goal-topic '$navigation_goal_topic' --eval-ready-topic '$eval_ready_topic' --task-reset-topic '$task_reset_topic' --scenario-reset-topic '$scenario_reset_topic' --status-topic '$status_topic' --model-output-topic '$model_output_topic' --trace-path '$trace_path' $extra_ros_args"
 
     arena_docker_compose exec -T internnav /entrypoint.sh bash -lc "$cmd"
 }
@@ -368,6 +373,8 @@ Launch options:
   --odom-topic TOPIC            Default: odom
   --cmd-vel-topic TOPIC         Default: cmd_vel
   --instruction-topic TOPIC     Default: /task_generator_node/vln_instruction
+  --navigation-goal-topic TOPIC Default: episode_goal_pose
+  --eval-ready-topic TOPIC      Default: /task_generator_node/eval_ready
   --task-reset-topic TOPIC      Default: /task_generator_node/task_reset
   --scenario-reset-topic TOPIC  Default: <namespace>/scenario_reset
   --trace-path PATH             Optional JSONL trace path
