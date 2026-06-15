@@ -67,7 +67,13 @@ def generate_launch_description():
         'echo "No running Isaac container found for service=isaac or image=arena_isaac" >&2; '
         'exit 1; '
         'fi; '
-        'docker exec "$CONTAINER_NAME" bash -lc '
+        'PASS_ENV_ARGS=(); '
+        'while IFS= read -r VAR; do '
+        'case "$VAR" in ARENA_*|ROS_DOMAIN_ID|RMW_IMPLEMENTATION|FASTDDS_BUILTIN_TRANSPORTS) '
+        'PASS_ENV_ARGS+=("-e" "$VAR=${!VAR}");; '
+        'esac; '
+        'done < <(compgen -e); '
+        'docker exec "${PASS_ENV_ARGS[@]}" "$CONTAINER_NAME" bash -lc '
     )
 
     isaac_cmd = (

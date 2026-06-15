@@ -560,7 +560,13 @@ class IsaacEvalSimulator(IsaacSimulator):
         return True
 
     async def _unpause(self):
-        attempts = max(1, int(os.environ.get('ARENA_ISAAC_UNPAUSE_ATTEMPTS', '3')))
+        # In large headless GRScenes runs the UnpauseSimulation callback is
+        # side-effect-only and the first render/evaluation tick can take several
+        # minutes before /clock is published.  Retrying Unpause during that first
+        # render just queues extra service requests behind the blocked Isaac
+        # thread and produces stale DDS responses.  Prefer one unpause side
+        # effect, then wait long enough for the first real /clock sample.
+        attempts = max(1, int(os.environ.get('ARENA_ISAAC_UNPAUSE_ATTEMPTS', '1')))
         timeout_sec = float(os.environ.get('ARENA_ISAAC_UNPAUSE_TIMEOUT_SEC', '30.0'))
         for attempt in range(1, attempts + 1):
             ok = await self._call_trigger_service_subprocess(
@@ -574,8 +580,8 @@ class IsaacEvalSimulator(IsaacSimulator):
                 continue
 
             clock_advancing = await self._probe_clock_advancing(
-                observation_sec=float(os.environ.get('ARENA_ISAAC_UNPAUSE_CLOCK_OBSERVATION_SEC', '2.0')),
-                wait_first_sec=float(os.environ.get('ARENA_ISAAC_UNPAUSE_CLOCK_WAIT_FIRST_SEC', '8.0')),
+                observation_sec=float(os.environ.get('ARENA_ISAAC_UNPAUSE_CLOCK_OBSERVATION_SEC', '240.0')),
+                wait_first_sec=float(os.environ.get('ARENA_ISAAC_UNPAUSE_CLOCK_WAIT_FIRST_SEC', '30.0')),
             )
             if clock_advancing is True:
                 return True
@@ -707,19 +713,30 @@ class IsaacEvalSimulator(IsaacSimulator):
         if not req.pedestrians:
             return tuple(False for _ in pedestrians)
 
-        res = await self._clients.SpawnPedestrians.call_timeout(req)
+        # GRScenes pedestrians instantiate animated Isaac characters and can take
+        # longer than the default ClientWrapper timeout.  If task_generator gives
+        # up while Isaac is still inside SpawnPedestrians, later Pause/Unpause
+        # requests queue behind that callback and /clock never advances before
+        # the navigation goal is released.  Use the same fresh-DDS participant
+        # and long bounded timeout used by the heavyweight world/robot spawn path.
+        res = await self._call_spawn_service_subprocess(
+            'SpawnPedestrians',
+            self._clients.SpawnPedestrians.client.srv_name,
+            req,
+            timeout_sec=float(os.environ.get('ARENA_ISAAC_SPAWN_PEDESTRIANS_TIMEOUT_SEC', '300.0')),
+        )
         if res is None:
             return tuple(False for _ in pedestrians)
         await self.pedestrian_update(
             arena_people_msgs.msg.Pedestrians(
                 pedestrians=[
                     arena_people_msgs.msg.Pedestrian(name=ped.sim_path, pose=ped.pose.to_msg())
-                    for status, ped in zip(res.ret, pedestrians)
+                    for status, ped in zip(res, pedestrians)
                     if status
                 ]
             )
         )
-        return res.ret
+        return tuple(res)
 
     async def pedestrian_update(self, pedestrians):
         async def impl(ped: arena_people_msgs.msg.Pedestrian) -> PedestrianGoal | None:
@@ -1250,13 +1267,13 @@ class IsaacEvalSimulator(IsaacSimulator):
             "import json, os, sys, time\n"
             "import rclpy\n"
             "from rosidl_runtime_py.set_message import set_message_fields\n"
-            "from isaacsim_msgs.srv import SpawnDoors, SpawnElevators, SpawnFloors, SpawnWalls\n"
+            "from isaacsim_msgs.srv import SpawnDoors, SpawnElevators, SpawnFloors, SpawnPedestrians, SpawnWalls\n"
             f"os.environ['ROS_DOMAIN_ID'] = {ros_domain_id!r}\n"
             f"os.environ['RMW_IMPLEMENTATION'] = {rmw_implementation!r}\n"
             f"os.environ['ROS_LOCALHOST_ONLY'] = '0'\n"
             f"os.environ['ROS_AUTOMATIC_DISCOVERY_RANGE'] = {discovery_range!r}\n"
             f"os.environ['FASTDDS_BUILTIN_TRANSPORTS'] = {fastdds_transports!r}\n"
-            f"srv_type = {{'SpawnDoors': SpawnDoors, 'SpawnElevators': SpawnElevators, 'SpawnFloors': SpawnFloors, 'SpawnWalls': SpawnWalls}}[{service_type_name!r}]\n"
+            f"srv_type = {{'SpawnDoors': SpawnDoors, 'SpawnElevators': SpawnElevators, 'SpawnFloors': SpawnFloors, 'SpawnPedestrians': SpawnPedestrians, 'SpawnWalls': SpawnWalls}}[{service_type_name!r}]\n"
             "rclpy.init()\n"
             f"node = rclpy.create_node('isaac_{service_type_name.lower()}_subprocess')\n"
             f"client = node.create_client(srv_type, {srv_name!r})\n"

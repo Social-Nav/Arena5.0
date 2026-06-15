@@ -243,12 +243,12 @@ launch(){
     scenario_reset_topic="${ARENA_INTERNNAV_SCENARIO_RESET_TOPIC:-}"
     trace_path="${ARENA_INTERNNAV_TRACE_PATH:-${ARENA_EVAL_INTERNNAV_TRACE_PATH:-}}"
     status_topic="${ARENA_INTERNNAV_STATUS_TOPIC:-${ARENA_EVAL_INTERNNAV_STATUS_TOPIC:-internnav/status}}"
-    visualization_topic="${ARENA_INTERNNAV_VISUALIZATION_TOPIC:-internnav/debug_image}"
-    action_visualization_topic="${ARENA_INTERNNAV_ACTION_VISUALIZATION_TOPIC:-internnav/action_image}"
+    visualization_topic="${ARENA_INTERNNAV_VISUALIZATION_TOPIC:-${ARENA_EVAL_INTERNNAV_VISUALIZATION_TOPIC:-internnav/debug_image}}"
+    action_visualization_topic="${ARENA_INTERNNAV_ACTION_VISUALIZATION_TOPIC:-${ARENA_EVAL_INTERNNAV_ACTION_VISUALIZATION_TOPIC:-internnav/action_image}}"
     model_output_topic="${ARENA_INTERNNAV_MODEL_OUTPUT_TOPIC:-${ARENA_EVAL_INTERNNAV_MODEL_OUTPUT_TOPIC:-internnav/model_output}}"
     model_output_policy="${ARENA_INTERNNAV_MODEL_OUTPUT_POLICY:-${ARENA_EVAL_INTERNNAV_MODEL_OUTPUT_POLICY:-trajectory}}"
-    visualization_rate_hz="${ARENA_INTERNNAV_VISUALIZATION_RATE_HZ:-5.0}"
-    enable_visualization="${ARENA_INTERNNAV_ENABLE_VISUALIZATION:-true}"
+    visualization_rate_hz="${ARENA_INTERNNAV_VISUALIZATION_RATE_HZ:-${ARENA_EVAL_INTERNNAV_VISUALIZATION_RATE_HZ:-5.0}}"
+    enable_visualization="${ARENA_INTERNNAV_ENABLE_VISUALIZATION:-${ARENA_EVAL_INTERNNAV_ENABLE_VISUALIZATION:-true}}"
     inference_rate_hz="${ARENA_INTERNNAV_INFERENCE_RATE_HZ:-10.0}"
     inference_timeout_sec="${ARENA_INTERNNAV_INFERENCE_TIMEOUT_SEC:-120.0}"
     official_http="${ARENA_INTERNNAV_OFFICIAL_HTTP:-true}"
@@ -335,6 +335,8 @@ launch(){
     case "$navigation_goal_topic" in /*) ;; *) navigation_goal_topic="$namespace/$navigation_goal_topic" ;; esac
     case "$status_topic" in ''|/*) ;; *) status_topic="$namespace/$status_topic" ;; esac
     case "$model_output_topic" in ''|/*) ;; *) model_output_topic="$namespace/$model_output_topic" ;; esac
+    case "$visualization_topic" in ''|/*) ;; *) visualization_topic="$namespace/$visualization_topic" ;; esac
+    case "$action_visualization_topic" in ''|/*) ;; *) action_visualization_topic="$namespace/$action_visualization_topic" ;; esac
     if [ -z "$scenario_reset_topic" ]; then
         # Arena's task_generator publishes /task_generator_node/task_reset as
         # the canonical episode boundary for this direct-cmd_vel eval path.
@@ -343,7 +345,11 @@ launch(){
         # dead namespaced topic.
         scenario_reset_topic="$task_reset_topic"
     fi
-    cmd="$cmd cd /opt/arena_ws/deps/InternNav/scripts/realworld; $(venv_path)/bin/python -u http_internvla_client.py --url '$internnav_http_url' --rgb-topic '$rgb_topic' --depth-topic '$depth_topic' --odom-topic '$odom_topic' --cmd-vel-topic '$cmd_vel_topic' --instruction-topic '$instruction_topic' --camera-info-topic '$camera_info_topic' --navigation-goal-topic '$navigation_goal_topic' --eval-ready-topic '$eval_ready_topic' --task-reset-topic '$task_reset_topic' --scenario-reset-topic '$scenario_reset_topic' --status-topic '$status_topic' --model-output-topic '$model_output_topic' --trace-path '$trace_path' $extra_ros_args"
+    local visualization_flag="--disable-visualization"
+    if [ "$enable_visualization" = "true" ]; then
+        visualization_flag="--enable-visualization"
+    fi
+    cmd="$cmd cd /opt/arena_ws/deps/InternNav/scripts/realworld; $(venv_path)/bin/python -u http_internvla_client.py --url '$internnav_http_url' --rgb-topic '$rgb_topic' --depth-topic '$depth_topic' --odom-topic '$odom_topic' --cmd-vel-topic '$cmd_vel_topic' --instruction-topic '$instruction_topic' --camera-info-topic '$camera_info_topic' --navigation-goal-topic '$navigation_goal_topic' --eval-ready-topic '$eval_ready_topic' --task-reset-topic '$task_reset_topic' --scenario-reset-topic '$scenario_reset_topic' --status-topic '$status_topic' --model-output-topic '$model_output_topic' --visualization-topic '$visualization_topic' --action-visualization-topic '$action_visualization_topic' --visualization-rate-hz '$visualization_rate_hz' $visualization_flag --trace-path '$trace_path' $extra_ros_args"
 
     arena_docker_compose exec -T internnav /entrypoint.sh bash -lc "$cmd"
 }

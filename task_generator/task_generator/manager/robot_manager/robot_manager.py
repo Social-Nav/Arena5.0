@@ -523,7 +523,8 @@ class RobotManager(NodeInterface):
             if not await wait_for_world_geometry_ready(timeout_s=geometry_timeout_s):
                 raise RuntimeError('World geometry did not report ready before goal publish.')
 
-        if not await self._wait_for_sim_tick(timeout_s=120.0):
+        sim_tick_timeout_s = float(os.environ.get('ARENA_ISAAC_SIM_TICK_TIMEOUT_SEC', '600.0'))
+        if not await self._wait_for_sim_tick(timeout_s=sim_tick_timeout_s):
             raise RuntimeError('Simulation time did not advance before goal publish.')
 
         if start_target is not None and not await self._wait_for_pose_sync(start_target, timeout_s=120.0):
@@ -539,7 +540,13 @@ class RobotManager(NodeInterface):
 
         self._reset_navigation_readiness_state()
         self._ensure_dual_vln_status_subscription()
-        if not await self._wait_for_camera_ready_before_navigation(timeout_s=90.0):
+        camera_ready_timeout_s = float(
+            self.node.rosparam[float].get(
+                'camera_ready_before_navigation_timeout_sec',
+                float(os.environ.get('ARENA_ISAAC_CAMERA_READY_BEFORE_NAVIGATION_TIMEOUT_SEC', '900.0')),
+            )
+        )
+        if not await self._wait_for_camera_ready_before_navigation(timeout_s=camera_ready_timeout_s):
             raise RuntimeError('Timed out waiting for real camera topics before publishing VLN navigation goal.')
         if not self._internnav_direct_cmd_vel_enabled():
             if not await self._wait_for_dual_vln_status_before_navigation(timeout_s=120.0):

@@ -367,7 +367,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         wait_navigation_ready = getattr(self._task, 'wait_navigation_ready', None)
         if callable(wait_navigation_ready):
             await wait_navigation_ready(
-                timeout_s=max(0.0, self.rosparam[float].get('episode_navigation_ready_timeout_sec', 180.0))
+                timeout_s=max(0.0, self.rosparam[float].get('episode_navigation_ready_timeout_sec', 600.0))
             )
 
         episode_start_delay_sec = max(0.0, self.rosparam[float].get('episode_start_delay_sec', 0.0))
