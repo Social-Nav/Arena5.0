@@ -56,6 +56,7 @@ setup(
             'social_nav_scenario_validate = arena_bringup.social_nav_scenario:main',
             'social_nav_scenario_eval = arena_bringup.social_nav_scenario:eval_main',
             'social_nav_metrics_aggregate = arena_bringup.social_nav_metrics_aggregate:main',
+            'grscenes_episode_to_eval_config = arena_bringup.grscenes_episode_to_eval_config:main',
         ],
         'launch_ros.node_action': [
             'NodeLogLevelExtension = arena_bringup.extensions.NodeLogLevelExtension:NodeLogLevelExtension',

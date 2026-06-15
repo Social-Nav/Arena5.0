@@ -1,0 +1,70 @@
+id: recorded_default_20260529_142929_episode_00
+schema_version: 0.1
+source:
+  dataset: grscenes_recorded_episode
+  world: grscenes_3
+  scenario: default
+  timestamp: 2026-05-29_14-29-29
+  episode: episode_00
+world:
+  name: grscenes_3
+  world_config: package://arena_simulation_setup/worlds/grscenes_3/world.yaml
+  map_yaml: package://arena_simulation_setup/worlds/grscenes_3/map/map.yaml
+  native_scenario:
+    name: recorded_default_20260529_142929_episode_00
+    file: package://arena_simulation_setup/worlds/grscenes_3/scenarios/recorded_default_20260529_142929_episode_00/scenario.yaml
+robot:
+  name: Ai2_Bot2
+  local_planner: dual_vln
+  start:
+    pose_xy_yaw:
+    - -10.36365
+    - -0.53991
+    - -71.56505
+  goal:
+    pose_xy_yaw:
+    - -10.58931
+    - -3.74224
+    - -95.44033
+    tolerance_m: 0.45
+  command_interface:
+    cmd_vel_topic: /task_generator_node/Ai2_Bot2/cmd_vel
+    odom_topic: /task_generator_node/Ai2_Bot2/odom
+    goal_topic: /task_generator_node/Ai2_Bot2/episode_goal_pose
+language:
+  instruction_type: recorded_episode_instruction
+  instruction: Turn to your left, moving past the desk with the laptop and the yellow
+    stool. Continue past the tall white refrigerator and the man in the lab coat.
+    Stop when you are facing the long wooden desk that is positioned against the black
+    wall, with the desk lamp and cup of pens on it.
+  rephrases: []
+humans:
+  simulator: hunav
+  source: native_scenario
+  expected_count: 2
+  native_scenario_file: package://arena_simulation_setup/worlds/grscenes_3/scenarios/recorded_default_20260529_142929_episode_00/scenario.yaml
+task_spec:
+  type: grscenes_recorded_vln_episode
+  predicates:
+    entities:
+      robot: Ai2_Bot2
+      humans: all_hunav_pedestrians
+      goal: robot.goal
+    success:
+    - goal_reached(robot, goal)
+    - robot_moved(robot, min_path_length_m=0.1)
+    social_constraints:
+    - human_collision_count == 0
+    - near_miss_count == 0
+    - personal_space_violation_time_sec == 0.0
+    - min_human_distance_m >= 0.25
+    failure:
+    - timeout
+    - no_motion
+    - collision
+    - missing_humans
+    - missing_required_artifacts
+evaluation:
+  timeout_sec: 120.0
+  repetitions: 1
+  random_seed: null
