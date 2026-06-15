@@ -15,6 +15,29 @@
 
 InternNav official realworld ROS2 client 的 async/direct `cmd_vel` eval 使用 `arena_simulation_setup/launch/internnav_async_eval.launch.py`，不得再通过修改通用 `robot.launch.py` 来跳过 Nav2，避免影响普通 Nav2 / Arena wrapper / DRL 等其他应用。
 
+# InternNav async eval 启动入口硬性约束
+InternNav async/direct `cmd_vel` eval 的入口是 `ros2 run arena_bringup internnav_eval ... --internnav-direct-cmd-vel`；该参数会自动设置 external-server 模式并向 `arena.launch.py` 追加 `robot_launch_file:=internnav_async_eval.launch.py`。不要只传 `--internnav-external-server` 后假设会选择 async launch；单独 external-server 是 legacy Nav2 service-contract 路径，仍可能经过 `robot.launch.py`。
+
+若目标是当前 InternNav official realworld ROS2 client / async eval，必须同时满足：
+- 命令在 `arena-arena_jazzy_ws-arena-1` 容器内执行，不能在宿主机执行 ROS/eval。
+- 启动参数包含 `--internnav-direct-cmd-vel`，生成的 manifest / postprocess command 中必须出现 `robot_launch_file:=internnav_async_eval.launch.py`。
+- `internnav_async_eval.launch.py` 不启动 Nav2、rosnav_rl 或本地 `dual_vln_server`；真实模型服务只能在 `arena-arena_jazzy_ws-internnav-1` 容器内运行。
+- 如果日志或 manifest 中出现 `robot.launch.py` 且本次目标是 async/direct eval，应视为启动入口错误，先修正命令/文档，不要继续调试 `dual_vln_server` 缺失。
+
+最小正确 eval 形态：
+```bash
+docker exec arena-arena_jazzy_ws-arena-1 bash -lc '
+  cd /opt/arena_ws &&
+  source /opt/ros/jazzy/setup.bash &&
+  source install/setup.bash &&
+  ros2 run arena_bringup internnav_eval \
+    --sim isaac --human hunav --robot Ai2_Bot2 \
+    --local-planner dual_vln \
+    --internnav-mode internnav \
+    --internnav-direct-cmd-vel
+'
+```
+
 # GRScenes 天花板渲染可视化开关
 GRScenes 室内 USD 场景的 `sim_top_down` debug 视频默认需要能透过天花板看到室内过程；相关逻辑位于 `arena_isaac/arena_isaac/isaac_utils/usd_scene_loader.py`，通过隐藏匹配到的 ceiling/roof `UsdGeom.Imageable` prim 实现，只影响渲染可见性，不删除 prim，也不修改 collision/physics。
 

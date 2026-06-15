@@ -30,16 +30,49 @@ Isaac camera publishers use `BEST_EFFORT`, while the consumer expects the defaul
 
 Use `BEST_EFFORT` subscriptions for RGB, depth, and camera info in the InternNav wrapper server.
 
-## External InternNav server is not used
+## InternNav async eval accidentally uses robot.launch.py
 
 ### Symptom
 
-The dedicated `internnav` container is running, but the Arena launch still starts
-a local `dual_vln_server`, or the robot never calls the external service.
+The target run is the current InternNav official async/direct `cmd_vel` eval, but
+the generated launch command or manifest does not include
+`robot_launch_file:=internnav_async_eval.launch.py`; the run then enters the
+normal `robot.launch.py`/Nav2 path or reports local `dual_vln_server` problems.
+
+### Most likely cause
+
+The eval was launched with only `--internnav-external-server`, or from stale docs
+that treated external-server mode as the async launch selector.
+
+### Action
+
+- relaunch with `--internnav-direct-cmd-vel`; this forces external-server mode
+  and appends `robot_launch_file:=internnav_async_eval.launch.py`
+- verify `postprocess_commands.txt` or `manifest.json` contains all of:
+
+```text
+robot_launch_file:=internnav_async_eval.launch.py
+internnav_direct_cmd_vel:=true
+dual_vln_direct_cmd_vel:=true
+internnav_external_server:=true
+dual_vln_external_server:=true
+```
+
+- do not debug a missing local `dual_vln_server` in `arena-1` for async/direct
+  eval; it should not be started there
+
+## Legacy external InternNav service server is not used
+
+### Symptom
+
+The dedicated `internnav` container is running for the legacy Nav2
+service-contract path, but the Arena launch still starts a local
+`dual_vln_server`, or the robot never calls the external service.
 
 ### Most likely causes
 
 - `--internnav-external-server` was omitted from `internnav_eval`, so arena-1 may try to use an invalid local model path
+- the target was actually async/direct eval, but `--internnav-direct-cmd-vel` was omitted
 - an older task-generator YAML default overrode the launch argument
 - the containers are not sharing the same ROS domain / host network discovery
 

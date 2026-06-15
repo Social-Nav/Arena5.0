@@ -120,19 +120,40 @@ the heavy Python environment in the `internnav_venv` Docker volume, and exposes
 GPU runtime knobs such as `NVIDIA_VISIBLE_DEVICES`, `CUDA_VISIBLE_DEVICES`,
 `ARENA_INTERNNAV_TORCH_INDEX_URL`, and `ARENA_INTERNNAV_TORCH_PACKAGES`.
 
-When the eval runner is launched with `--internnav-external-server`, Arena passes
-both `internnav_external_server:=true` and the legacy
-`dual_vln_external_server:=true` launch argument.  The task generator forwards
-that flag through `robot_manager.py` to `robot.launch.py`; the robot launch then
-skips the local `dual_vln_server`, while the external server in the `internnav`
+There are two InternNav external execution paths, and they must not be confused:
+
+1. **Current async/direct `cmd_vel` eval** is selected by launching
+   `internnav_eval` with `--internnav-direct-cmd-vel`.  The runner forces
+   external-server mode and appends
+   `robot_launch_file:=internnav_async_eval.launch.py`.  That case-specific
+   launch file intentionally skips Nav2, rosnav_rl, and any local
+   `dual_vln_server` in `arena-1`; the official InternNav realworld ROS2 client
+   runs in the `internnav` container and drives `cmd_vel` directly.
+2. **Legacy Nav2 service-contract external-server eval** is selected by plain
+   `--internnav-external-server`.  Arena passes both
+   `internnav_external_server:=true` and the legacy
+   `dual_vln_external_server:=true`; this suppresses the local model server but
+   can still use the normal `robot.launch.py`/Nav2 path.
+
+For the async/direct path, the generated launch command must contain:
+
+```text
+robot_launch_file:=internnav_async_eval.launch.py
+internnav_direct_cmd_vel:=true
+dual_vln_direct_cmd_vel:=true
+internnav_external_server:=true
+dual_vln_external_server:=true
+```
+
+For the legacy service-contract path, the external server in the `internnav`
 container provides the same ROS contract:
 
 - service: `/task_generator_node/<robot>/get_command`
 - status topic: `/task_generator_node/<robot>/internnav/status`
 
-The eval runner also exports `ARENA_INTERNNAV_EXTERNAL_SERVER=1` as a fallback so
-YAML defaults from older task-generator configs cannot accidentally re-enable the
-local server.
+The eval runner also exports `ARENA_INTERNNAV_EXTERNAL_SERVER=1` whenever either
+external path is active, as a fallback so YAML defaults from older
+task-generator configs cannot accidentally re-enable the local server.
 
 ## Why the recent Isaac fixes matter
 

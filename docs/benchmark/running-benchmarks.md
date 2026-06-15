@@ -82,7 +82,7 @@ ros2 run arena_bringup social_nav_scenario_eval \
   --scenario-config src/Arena/arena_bringup/configs/social_nav_scenarios/hospital_1_demo_001.yaml \
   --dry-run \
   --no-save-eval-video \
-  -- --internnav-external-server --headless 2
+  -- --internnav-direct-cmd-vel --headless 2
 ```
 
 The wrapper validates the YAML and translates it into the existing
@@ -107,17 +107,18 @@ To run the full scenario with required video artifacts, omit `--dry-run` and
 `--no-save-eval-video`:
 
 ```bash
-ARENA_INTERNNAV_EXTERNAL_SERVER=1 \
 ros2 run arena_bringup social_nav_scenario_eval \
   --scenario-config src/Arena/arena_bringup/configs/social_nav_scenarios/hospital_1_demo_001.yaml \
   --output-prefix hospital_1_demo_001 \
-  -- --internnav-external-server --headless 2
+  -- --internnav-direct-cmd-vel --headless 2
 ```
 
 Any arguments after `--` are appended to `internnav_eval`, so this is where you
-pass backend/runtime controls such as `--internnav-external-server`,
+pass backend/runtime controls such as `--internnav-direct-cmd-vel`,
 `--internnav-device`, `--internnav-model-path`, `--internnav-python-executable`,
-or explicit camera topics.
+or explicit camera topics.  Use plain `--internnav-external-server` only for the
+legacy Nav2 service-contract path; it does not select
+`internnav_async_eval.launch.py` by itself.
 
 The latest validated video rerun used this path:
 
@@ -149,7 +150,8 @@ src/Arena/_meta/docker/features/internnav/main launch \
   --device cuda:0
 ```
 
-Then run the evaluation from `arena-arena_jazzy_ws-arena-1` with external-server mode:
+Then run the evaluation from `arena-arena_jazzy_ws-arena-1` with the current
+async/direct `cmd_vel` entry point:
 
 ```bash
 ARENA_INTERNNAV_EXTERNAL_SERVER=1 \
@@ -165,13 +167,21 @@ ros2 run arena_bringup internnav_eval \
   --log-level warn \
   --internnav-mode internnav \
   --internnav-device cuda:0 \
-  --internnav-external-server
+  --internnav-direct-cmd-vel
 ```
 
-The important launch contract is `--internnav-external-server`: it forwards
-`internnav_external_server:=true` and `dual_vln_external_server:=true`, causing
-the robot launch to suppress any local model `dual_vln_server` in arena-1.  The model container
-continues to provide `/task_generator_node/Ai2_Bot2/get_command` and
+The important async launch contract is `--internnav-direct-cmd-vel`: it forces
+external-server mode and makes the generated launch command include
+`robot_launch_file:=internnav_async_eval.launch.py`.  That case-specific launch
+file skips Nav2 and the local Arena `dual_vln_server`; the official InternNav
+client in the `internnav` container publishes direct `cmd_vel`.
+
+Do not use plain `--internnav-external-server` as the async launch selector.  It
+is the legacy Nav2 service-contract path: it forwards
+`internnav_external_server:=true` and `dual_vln_external_server:=true`, but can
+still use `robot.launch.py` with local model-server suppression.  That legacy
+path expects the model container to provide
+`/task_generator_node/Ai2_Bot2/get_command` and
 `/task_generator_node/Ai2_Bot2/internnav/status`.
 
 Use `--save-eval-video --internnav-enable-visualization` when video artifacts are
@@ -199,6 +209,7 @@ ros2 run arena_bringup internnav_eval \
   --internnav-inference-timeout-sec 30 \
   --internnav-invert-discrete-turns auto \
   --internnav-enable-visualization \
+  --internnav-direct-cmd-vel \
   --save-eval-video
 ```
 
@@ -215,6 +226,8 @@ eval runner parameters.  Use a fresh run before comparing turn-sign A/B results.
 ## Important InternNav arguments
 
 - `--internnav-mode`: selects the backend mode
+- `--internnav-direct-cmd-vel`: selects the current async/direct eval path and appends `robot_launch_file:=internnav_async_eval.launch.py`
+- `--internnav-external-server`: legacy Nav2 service-contract path; suppresses the local server but does not by itself select `internnav_async_eval.launch.py`
 - `--internnav-adapter-target`: points to the adapter loader
 - `--internnav-model-path`: selects the model directory
 - `--internnav-device`: selects CPU or CUDA runtime
