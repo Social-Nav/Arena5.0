@@ -86,6 +86,13 @@ arena feature isaac update
 
 Do not point Isaac launch at host-built message overlays from another ROS distro. Isaac must load the image-bundled `/opt/isaac_bridge_msgs` packages so that its Python 3.11 runtime, `rclpy`, and FastDDS/FastCDR libraries stay ABI-compatible.
 
+### Datasets
+
+GRScenes USD assets are loaded from an external dataset mount shared by the
+Arena and Isaac containers.  See [datasets.md](datasets.md) for the expected
+directory layout, `world.yaml` configuration, trimmed USD workflow, and HuNav
+scenario files.
+
 ## Usage
 
 ```sh

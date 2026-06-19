@@ -33,6 +33,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     curl \
     python-is-python3 \
     python3-pip \
+    python3-pandas \
     pipx \
     python3-colcon-common-extensions \
     python3-rosdep \

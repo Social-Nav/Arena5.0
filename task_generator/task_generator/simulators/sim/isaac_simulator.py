@@ -731,9 +731,10 @@ class IsaacSimulator(BaseSim, NodeInterface):
         req.disable_collision_cooking = disable_collision_cooking
 
         try:
-            response = await self._clients.LoadUsdScene.call_timeout(req, timeout_sec=120.0)
+            timeout_sec = max(float(os.environ.get("ARENA_ISAAC_LOAD_USD_TIMEOUT_SEC", "1800.0")), 1.0)
+            response = await self._clients.LoadUsdScene.call_timeout(req, timeout_sec=timeout_sec)
             if response is None:
-                self._logger.error("LoadUsdScene service timed out")
+                self._logger.error(f"LoadUsdScene service timed out after {timeout_sec:.1f} seconds")
                 return False
 
             if response.success:

@@ -53,7 +53,7 @@ InternNavServer 是 VLN/VLA 模型与 ROS 2 Nav2 之间的桥接节点。它：
 | `mode` | string | `"heuristic"` | 后端模式：`heuristic` / `internnav` |
 | `model_path` | string | `""` | 模型权重路径 |
 | `device` | string | `"cpu"` | 推理设备：`cpu` / `cuda:0` |
-| `inference_rate_hz` | float | 10.0 | 推理频率 |
+| `inference_rate_hz` | float | 3.3333333333 | realworld client 外层 planning request 频率；System 2 由 InternNav server 的 `plan_step_gap` 单独控制 |
 | `inference_timeout_sec` | float | 0.2 | 单次推理超时 |
 | `camera_ready_timeout_sec` | float | 120.0 | 初始相机就绪等待超时 |
 | `camera_stale_after_sec` | float | 2.0 | 传感器数据过期阈值 |

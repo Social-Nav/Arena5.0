@@ -205,7 +205,7 @@ ros2 run arena_bringup internnav_eval \
   --internnav-device cpu \
   --internnav-adapter-target arena_vln_models.internnav:load_internnav_adapter \
   --internnav-model-path /opt/arena_ws/deps/models/InternVLA-N1-DualVLN \
-  --internnav-inference-rate-hz 10 \
+  --internnav-planning-rate-hz 3.3333333333 \
   --internnav-inference-timeout-sec 30 \
   --internnav-invert-discrete-turns auto \
   --internnav-enable-visualization \
@@ -231,7 +231,7 @@ eval runner parameters.  Use a fresh run before comparing turn-sign A/B results.
 - `--internnav-adapter-target`: points to the adapter loader
 - `--internnav-model-path`: selects the model directory
 - `--internnav-device`: selects CPU or CUDA runtime
-- `--internnav-inference-rate-hz`: controls how often model inference is requested
+- `--internnav-planning-rate-hz`: controls the realworld client's outer `/eval_dual` request cadence; System 2 remains controlled separately by InternNav `plan_step_gap`
 - `--internnav-inference-timeout-sec`: bounds model/backend inference before reporting timeout diagnostics
 - `--internnav-invert-discrete-turns`: `auto` enables the current Isaac + Ai2_Bot2 turn-sign correction; `true` or `false` force reproducible A/B runs
 - `--internnav-enable-visualization`: publishes the debug overlay image stream recorded as `ego_debug_overlay.mp4` when video recording is enabled
@@ -349,7 +349,13 @@ checking that an episode finished:
   a one-time slide/fall during initialization.
 - `videos/episode_0000/sim_top_down.mp4` should stay centered above the robot;
   the camera prim is a standalone `/World/vln_top_down_camera_*` prim and must
-  be explicitly moved on every task reset.
+  be explicitly moved on every task reset.  The default attached top-down camera
+  is 8m above the robot base and uses an adaptive near clip to reduce
+  ceiling/upper-wall occlusion in GRScenes qualitative review videos; override
+  with `ARENA_SPAWN_USD_ROBOT_TOP_DOWN_CAMERA_RELATIVE_HEIGHT`,
+  `ARENA_SPAWN_USD_ROBOT_TOP_DOWN_CAMERA_HEIGHT`, or
+  `ARENA_SPAWN_USD_ROBOT_TOP_DOWN_CAMERA_NEAR_CLIP` only when a scene-specific
+  review requires it.
 - `internnav_diagnostic_summary.json` should show non-trivial forward progress
   and should not repeatedly flag `possible_action_or_yaw_sign_mismatch` after the
   scoped turn-sign correction is enabled.

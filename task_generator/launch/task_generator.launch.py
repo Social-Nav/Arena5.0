@@ -114,7 +114,7 @@ def generate_launch_description():
     dual_vln_device = declare_legacy_alias("dual_vln_device", internnav_device)
     internnav_inference_rate_hz = LaunchArgument(
         name="internnav_inference_rate_hz",
-        default_value="10.0",
+        default_value="3.3333333333",
     )
     dual_vln_inference_rate_hz = declare_legacy_alias("dual_vln_inference_rate_hz", internnav_inference_rate_hz)
     internnav_inference_timeout_sec = LaunchArgument(

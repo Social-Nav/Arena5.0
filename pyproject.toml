@@ -27,6 +27,7 @@ dependencies = [
     "attrs",
     "shapely",
     "numpy",
+    "pandas>=2,<3",
     "setuptools<80",
     "pydantic",
     "pillow",

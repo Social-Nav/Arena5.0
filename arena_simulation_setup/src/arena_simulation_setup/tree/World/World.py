@@ -64,10 +64,28 @@ class USDWorldDescription:
     def get_usd_path(self) -> str | None:
         """Get the USD file path from usd_scene configuration"""
         if isinstance(self.usd_scene, dict):
-            return self.usd_scene.get('path')
+            return self._resolve_usd_path(self.usd_scene.get('path'))
         if hasattr(self.usd_scene, 'path'):
-            return self.usd_scene.path
+            return self._resolve_usd_path(self.usd_scene.path)
         return None
+
+    @staticmethod
+    def _resolve_usd_path(path: str | None) -> str | None:
+        if not path:
+            return path
+        package_prefix = 'package://'
+        if not path.startswith(package_prefix):
+            return path
+
+        package_path = path[len(package_prefix):]
+        package_name, separator, relative_path = package_path.partition('/')
+        if not package_name or not separator:
+            return path
+
+        import ament_index_python.packages
+
+        share_path = ament_index_python.packages.get_package_share_path(package_name)
+        return str((share_path / relative_path).resolve())
 
     @property
     def is_usd_world(self) -> bool:

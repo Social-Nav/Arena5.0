@@ -177,6 +177,39 @@ The run produces metadata files but no valid `.mp4`, or the videos are encoded w
 - enable wall-clock fallback recording when `/clock` is present but not advancing
 - disable fallback odom/TF automatically once another publisher is detected on `/task_generator_node/Ai2_Bot2/odom`
 
+## HuNav CSVs move but Isaac pedestrians look static or slide
+
+### Symptom
+
+`human_states.csv` / `pedsim_agents_data.csv` show moving HuNav agents, but
+`sim_top_down.mp4` either shows no visible pedestrian motion or shows static
+meshes sliding across the floor.
+
+### Most likely causes
+
+- the Isaac visible pedestrian bridge is not feeding `NavigatePedestrians` from
+  `/task_generator_node/arena_peds`
+- HuNav names and Isaac stage names do not match, for example `hunav_01` vs
+  `/World/Pedestrians/hunav_1`
+- `PedestrianGoal.velocity` is present but `0.0`, causing the animation graph
+  `Walk` variable to stay at zero
+- a direct-pose workaround disabled `AnimationGraphAPI` or wrote USD poses on
+  the pedestrian top-level prim, `SkelRoot`, or `RL_BoneRoot`
+
+### Action
+
+- keep `Person.character_graph` enabled and let `Person.update()` drive
+  `PathPoints`, `Action="Walk"`, and `Walk>0`
+- convert HuNav `/arena_peds` samples into `PedestrianGoal` targets for
+  `NavigatePedestrians`; do not write world poses to visible pedestrian prims
+- keep numeric suffix normalization in `NavigatePedestrians` so
+  `hunav_01`/`hunav_1` both resolve
+- use a positive walk-speed fallback when the HuNav message velocity is absent
+  or near zero
+- reject patches that call `RemoveAnimationGraphAPICommand`,
+  `XformPrim.set_world_poses`, `XformPrim.set_local_poses`, or direct
+  `person.state.position = ...` from the HuNav replay path
+
 ## External InternNav trace is missing or adapter reports missing `.npy`
 
 ### Symptom

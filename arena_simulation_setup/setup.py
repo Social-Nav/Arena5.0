@@ -22,7 +22,9 @@ setup(
             )
             for dir in ['configs', 'launch', 'resource', 'worlds']
             for base, dirs, files in os.walk(dir)
+            if '__pycache__' not in base.split(os.sep)
             for file in files
+            if not file.endswith(('.pyc', '.pyo'))
         ],
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
     ],

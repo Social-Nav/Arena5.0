@@ -1118,6 +1118,13 @@ class RobotManager(NodeInterface):
 
 
     async def wait_for_pending_goal(self, timeout_s: float) -> bool:
+        if self._internnav_direct_cmd_vel_enabled():
+            # Direct InternNav eval does not use Nav2's navigation goal as the
+            # episode release barrier.  The external client starts from
+            # task_reset/eval_ready and handles camera/backend readiness itself;
+            # waiting here can otherwise form a startup loop before task_reset.
+            return True
+
         task = self._publish_goal_task
         if task is None:
             return True
@@ -1319,7 +1326,7 @@ class RobotManager(NodeInterface):
             )
             internnav_device = self._get_compat_rosparam(str, 'internnav_device', 'dual_vln_device', 'cpu')
             internnav_inference_rate_hz = self._get_compat_rosparam(
-                float, 'internnav_inference_rate_hz', 'dual_vln_inference_rate_hz', 10.0
+                float, 'internnav_inference_rate_hz', 'dual_vln_inference_rate_hz', 3.3333333333
             )
             internnav_inference_timeout_sec = self._get_compat_rosparam(
                 float, 'internnav_inference_timeout_sec', 'dual_vln_inference_timeout_sec', 0.2

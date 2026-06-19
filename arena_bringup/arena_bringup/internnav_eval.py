@@ -156,7 +156,16 @@ raise SystemExit(0 if done['seen'] else 1)
     )
 
 
-def _start_status_watcher(env: dict[str, str], topic: str, output_path: str, history_path: str | None = None) -> subprocess.Popen:
+def _start_status_watcher(
+    env: dict[str, str],
+    topic: str,
+    output_path: str,
+    history_path: str | None = None,
+    *,
+    task_reset_topic: str = '',
+    scenario_reset_topic: str = '',
+    require_reset_for_history: bool = False,
+) -> subprocess.Popen:
     python_bin = _eval_python_executable(env)
     watcher_code = r'''
 import json
@@ -165,38 +174,55 @@ import rclpy
 from pathlib import Path
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
+from std_msgs.msg import Int16
 from std_msgs.msg import String
 
 topic = sys.argv[1]
 output_path = Path(sys.argv[2])
 history_path = Path(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3] else None
+task_reset_topic = sys.argv[4] if len(sys.argv) > 4 else ''
+scenario_reset_topic = sys.argv[5] if len(sys.argv) > 5 else ''
+require_reset_for_history = (sys.argv[6].strip().lower() in {'1', 'true', 'yes'}) if len(sys.argv) > 6 else False
 rclpy.init()
 node = Node('internnav_eval_status_watcher')
 qos = QoSProfile(depth=1)
 qos.reliability = ReliabilityPolicy.RELIABLE
 qos.durability = DurabilityPolicy.VOLATILE
-state = {'last': None}
+state = {'last': None, 'reset_seen': False}
+
+def _on_reset(_msg):
+    state['reset_seen'] = True
 
 def _cb(msg):
     state['last'] = msg.data
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(msg.data, encoding='utf-8')
     if history_path is not None:
+        if require_reset_for_history and not state['reset_seen']:
+            return
         history_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            parsed = json.loads(msg.data)
+        except Exception:
+            parsed = None
+        event_type = 'model_result'
+        if isinstance(parsed, dict) and parsed.get('status'):
+            event_type = str(parsed.get('status'))
         record = {
             'wall_time': node.get_clock().now().nanoseconds / 1e9,
             'topic': topic,
-            'event_type': 'model_result',
+            'event_type': event_type,
             'raw': msg.data,
+            'parsed': parsed,
         }
-        try:
-            record['parsed'] = json.loads(msg.data)
-        except Exception:
-            record['parsed'] = None
         with history_path.open('a', encoding='utf-8') as f:
             f.write(json.dumps(record) + '\n')
 
 node.create_subscription(String, topic, _cb, qos)
+if task_reset_topic:
+    node.create_subscription(Int16, task_reset_topic, _on_reset, 10)
+if scenario_reset_topic and scenario_reset_topic != task_reset_topic:
+    node.create_subscription(Int16, scenario_reset_topic, _on_reset, 10)
 try:
     while rclpy.ok():
         rclpy.spin_once(node, timeout_sec=0.5)
@@ -210,7 +236,17 @@ raise SystemExit(0)
 '''
 
     return subprocess.Popen(
-        [python_bin, '-c', watcher_code, topic, output_path, history_path or ''],
+        [
+            python_bin,
+            '-c',
+            watcher_code,
+            topic,
+            output_path,
+            history_path or '',
+            task_reset_topic,
+            scenario_reset_topic,
+            '1' if require_reset_for_history else '0',
+        ],
         env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -772,7 +808,7 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
     commands = []
     event_counts: dict[str, int] = {}
     for rec in records:
-        event_type = str(rec.get('event_type', 'model_result'))
+        event_type = str(rec.get('event_type') or rec.get('event') or 'model_result')
         event_counts[event_type] = event_counts.get(event_type, 0) + 1
         payload = rec.get('parsed') if isinstance(rec.get('parsed'), dict) else rec
         debug = payload.get('debug') if isinstance(payload.get('debug'), dict) else {}
@@ -849,6 +885,11 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
         cmd = payload.get('command') if isinstance(payload.get('command'), dict) else {}
         if not cmd and ('linear_x' in payload or 'angular_z' in payload):
             cmd = payload
+        if not cmd and ('desired_v' in payload or 'desired_w' in payload):
+            cmd = {
+                'linear_x': payload.get('desired_v', 0.0),
+                'angular_z': payload.get('desired_w', 0.0),
+            }
         vx = float(cmd.get('linear_x', 0.0) or 0.0)
         wz = float(cmd.get('angular_z', 0.0) or 0.0)
         commands.append({'linear_x': vx, 'angular_z': wz})
@@ -2323,7 +2364,19 @@ def main() -> int:
     parser.add_argument('--internnav-mode', '--dual-vln-mode', dest='dual_vln_mode', default='heuristic')
     parser.add_argument('--internnav-model-path', '--dual-vln-model-path', dest='dual_vln_model_path', default='')
     parser.add_argument('--internnav-device', '--dual-vln-device', dest='dual_vln_device', default='cpu')
-    parser.add_argument('--internnav-inference-rate-hz', '--dual-vln-inference-rate-hz', dest='dual_vln_inference_rate_hz', type=float, default=10.0)
+    parser.add_argument(
+        '--internnav-inference-rate-hz',
+        '--dual-vln-inference-rate-hz',
+        '--internnav-planning-rate-hz',
+        '--dual-vln-planning-rate-hz',
+        dest='dual_vln_inference_rate_hz',
+        type=float,
+        default=3.3333333333,
+        help=(
+            'Outer InternNav realworld client planning request rate. '
+            'System-2 cadence is controlled separately by plan_step_gap in the InternNav server.'
+        ),
+    )
     parser.add_argument('--internnav-inference-timeout-sec', '--dual-vln-inference-timeout-sec', dest='dual_vln_inference_timeout_sec', type=float, default=0.2)
     parser.add_argument('--internnav-rgb-topic', '--dual-vln-rgb-topic', dest='dual_vln_rgb_topic', default='')
     parser.add_argument('--internnav-depth-topic', '--dual-vln-depth-topic', dest='dual_vln_depth_topic', default='')
@@ -2437,6 +2490,15 @@ def main() -> int:
                 'value': normalized_scenario_file,
             }
             args.scenario_file = normalized_scenario_file
+    manifest_binding_failure = (
+        str(getattr(args, 'world', '') or '').strip().startswith('grscenes_')
+        and not str(getattr(args, 'vln_instruction_file', '') or '').strip()
+        and _is_generic_vln_instruction(getattr(args, 'vln_instruction', ''))
+        and (
+            'vln_instruction_manifest_lookup_failed' in runtime_adjustments
+            or 'vln_instruction_manifest_not_found' in runtime_adjustments
+        )
+    )
 
     arena_eval_share = get_package_share_directory('arena_evaluation')
     bringup_share = get_package_share_directory('arena_bringup')
@@ -2460,6 +2522,8 @@ def main() -> int:
     env = os.environ.copy()
     if args.scenario_file:
         env['ARENA_SCENARIO_FILE'] = str(args.scenario_file)
+    if str(args.world or '').startswith('grscenes_'):
+        env.setdefault('ARENA_ISAAC_LOAD_USD_TIMEOUT_SEC', '1800.0')
     resolved_ros_env = _normalize_external_ros_env(env) if args.internnav_external_server else {
         key: {'value': str(env.get(key, '')).strip(), 'source': 'environment' if str(env.get(key, '')).strip() else 'unset'}
         for key in ('ROS_DOMAIN_ID', 'RMW_IMPLEMENTATION', 'ROS_LOCALHOST_ONLY')
@@ -2612,8 +2676,8 @@ def main() -> int:
             'scenario_config_path': args.scenario_config_path,
             'social_eval': args.social_eval,
             'social_eval_expectations': {
-                'world': 'hospital_1',
-                'robot': 'Ai2_Bot2',
+                'world': args.world,
+                'robot': args.robot,
                 'human': 'hunav',
                 'tm_obstacles': 'scenario',
                 'scenario_file': args.scenario_file or 'normal',
@@ -2637,6 +2701,7 @@ def main() -> int:
             'dual_vln_mode': args.dual_vln_mode,
             'dual_vln_model_path': args.dual_vln_model_path,
             'dual_vln_device': args.dual_vln_device,
+            'internnav_planning_rate_hz': args.dual_vln_inference_rate_hz,
             'dual_vln_inference_rate_hz': args.dual_vln_inference_rate_hz,
             'dual_vln_inference_timeout_sec': args.dual_vln_inference_timeout_sec,
             'dual_vln_rgb_topic': args.dual_vln_rgb_topic,
@@ -2684,6 +2749,7 @@ def main() -> int:
             'shutdown_grace_period_sec': args.shutdown_grace_period_sec,
             'output_prefix': args.output_prefix,
             'output_root': output_root,
+            'isaac_load_usd_timeout_sec': env.get('ARENA_ISAAC_LOAD_USD_TIMEOUT_SEC'),
         },
         'runtime_adjustments': runtime_adjustments,
         'runtime_environment': {
@@ -2716,6 +2782,27 @@ def main() -> int:
 
     manifest_path = os.path.join(output_dir, 'run_manifest.yaml')
     _write_yaml(manifest_path, manifest)
+    if manifest_binding_failure:
+        manifest['result'].update(
+            {
+                'launch_returncode': None,
+                'metrics_returncode': None,
+                'social_metrics_returncode': None,
+                'artifact_validation_returncode': None,
+                'timed_out': False,
+                'end_reason': 'vln_instruction_manifest_lookup_failed',
+            }
+        )
+        _write_yaml(manifest_path, manifest)
+        print(
+            (
+                'GRScenes VLN instruction manifest lookup failed; refusing to run '
+                f'with generic instruction {args.vln_instruction!r}. '
+                f'See {manifest_path} runtime_adjustments for lookup diagnostics.'
+            ),
+            file=sys.stderr,
+        )
+        return 2
 
     env.setdefault('RCUTILS_LOGGING_BUFFERED_STREAM', '1')
     env.setdefault('ARENA_EVAL_PYTHON', sys.executable)
@@ -2747,6 +2834,7 @@ def main() -> int:
     env['ARENA_EVAL_INTERNNAV_ACTION_VISUALIZATION_TOPIC'] = str(args.dual_vln_action_visualization_topic)
     env['ARENA_EVAL_INTERNNAV_VISUALIZATION_RATE_HZ'] = str(args.dual_vln_visualization_rate_hz)
     env['ARENA_EVAL_INTERNNAV_MODEL_OUTPUT_TOPIC'] = str(args.dual_vln_model_output_topic)
+    env['ARENA_EVAL_INTERNNAV_PLANNING_RATE_HZ'] = str(args.dual_vln_inference_rate_hz)
     env['ARENA_EVAL_INTERNNAV_INFERENCE_RATE_HZ'] = str(args.dual_vln_inference_rate_hz)
     env['ARENA_EVAL_INTERNNAV_INFERENCE_TIMEOUT_SEC'] = str(args.dual_vln_inference_timeout_sec)
     env['ARENA_EVAL_INTERNNAV_TRACE_PATH'] = internnav_trace_path
@@ -2852,7 +2940,19 @@ def main() -> int:
         args.task_reset_topic,
         robot_scenario_reset_topic,
     )
-    status_proc = None if args.internnav_direct_cmd_vel else _start_status_watcher(env, args.dual_vln_status_topic, dual_vln_status_path, internnav_trace_path)
+    # Direct official-client mode does not require wrapper status for pass/fail,
+    # but the official ROS client publishes a JSON status stream.  Record it per
+    # run so batch sweeps get run-local model/control evidence even when the
+    # long-lived external client was started with a different trace path.
+    status_proc = _start_status_watcher(
+        env,
+        args.dual_vln_status_topic,
+        dual_vln_status_path,
+        internnav_trace_path,
+        task_reset_topic=args.task_reset_topic,
+        scenario_reset_topic=robot_scenario_reset_topic,
+        require_reset_for_history=bool(args.internnav_direct_cmd_vel),
+    )
     launch_proc = subprocess.Popen(
         launch_cmd,
         env=env,

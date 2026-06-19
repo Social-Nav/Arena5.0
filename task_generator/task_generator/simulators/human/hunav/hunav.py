@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import os
 import time
 import traceback
@@ -551,9 +552,8 @@ class HunavHumanSimulator(
                 while not done.is_set():
                     await rate.get()
                     async with self._agents_lock:
-                        await self._simulator.pedestrian_update(
-                            self._arena_pedestrians_container
-                        )
+                        pedestrians_snapshot = copy.deepcopy(self._arena_pedestrians_container)
+                    await self._simulator.pedestrian_update(pedestrians_snapshot)
         except asyncio.CancelledError:
             pass
         except Exception as e:

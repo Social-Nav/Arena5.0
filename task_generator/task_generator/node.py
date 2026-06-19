@@ -360,9 +360,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
 
         await self._task.reset(**kwargs)
 
-        await self._wait_for_human_states_ready_if_required()
-
         await self._simulator.after_reset_task()
+
+        await self._wait_for_human_states_ready_if_required()
 
         wait_navigation_ready = getattr(self._task, 'wait_navigation_ready', None)
         if callable(wait_navigation_ready):

@@ -15,10 +15,28 @@ import yaml
 
 
 REQUIRED_ENVIRONMENT = {
-    "world": "hospital_1",
-    "robot": "Ai2_Bot2",
     "human": "hunav",
     "tm_obstacles": "scenario",
+}
+
+REQUIRED_DYNAMIC_SCENE_FIELDS = (
+    'moving_human_count',
+    'human_motion_total_m',
+    'human_motion_time_sec',
+    'robot_motion_time_sec',
+    'human_robot_motion_overlap_time_sec',
+    'human_robot_interaction_time_sec',
+    'dynamic_scene_success',
+)
+
+DIRECT_CLIENT_CONTROL_EVENTS = {
+    "planning_response_received",
+    "trajectory",
+    "discrete_action",
+    "stop",
+    "unknown_response",
+    "internnav_command",
+    "control_tick",
 }
 
 
@@ -63,20 +81,37 @@ def _parse_value(value: str) -> Any:
 
 def _check_environment(manifest: dict[str, Any]) -> dict[str, Any]:
     params = manifest.get('parameters', {}) if isinstance(manifest, dict) else {}
+    expectations = params.get('social_eval_expectations') if isinstance(params.get('social_eval_expectations'), dict) else {}
+    required = {
+        **REQUIRED_ENVIRONMENT,
+        **{
+            key: expectations[key]
+            for key in ('world', 'robot')
+            if expectations.get(key)
+        },
+    }
     mismatches = {}
-    for key, expected in REQUIRED_ENVIRONMENT.items():
+    for key, expected in required.items():
         actual = params.get(key)
         if str(actual) != expected:
             mismatches[key] = {"expected": expected, "actual": actual}
     return {
         "pass": not mismatches,
-        "required": REQUIRED_ENVIRONMENT,
+        "required": required,
         "mismatches": mismatches,
     }
 
 
-def _human_rows(run_dir: Path) -> tuple[int, int, int]:
-    rows = _read_csv(run_dir / 'human_states.csv')
+def _human_csv_path(run_dir: Path) -> Path:
+    human_states = run_dir / 'human_states.csv'
+    if human_states.exists():
+        return human_states
+    return run_dir / 'pedsim_agents_data.csv'
+
+
+def _human_rows(run_dir: Path) -> tuple[Path, int, int, int]:
+    path = _human_csv_path(run_dir)
+    rows = _read_csv(path)
     nonempty = 0
     max_humans = 0
     for row in rows:
@@ -86,16 +121,18 @@ def _human_rows(run_dir: Path) -> tuple[int, int, int]:
         if isinstance(data, list) and data:
             nonempty += 1
             max_humans = max(max_humans, len(data))
-    return len(rows), nonempty, max_humans
+    return path, len(rows), nonempty, max_humans
 
 
 def _check_humans(run_dir: Path, social_metrics: dict[str, Any] | None) -> dict[str, Any]:
-    rows, nonempty, max_humans = _human_rows(run_dir)
+    path, rows, nonempty, max_humans = _human_rows(run_dir)
     metrics_present = bool(social_metrics and social_metrics.get('humans_present'))
     passed = max_humans > 0 and nonempty > 0 and metrics_present
     return {
         "pass": passed,
         "human_states_csv_present": (run_dir / 'human_states.csv').exists(),
+        "pedsim_agents_data_csv_present": (run_dir / 'pedsim_agents_data.csv').exists(),
+        "human_source_csv": path.name,
         "human_states_rows": rows,
         "human_states_nonempty_rows": nonempty,
         "max_humans_observed": max_humans,
@@ -157,7 +194,7 @@ def _trace_events(trace_path: Path) -> tuple[int, dict[str, int]]:
         except Exception:
             continue
         total += 1
-        event_type = str(record.get('event_type') or '')
+        event_type = str(record.get('event_type') or record.get('event') or '')
         counts[event_type] = counts.get(event_type, 0) + 1
     return total, counts
 
@@ -186,20 +223,31 @@ def _check_model_control(run_dir: Path, manifest: dict[str, Any]) -> dict[str, A
     total, event_counts = _trace_events(trace_path)
     teleports = _odom_teleports(run_dir)
     status = _read_json(status_path)
+    direct_cmd_vel = bool(params.get('internnav_direct_cmd_vel') or params.get('dual_vln_direct_cmd_vel'))
     model_results = event_counts.get('model_result', 0)
-    missing_model_control_loop = not trace_path.exists() or model_results <= 0 or status is None
+    direct_control_events = sum(event_counts.get(event, 0) for event in DIRECT_CLIENT_CONTROL_EVENTS)
+    has_trace_evidence = model_results > 0 or direct_control_events > 0
+    status_required = not direct_cmd_vel
+    missing_model_control_loop = (
+        not trace_path.exists()
+        or not has_trace_evidence
+        or (status_required and status is None)
+    )
     return {
-        "pass": trace_path.exists() and model_results > 0 and status is not None and not teleports,
+        "pass": trace_path.exists() and has_trace_evidence and (status is not None or not status_required) and not teleports,
         "trace_present": trace_path.exists(),
         "trace_record_count": total,
         "trace_event_counts": event_counts,
         "model_result_count": model_results,
+        "direct_control_event_count": direct_control_events,
         "status_present": status is not None,
+        "status_required": status_required,
         "status": status,
         "odom_present": bool(_read_csv(run_dir / 'odom.csv')),
         "large_teleports": teleports,
         "missing_model_control_loop": missing_model_control_loop,
         "external_server": bool(params.get('internnav_external_server')),
+        "direct_cmd_vel": direct_cmd_vel,
         "external_server_preflight": result.get('external_server_preflight'),
     }
 
@@ -252,6 +300,60 @@ def _check_metrics(run_dir: Path, social_metrics: dict[str, Any] | None) -> dict
     }
 
 
+def _check_dynamic_scene(social_metrics: dict[str, Any] | None) -> dict[str, Any]:
+    social_present = isinstance(social_metrics, dict)
+    thresholds = social_metrics.get('thresholds') if social_present and isinstance(social_metrics.get('thresholds'), dict) else {}
+
+    def number(key: str) -> float:
+        try:
+            return float(social_metrics.get(key) or 0.0) if social_present else 0.0
+        except Exception:
+            return 0.0
+
+    moving_human_count = int(number('moving_human_count'))
+    min_moving_humans = int(float(thresholds.get('min_moving_human_count', 1) or 1))
+    human_motion_time_sec = number('human_motion_time_sec')
+    min_human_motion_time_sec = float(thresholds.get('min_human_motion_time_sec', 5.0) or 5.0)
+    overlap_time_sec = number('human_robot_motion_overlap_time_sec')
+    min_overlap_time_sec = float(thresholds.get('min_human_robot_motion_overlap_time_sec', 3.0) or 3.0)
+    interaction_time_sec = number('human_robot_interaction_time_sec')
+    min_interaction_time_sec = float(thresholds.get('min_human_robot_interaction_time_sec', 1.0) or 1.0)
+    dynamic_scene_success = bool(social_metrics.get('dynamic_scene_success')) if social_present else False
+
+    failures: list[str] = []
+    if not social_present:
+        failures.append('social_metrics_missing')
+    elif not all(field in social_metrics for field in REQUIRED_DYNAMIC_SCENE_FIELDS):
+        failures.append('dynamic_scene_fields_missing')
+    if moving_human_count < min_moving_humans:
+        failures.append('moving_human_count_below_threshold')
+    if human_motion_time_sec < min_human_motion_time_sec:
+        failures.append('human_motion_time_below_threshold')
+    if overlap_time_sec < min_overlap_time_sec:
+        failures.append('human_robot_motion_overlap_below_threshold')
+    if interaction_time_sec < min_interaction_time_sec:
+        failures.append('human_robot_interaction_time_below_threshold')
+    if social_present and not dynamic_scene_success:
+        failures.append('dynamic_scene_success_false')
+
+    return {
+        "pass": not failures,
+        "failures": failures,
+        "required_fields_present": all(field in social_metrics for field in REQUIRED_DYNAMIC_SCENE_FIELDS) if social_present else False,
+        "moving_human_count": moving_human_count,
+        "min_moving_human_count": min_moving_humans,
+        "human_motion_total_m": number('human_motion_total_m'),
+        "human_motion_time_sec": human_motion_time_sec,
+        "min_human_motion_time_sec": min_human_motion_time_sec,
+        "robot_motion_time_sec": number('robot_motion_time_sec'),
+        "human_robot_motion_overlap_time_sec": overlap_time_sec,
+        "min_human_robot_motion_overlap_time_sec": min_overlap_time_sec,
+        "human_robot_interaction_time_sec": interaction_time_sec,
+        "min_human_robot_interaction_time_sec": min_interaction_time_sec,
+        "dynamic_scene_success": dynamic_scene_success,
+    }
+
+
 def _frame_analysis(run_dir: Path) -> dict[str, Any]:
     analysis = _read_json(run_dir / 'frame_analysis' / 'video_frame_analysis.json')
     if analysis is None:
@@ -293,6 +395,7 @@ def generate_artifact_validation(run_dir: str | os.PathLike[str]) -> dict[str, A
         "model_control": _check_model_control(run_path, manifest),
         "videos": _check_videos(run_path, video_index),
         "metrics": _check_metrics(run_path, social_metrics),
+        "dynamic_scene": _check_dynamic_scene(social_metrics),
     }
     warnings = []
     frame_analysis = _frame_analysis(run_path)

@@ -225,7 +225,7 @@ source_fn(){
 }
 
 launch(){
-    local robot namespace mode model_path device rgb_topic depth_topic camera_info_topic instruction_topic navigation_goal_topic eval_ready_topic task_reset_topic scenario_reset_topic trace_path status_topic visualization_topic action_visualization_topic model_output_topic model_output_policy visualization_rate_hz enable_visualization inference_rate_hz inference_timeout_sec camera_ready_timeout_sec internnav_http_url internnav_http_timeout_sec adapter_target extra_ros_args cmd_vel_topic odom_topic
+    local robot namespace mode model_path device rgb_topic depth_topic camera_info_topic instruction_topic navigation_goal_topic eval_ready_topic task_reset_topic scenario_reset_topic trace_path status_topic visualization_topic action_visualization_topic model_output_topic model_output_policy visualization_rate_hz enable_visualization planning_rate_hz inference_rate_hz inference_timeout_sec camera_ready_timeout_sec internnav_http_url internnav_http_timeout_sec adapter_target extra_ros_args cmd_vel_topic odom_topic
     robot="${ARENA_INTERNNAV_ROBOT:-Ai2_Bot2}"
     namespace="${ARENA_INTERNNAV_NAMESPACE:-/task_generator_node/$robot}"
     mode="${ARENA_INTERNNAV_MODE:-internnav}"
@@ -249,7 +249,8 @@ launch(){
     model_output_policy="${ARENA_INTERNNAV_MODEL_OUTPUT_POLICY:-${ARENA_EVAL_INTERNNAV_MODEL_OUTPUT_POLICY:-trajectory}}"
     visualization_rate_hz="${ARENA_INTERNNAV_VISUALIZATION_RATE_HZ:-${ARENA_EVAL_INTERNNAV_VISUALIZATION_RATE_HZ:-5.0}}"
     enable_visualization="${ARENA_INTERNNAV_ENABLE_VISUALIZATION:-${ARENA_EVAL_INTERNNAV_ENABLE_VISUALIZATION:-true}}"
-    inference_rate_hz="${ARENA_INTERNNAV_INFERENCE_RATE_HZ:-10.0}"
+    planning_rate_hz="${ARENA_INTERNNAV_PLANNING_RATE_HZ:-${ARENA_EVAL_INTERNNAV_PLANNING_RATE_HZ:-${ARENA_INTERNNAV_INFERENCE_RATE_HZ:-${ARENA_EVAL_INTERNNAV_INFERENCE_RATE_HZ:-3.3333333333}}}}"
+    inference_rate_hz="$planning_rate_hz"
     inference_timeout_sec="${ARENA_INTERNNAV_INFERENCE_TIMEOUT_SEC:-120.0}"
     official_http="${ARENA_INTERNNAV_OFFICIAL_HTTP:-true}"
     http_host="${ARENA_INTERNNAV_HTTP_HOST:-127.0.0.1}"
@@ -288,7 +289,8 @@ launch(){
             --visualization-rate-hz) visualization_rate_hz="$2"; shift 2 ;;
             --enable-visualization) enable_visualization="true"; shift ;;
             --disable-visualization) enable_visualization="false"; shift ;;
-            --inference-rate-hz) inference_rate_hz="$2"; shift 2 ;;
+            --planning-rate-hz) planning_rate_hz="$2"; shift 2 ;;
+            --inference-rate-hz) planning_rate_hz="$2"; inference_rate_hz="$2"; shift 2 ;;
             --inference-timeout-sec) inference_timeout_sec="$2"; shift 2 ;;
             --official-http) official_http="true"; shift ;;
             --no-official-http) official_http="false"; shift ;;
@@ -305,7 +307,8 @@ launch(){
     done
 
     visualization_rate_hz="$(ros_double "$visualization_rate_hz")"
-    inference_rate_hz="$(ros_double "$inference_rate_hz")"
+    planning_rate_hz="$(ros_double "$planning_rate_hz")"
+    inference_rate_hz="$planning_rate_hz"
     inference_timeout_sec="$(ros_double "$inference_timeout_sec")"
     if [ -z "$internnav_http_timeout_sec" ]; then
         internnav_http_timeout_sec="$inference_timeout_sec"
@@ -349,7 +352,7 @@ launch(){
     if [ "$enable_visualization" = "true" ]; then
         visualization_flag="--enable-visualization"
     fi
-    cmd="$cmd cd /opt/arena_ws/deps/InternNav/scripts/realworld; $(venv_path)/bin/python -u http_internvla_client.py --url '$internnav_http_url' --rgb-topic '$rgb_topic' --depth-topic '$depth_topic' --odom-topic '$odom_topic' --cmd-vel-topic '$cmd_vel_topic' --instruction-topic '$instruction_topic' --camera-info-topic '$camera_info_topic' --navigation-goal-topic '$navigation_goal_topic' --eval-ready-topic '$eval_ready_topic' --task-reset-topic '$task_reset_topic' --scenario-reset-topic '$scenario_reset_topic' --status-topic '$status_topic' --model-output-topic '$model_output_topic' --visualization-topic '$visualization_topic' --action-visualization-topic '$action_visualization_topic' --visualization-rate-hz '$visualization_rate_hz' $visualization_flag --trace-path '$trace_path' $extra_ros_args"
+    cmd="$cmd cd /opt/arena_ws/deps/InternNav/scripts/realworld; $(venv_path)/bin/python -u http_internvla_client.py --url '$internnav_http_url' --rgb-topic '$rgb_topic' --depth-topic '$depth_topic' --odom-topic '$odom_topic' --cmd-vel-topic '$cmd_vel_topic' --instruction-topic '$instruction_topic' --camera-info-topic '$camera_info_topic' --navigation-goal-topic '$navigation_goal_topic' --eval-ready-topic '$eval_ready_topic' --task-reset-topic '$task_reset_topic' --scenario-reset-topic '$scenario_reset_topic' --status-topic '$status_topic' --model-output-topic '$model_output_topic' --visualization-topic '$visualization_topic' --action-visualization-topic '$action_visualization_topic' --visualization-rate-hz '$visualization_rate_hz' --planning-rate-hz '$planning_rate_hz' $visualization_flag --trace-path '$trace_path' $extra_ros_args"
 
     arena_docker_compose exec -T internnav /entrypoint.sh bash -lc "$cmd"
 }
@@ -391,7 +394,8 @@ Launch options:
   --action-visualization-topic TOPIC Default: internnav/action_image
   --model-output-topic TOPIC    Default: internnav/model_output
   --visualization-rate-hz HZ    Default: 5.0
-  --inference-rate-hz HZ        Default: 10.0
+  --planning-rate-hz HZ         Outer realworld client /eval_dual request rate. Default: 3.3333333333
+  --inference-rate-hz HZ        Deprecated alias for --planning-rate-hz
   --inference-timeout-sec SEC   Default: 120.0
   --official-http               Start upstream InternNav realworld HTTP server first (default)
   --no-official-http            Do not start upstream HTTP server; use an already running --realworld-http-url

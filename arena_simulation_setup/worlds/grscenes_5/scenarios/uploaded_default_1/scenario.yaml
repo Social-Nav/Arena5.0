@@ -4,7 +4,7 @@ dynamic:
 - name: hunav_1
   model: female_adult_business_02
   pose: [-3.71374, -2.76407, 104.98163]
-  behavior_tree: BTRegularNav.xml
+  behavior_tree: ./BTRegularNav.xml
   velocity: 0.83
   desired_velocity: 1.04
   waypoints:
@@ -23,7 +23,7 @@ dynamic:
 - name: hunav_2
   model: male_adult_medical_01
   pose: [-11.21422, 8.89417, 4.3987]
-  behavior_tree: BTRegularNav.xml
+  behavior_tree: ./BTRegularNav.xml
   velocity: 0.78
   desired_velocity: 0.98
   waypoints:
