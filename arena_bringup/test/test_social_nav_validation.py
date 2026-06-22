@@ -145,6 +145,9 @@ def test_metrics_check_requires_strict_task_and_social_success(tmp_path):
 
     assert result["pass"] is True
     assert result["legacy_task_success"] is True
+    assert result["task_success"] is True
+    assert result["legacy_social_success"] is True
+    assert result["social_success"] is True
     assert result["strict_task_success"] is True
     assert result["strict_social_success"] is True
 
@@ -173,5 +176,37 @@ def test_metrics_check_fails_legacy_goal_reached_when_strict_task_failed(tmp_pat
 
     assert result["pass"] is False
     assert result["legacy_task_success"] is True
+    assert result["task_success"] is False
+    assert result["legacy_social_success"] is True
+    assert result["social_success"] is True
     assert result["strict_task_success"] is False
     assert result["strict_task_failure_reasons"] == ["goal_not_reached"]
+
+
+def test_metrics_check_reports_strict_social_as_default_social_success(tmp_path):
+    _write_rows(tmp_path / "metrics.csv", ["result"], [{"result": "GOAL_REACHED"}])
+    (tmp_path / "vln_task_metrics.json").write_text(
+        json.dumps({"strict_task_success": True, "strict_task_failure_reasons": []}),
+        encoding="utf-8",
+    )
+    social_metrics = {
+        "humans_present": True,
+        "legacy_social_success": True,
+        "social_success": False,
+        "strict_social_success": False,
+        "strict_social_failure_reasons": ["footprint_near_miss"],
+        "path_length_m": 1.0,
+        "base_metrics": {"first": {"result": "GOAL_REACHED"}},
+        "min_human_distance_m": 2.0,
+        "personal_space_violation_time_sec": 0.0,
+        "near_miss_count": 0,
+        "human_collision_count": 0,
+        "crowd_freezing_time_sec": 0.0,
+    }
+
+    result = _check_metrics(tmp_path, social_metrics)
+
+    assert result["pass"] is False
+    assert result["legacy_social_success"] is True
+    assert result["social_success"] is False
+    assert result["strict_social_success"] is False

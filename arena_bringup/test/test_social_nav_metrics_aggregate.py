@@ -87,10 +87,14 @@ def test_aggregate_reports_legacy_and_strict_rates_separately(tmp_path):
     summary = aggregate_summary([row])
 
     assert row["legacy_task_success"] is True
+    assert row["task_success"] is False
     assert row["strict_task_success"] is False
     assert row["legacy_social_success"] is True
+    assert row["social_success"] is False
     assert row["strict_social_success"] is False
     assert "legacy_task_false_positive" in row["failure_tags"]
+    assert summary["task_success_rate"] == 0.0
+    assert summary["social_success_rate"] == 0.0
     assert summary["legacy_task_success_rate"] == 1.0
     assert summary["strict_task_success_rate"] == 0.0
     assert summary["legacy_social_success_rate"] == 1.0

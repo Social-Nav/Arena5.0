@@ -23,16 +23,20 @@ import yaml
 
 DEFAULT_TASK_METRICS = [
     'episode_result',
+    'strict_task_success',
     'path_length_m',
     'goal_progress_m',
     'robot_moved',
     'timeout',
 ]
 DEFAULT_SOCIAL_METRICS = [
-    'social_success',
+    'strict_social_success',
     'min_human_distance_m',
+    'min_footprint_clearance_m',
     'near_miss_count',
     'human_collision_count',
+    'footprint_near_miss_count',
+    'footprint_human_collision_count',
     'personal_space_violation_time_sec',
     'crowd_freezing_time_sec',
 ]

@@ -114,8 +114,8 @@ def summarize_run(run_dir: Path) -> dict[str, Any]:
     episode_result = str(metrics_check.get('episode_result') or base_first.get('result') or '')
     legacy_task_success = bool(metrics_check.get('legacy_task_success')) if 'legacy_task_success' in metrics_check else episode_result == 'GOAL_REACHED'
     strict_task_success = bool(metrics_check.get('strict_task_success')) if 'strict_task_success' in metrics_check else _as_bool(vln_task.get('strict_task_success'))
-    legacy_social_success = _as_bool(social.get('social_success')) if isinstance(social, dict) else False
-    strict_social_success = _as_bool(social.get('strict_social_success')) if isinstance(social, dict) else False
+    legacy_social_success = _as_bool(social.get('legacy_social_success', social.get('social_success'))) if isinstance(social, dict) else False
+    strict_social_success = _as_bool(social.get('strict_social_success', social.get('social_success'))) if isinstance(social, dict) else False
     artifact_pass = _as_bool(validation.get('overall_pass')) if isinstance(validation, dict) else False
     social_nav_ready = _as_bool(validation.get('social_nav_ready')) if isinstance(validation, dict) else False
 
@@ -144,10 +144,10 @@ def summarize_run(run_dir: Path) -> dict[str, Any]:
         'human': params.get('human') or '',
         'scenario_file': params.get('scenario_file') or '',
         'episode_result': episode_result,
-        'task_success': legacy_task_success,
+        'task_success': strict_task_success,
         'legacy_task_success': legacy_task_success,
         'strict_task_success': strict_task_success,
-        'social_success': legacy_social_success,
+        'social_success': strict_social_success,
         'legacy_social_success': legacy_social_success,
         'strict_social_success': strict_social_success,
         'artifact_validation_pass': artifact_pass,
