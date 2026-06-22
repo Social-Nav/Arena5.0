@@ -225,7 +225,7 @@ source_fn(){
 }
 
 launch(){
-    local robot namespace mode model_path device rgb_topic depth_topic camera_info_topic instruction_topic navigation_goal_topic eval_ready_topic task_reset_topic scenario_reset_topic trace_path status_topic visualization_topic action_visualization_topic model_output_topic model_output_policy visualization_rate_hz enable_visualization planning_rate_hz inference_rate_hz inference_timeout_sec camera_ready_timeout_sec internnav_http_url internnav_http_timeout_sec adapter_target extra_ros_args cmd_vel_topic odom_topic
+    local robot namespace mode model_path device rgb_topic depth_topic camera_info_topic instruction_topic navigation_goal_topic eval_ready_topic task_reset_topic scenario_reset_topic trace_path status_topic visualization_topic action_visualization_topic model_output_topic model_output_policy visualization_rate_hz enable_visualization planning_rate_hz inference_rate_hz inference_timeout_sec camera_ready_timeout_sec internnav_http_url internnav_http_timeout_sec adapter_target extra_ros_args cmd_vel_topic cmd_vel_topic_explicit raw_cmd_vel_topic timing_mode odom_topic
     robot="${ARENA_INTERNNAV_ROBOT:-Ai2_Bot2}"
     namespace="${ARENA_INTERNNAV_NAMESPACE:-/task_generator_node/$robot}"
     mode="${ARENA_INTERNNAV_MODE:-internnav}"
@@ -236,6 +236,9 @@ launch(){
     camera_info_topic="${ARENA_INTERNNAV_CAMERA_INFO_TOPIC:-head_camera/camera_info}"
     odom_topic="${ARENA_INTERNNAV_ODOM_TOPIC:-odom}"
     cmd_vel_topic="${ARENA_INTERNNAV_CMD_VEL_TOPIC:-cmd_vel}"
+    cmd_vel_topic_explicit="false"
+    raw_cmd_vel_topic="${ARENA_INTERNNAV_RAW_CMD_VEL_TOPIC:-${ARENA_EVAL_INTERNNAV_RAW_CMD_VEL_TOPIC:-internnav/raw_cmd_vel}}"
+    timing_mode="${ARENA_INTERNNAV_TIMING_MODE:-${ARENA_EVAL_INTERNNAV_TIMING_MODE:-wall}}"
     instruction_topic="${ARENA_INTERNNAV_INSTRUCTION_TOPIC:-/task_generator_node/vln_instruction}"
     navigation_goal_topic="${ARENA_INTERNNAV_NAVIGATION_GOAL_TOPIC:-episode_goal_pose}"
     eval_ready_topic="${ARENA_INTERNNAV_EVAL_READY_TOPIC:-/task_generator_node/eval_ready}"
@@ -274,7 +277,9 @@ launch(){
             --depth-topic) depth_topic="$2"; shift 2 ;;
             --camera-info-topic) camera_info_topic="$2"; shift 2 ;;
             --odom-topic) odom_topic="$2"; shift 2 ;;
-            --cmd-vel-topic) cmd_vel_topic="$2"; shift 2 ;;
+            --cmd-vel-topic) cmd_vel_topic="$2"; cmd_vel_topic_explicit="true"; shift 2 ;;
+            --raw-cmd-vel-topic) raw_cmd_vel_topic="$2"; shift 2 ;;
+            --timing-mode) timing_mode="$2"; shift 2 ;;
             --instruction-topic) instruction_topic="$2"; shift 2 ;;
             --navigation-goal-topic) navigation_goal_topic="$2"; shift 2 ;;
             --eval-ready-topic) eval_ready_topic="$2"; shift 2 ;;
@@ -310,6 +315,9 @@ launch(){
     planning_rate_hz="$(ros_double "$planning_rate_hz")"
     inference_rate_hz="$planning_rate_hz"
     inference_timeout_sec="$(ros_double "$inference_timeout_sec")"
+    if [ "$cmd_vel_topic_explicit" != "true" ] && [ "$(printf '%s' "$timing_mode" | tr '[:upper:]' '[:lower:]')" != "wall" ]; then
+        cmd_vel_topic="$raw_cmd_vel_topic"
+    fi
     if [ -z "$internnav_http_timeout_sec" ]; then
         internnav_http_timeout_sec="$inference_timeout_sec"
     fi
@@ -380,7 +388,9 @@ Launch options:
   --depth-topic TOPIC           Default: head_camera/depth
   --camera-info-topic TOPIC     Default: head_camera/camera_info
   --odom-topic TOPIC            Default: odom
-  --cmd-vel-topic TOPIC         Default: cmd_vel
+  --cmd-vel-topic TOPIC         Default: cmd_vel, or raw timing topic when --timing-mode is not wall
+  --raw-cmd-vel-topic TOPIC     Default: internnav/raw_cmd_vel
+  --timing-mode MODE            wall or sim_time_realworld. Default: wall
   --instruction-topic TOPIC     Default: /task_generator_node/vln_instruction
   --navigation-goal-topic TOPIC Default: episode_goal_pose
   --eval-ready-topic TOPIC      Default: /task_generator_node/eval_ready

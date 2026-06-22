@@ -1400,6 +1400,42 @@ class RobotManager(NodeInterface):
                 'internnav/model_output',
                 empty_is_missing=True,
             )
+            internnav_timing_mode = self._get_compat_rosparam(
+                str,
+                'internnav_timing_mode',
+                'dual_vln_timing_mode',
+                'wall',
+                empty_is_missing=True,
+            )
+            internnav_timing_mode = os.environ.get('ARENA_EVAL_INTERNNAV_TIMING_MODE', internnav_timing_mode)
+            internnav_model_latency_sec = self._get_compat_rosparam(
+                float,
+                'internnav_model_latency_sec',
+                'dual_vln_model_latency_sec',
+                0.3,
+            )
+            internnav_model_latency_sec = float(
+                os.environ.get('ARENA_EVAL_INTERNNAV_MODEL_LATENCY_SEC', internnav_model_latency_sec)
+            )
+            internnav_latency_policy = self._get_compat_rosparam(
+                str,
+                'internnav_latency_policy',
+                'dual_vln_latency_policy',
+                'fixed',
+                empty_is_missing=True,
+            )
+            internnav_latency_policy = os.environ.get('ARENA_EVAL_INTERNNAV_LATENCY_POLICY', internnav_latency_policy)
+            internnav_raw_cmd_vel_topic = self._get_compat_rosparam(
+                str,
+                'internnav_raw_cmd_vel_topic',
+                'dual_vln_raw_cmd_vel_topic',
+                'internnav/raw_cmd_vel',
+                empty_is_missing=True,
+            )
+            internnav_raw_cmd_vel_topic = os.environ.get(
+                'ARENA_EVAL_INTERNNAV_RAW_CMD_VEL_TOPIC',
+                internnav_raw_cmd_vel_topic,
+            )
             internnav_external_server = self._get_compat_rosparam(
                 bool, 'internnav_external_server', 'dual_vln_external_server', False
             )
@@ -1471,6 +1507,14 @@ class RobotManager(NodeInterface):
                 'dual_vln_visualization_rate_hz': str(internnav_visualization_rate_hz),
                 'internnav_model_output_topic': internnav_model_output_topic,
                 'dual_vln_model_output_topic': internnav_model_output_topic,
+                'internnav_timing_mode': internnav_timing_mode,
+                'dual_vln_timing_mode': internnav_timing_mode,
+                'internnav_model_latency_sec': str(internnav_model_latency_sec),
+                'dual_vln_model_latency_sec': str(internnav_model_latency_sec),
+                'internnav_latency_policy': internnav_latency_policy,
+                'dual_vln_latency_policy': internnav_latency_policy,
+                'internnav_raw_cmd_vel_topic': internnav_raw_cmd_vel_topic,
+                'dual_vln_raw_cmd_vel_topic': internnav_raw_cmd_vel_topic,
                 'internnav_external_server': str(internnav_external_server).lower(),
                 'dual_vln_external_server': str(internnav_external_server).lower(),
                 'internnav_direct_cmd_vel': str(internnav_direct_cmd_vel).lower(),
@@ -1571,10 +1615,18 @@ class RobotManager(NodeInterface):
         empty_is_missing: bool = False,
     ):
         value = self.node.rosparam[type_].get(primary_name, None)
+        legacy_value = self.node.rosparam[type_].get(legacy_name, None)
+        if (
+            legacy_value is not None
+            and (not empty_is_missing or legacy_value != '')
+            and value == default
+            and legacy_value != default
+        ):
+            return legacy_value
+
         if value is not None and (not empty_is_missing or value != ''):
             return value
 
-        legacy_value = self.node.rosparam[type_].get(legacy_name, None)
         if legacy_value is not None and (not empty_is_missing or legacy_value != ''):
             return legacy_value
 

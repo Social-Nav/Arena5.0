@@ -2430,6 +2430,37 @@ def main() -> int:
     parser.add_argument('--internnav-action-visualization-topic', '--dual-vln-action-visualization-topic', dest='dual_vln_action_visualization_topic', default='internnav/action_image')
     parser.add_argument('--internnav-visualization-rate-hz', '--dual-vln-visualization-rate-hz', dest='dual_vln_visualization_rate_hz', type=float, default=5.0)
     parser.add_argument('--internnav-model-output-topic', '--dual-vln-model-output-topic', dest='dual_vln_model_output_topic', default='internnav/model_output')
+    parser.add_argument(
+        '--internnav-timing-mode',
+        '--dual-vln-timing-mode',
+        dest='dual_vln_timing_mode',
+        choices=['wall', 'sim_time_realworld'],
+        default='wall',
+        help='For direct official-client eval, delay raw cmd_vel in simulation time to emulate real-world model latency.',
+    )
+    parser.add_argument(
+        '--internnav-model-latency-sec',
+        '--dual-vln-model-latency-sec',
+        dest='dual_vln_model_latency_sec',
+        type=float,
+        default=0.3,
+        help='Fixed sim-time command delay used when --internnav-timing-mode=sim_time_realworld.',
+    )
+    parser.add_argument(
+        '--internnav-latency-policy',
+        '--dual-vln-latency-policy',
+        dest='dual_vln_latency_policy',
+        choices=['fixed', 'measured'],
+        default='fixed',
+        help='Latency source used by internnav_timing_manager.',
+    )
+    parser.add_argument(
+        '--internnav-raw-cmd-vel-topic',
+        '--dual-vln-raw-cmd-vel-topic',
+        dest='dual_vln_raw_cmd_vel_topic',
+        default='internnav/raw_cmd_vel',
+        help='Raw official-client command topic consumed by internnav_timing_manager.',
+    )
     parser.add_argument('--save-eval-video', action='store_true')
     parser.add_argument('--eval-video-fps', type=float, default=10.0)
     parser.add_argument('--eval-video-top-down-size-px', type=int, default=640)
@@ -2540,6 +2571,7 @@ def main() -> int:
     robot_camera_info_topic = _robot_topic(args.task_reset_topic, args.robot, args.dual_vln_camera_info_topic)
     robot_debug_overlay_topic = _robot_topic(args.task_reset_topic, args.robot, args.eval_video_debug_overlay_topic)
     robot_model_output_topic = _robot_topic(args.task_reset_topic, args.robot, args.dual_vln_model_output_topic)
+    robot_raw_cmd_vel_topic = _robot_topic(args.task_reset_topic, args.robot, args.dual_vln_raw_cmd_vel_topic)
     robot_sim_top_down_topic = _robot_topic(args.task_reset_topic, args.robot, args.eval_video_sim_top_down_topic)
     robot_odom_topic = _robot_topic(args.task_reset_topic, args.robot, 'odom')
     robot_goal_topic = _robot_topic(args.task_reset_topic, args.robot, 'episode_goal_pose')
@@ -2600,6 +2632,14 @@ def main() -> int:
         f'dual_vln_action_visualization_topic:={args.dual_vln_action_visualization_topic}',
         f'dual_vln_visualization_rate_hz:={args.dual_vln_visualization_rate_hz}',
         f'dual_vln_model_output_topic:={args.dual_vln_model_output_topic}',
+        f'internnav_timing_mode:={args.dual_vln_timing_mode}',
+        f'dual_vln_timing_mode:={args.dual_vln_timing_mode}',
+        f'internnav_model_latency_sec:={args.dual_vln_model_latency_sec}',
+        f'dual_vln_model_latency_sec:={args.dual_vln_model_latency_sec}',
+        f'internnav_latency_policy:={args.dual_vln_latency_policy}',
+        f'dual_vln_latency_policy:={args.dual_vln_latency_policy}',
+        f'internnav_raw_cmd_vel_topic:={args.dual_vln_raw_cmd_vel_topic}',
+        f'dual_vln_raw_cmd_vel_topic:={args.dual_vln_raw_cmd_vel_topic}',
     ]
     if args.local_planner == 'dual_vln':
         launch_cmd.append('enable_collision_monitor:=false')
@@ -2726,6 +2766,11 @@ def main() -> int:
             'dual_vln_visualization_rate_hz': args.dual_vln_visualization_rate_hz,
             'dual_vln_model_output_topic': args.dual_vln_model_output_topic,
             'dual_vln_model_output_topic_resolved': robot_model_output_topic,
+            'dual_vln_timing_mode': args.dual_vln_timing_mode,
+            'dual_vln_model_latency_sec': args.dual_vln_model_latency_sec,
+            'dual_vln_latency_policy': args.dual_vln_latency_policy,
+            'dual_vln_raw_cmd_vel_topic': args.dual_vln_raw_cmd_vel_topic,
+            'dual_vln_raw_cmd_vel_topic_resolved': robot_raw_cmd_vel_topic,
             'save_eval_video': args.save_eval_video,
             'eval_video_fps': args.eval_video_fps,
             'eval_video_top_down_size_px': args.eval_video_top_down_size_px,
@@ -2761,6 +2806,9 @@ def main() -> int:
             'dual_vln_status_path': dual_vln_status_path,
             'internnav_trace_path': internnav_trace_path,
             'internnav_diagnostic_summary_path': internnav_diagnostic_summary_path,
+            'internnav_timing_trace_path': os.path.join(output_dir, 'internnav_timing_trace.jsonl'),
+            'internnav_timing_summary_path': os.path.join(output_dir, 'internnav_timing_summary.json'),
+            'rtf_csv_path': os.path.join(output_dir, 'rtf.csv'),
             'social_metrics_path': os.path.join(output_dir, 'social_metrics.json') if args.social_eval else None,
             'artifact_validation_path': os.path.join(output_dir, 'artifact_validation.json') if args.social_eval else None,
             'postprocess_commands_file': postprocess_commands_path,
@@ -2834,6 +2882,10 @@ def main() -> int:
     env['ARENA_EVAL_INTERNNAV_ACTION_VISUALIZATION_TOPIC'] = str(args.dual_vln_action_visualization_topic)
     env['ARENA_EVAL_INTERNNAV_VISUALIZATION_RATE_HZ'] = str(args.dual_vln_visualization_rate_hz)
     env['ARENA_EVAL_INTERNNAV_MODEL_OUTPUT_TOPIC'] = str(args.dual_vln_model_output_topic)
+    env['ARENA_EVAL_INTERNNAV_TIMING_MODE'] = str(args.dual_vln_timing_mode)
+    env['ARENA_EVAL_INTERNNAV_MODEL_LATENCY_SEC'] = str(args.dual_vln_model_latency_sec)
+    env['ARENA_EVAL_INTERNNAV_LATENCY_POLICY'] = str(args.dual_vln_latency_policy)
+    env['ARENA_EVAL_INTERNNAV_RAW_CMD_VEL_TOPIC'] = str(args.dual_vln_raw_cmd_vel_topic)
     env['ARENA_EVAL_INTERNNAV_PLANNING_RATE_HZ'] = str(args.dual_vln_inference_rate_hz)
     env['ARENA_EVAL_INTERNNAV_INFERENCE_RATE_HZ'] = str(args.dual_vln_inference_rate_hz)
     env['ARENA_EVAL_INTERNNAV_INFERENCE_TIMEOUT_SEC'] = str(args.dual_vln_inference_timeout_sec)

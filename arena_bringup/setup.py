@@ -57,6 +57,8 @@ setup(
             'social_nav_scenario_eval = arena_bringup.social_nav_scenario:eval_main',
             'social_nav_metrics_aggregate = arena_bringup.social_nav_metrics_aggregate:main',
             'grscenes_episode_to_eval_config = arena_bringup.grscenes_episode_to_eval_config:main',
+            'internnav_timing_manager = arena_bringup.internnav_timing_manager:main',
+            'internnav_timing_plot = arena_bringup.internnav_timing_plot:main',
         ],
         'launch_ros.node_action': [
             'NodeLogLevelExtension = arena_bringup.extensions.NodeLogLevelExtension:NodeLogLevelExtension',

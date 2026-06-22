@@ -237,6 +237,26 @@ def generate_launch_description():
         default_value="",
     )
     dual_vln_status_topic = declare_legacy_alias("dual_vln_status_topic", internnav_status_topic)
+    internnav_timing_mode = LaunchArgument(
+        name="internnav_timing_mode",
+        default_value="wall",
+    )
+    dual_vln_timing_mode = declare_legacy_alias("dual_vln_timing_mode", internnav_timing_mode)
+    internnav_model_latency_sec = LaunchArgument(
+        name="internnav_model_latency_sec",
+        default_value="0.3",
+    )
+    dual_vln_model_latency_sec = declare_legacy_alias("dual_vln_model_latency_sec", internnav_model_latency_sec)
+    internnav_latency_policy = LaunchArgument(
+        name="internnav_latency_policy",
+        default_value="fixed",
+    )
+    dual_vln_latency_policy = declare_legacy_alias("dual_vln_latency_policy", internnav_latency_policy)
+    internnav_raw_cmd_vel_topic = LaunchArgument(
+        name="internnav_raw_cmd_vel_topic",
+        default_value="internnav/raw_cmd_vel",
+    )
+    dual_vln_raw_cmd_vel_topic = declare_legacy_alias("dual_vln_raw_cmd_vel_topic", internnav_raw_cmd_vel_topic)
     enable_collision_monitor = LaunchArgument(
         name="enable_collision_monitor",
         default_value="true",
@@ -382,6 +402,10 @@ def generate_launch_description():
                 'internnav_direct_cmd_vel': internnav_direct_cmd_vel.param_value(bool),
                 'internnav_command_service': dual_vln_command_service.param_value(str),
                 'internnav_status_topic': dual_vln_status_topic.param_value(str),
+                'internnav_timing_mode': dual_vln_timing_mode.param_value(str),
+                'internnav_model_latency_sec': dual_vln_model_latency_sec.param_value(float),
+                'internnav_latency_policy': dual_vln_latency_policy.param_value(str),
+                'internnav_raw_cmd_vel_topic': dual_vln_raw_cmd_vel_topic.param_value(str),
                 **dual_vln_mode.str_param,
                 **dual_vln_model_path.str_param,
                 **dual_vln_device.str_param,
@@ -405,6 +429,10 @@ def generate_launch_description():
                 **dual_vln_model_output_topic.str_param,
                 **dual_vln_command_service.str_param,
                 **dual_vln_status_topic.str_param,
+                **dual_vln_timing_mode.str_param,
+                **dual_vln_model_latency_sec.param(float),
+                **dual_vln_latency_policy.str_param,
+                **dual_vln_raw_cmd_vel_topic.str_param,
                 **internnav_external_server.param(bool),
                 **dual_vln_external_server.param(bool),
                 **internnav_direct_cmd_vel.param(bool),
@@ -459,6 +487,10 @@ def generate_launch_description():
                 'internnav_direct_cmd_vel': internnav_direct_cmd_vel.param_value(bool),
                 'internnav_command_service': dual_vln_command_service.param_value(str),
                 'internnav_status_topic': dual_vln_status_topic.param_value(str),
+                'internnav_timing_mode': dual_vln_timing_mode.param_value(str),
+                'internnav_model_latency_sec': dual_vln_model_latency_sec.param_value(float),
+                'internnav_latency_policy': dual_vln_latency_policy.param_value(str),
+                'internnav_raw_cmd_vel_topic': dual_vln_raw_cmd_vel_topic.param_value(str),
                 **dual_vln_mode.str_param,
                 **dual_vln_model_path.str_param,
                 **dual_vln_device.str_param,
@@ -482,6 +514,10 @@ def generate_launch_description():
                 **dual_vln_model_output_topic.str_param,
                 **dual_vln_command_service.str_param,
                 **dual_vln_status_topic.str_param,
+                **dual_vln_timing_mode.str_param,
+                **dual_vln_model_latency_sec.param(float),
+                **dual_vln_latency_policy.str_param,
+                **dual_vln_raw_cmd_vel_topic.str_param,
                 'dual_vln_external_server': dual_vln_external_server.param_value(bool),
                 'dual_vln_direct_cmd_vel': dual_vln_direct_cmd_vel.param_value(bool),
                 **enable_collision_monitor.param(bool),

@@ -295,6 +295,32 @@ def generate_launch_description():
         description='Optional external InternNav status topic. Defaults to the robot namespace status topic.'
     )
     dual_vln_status_topic = declare_legacy_alias('dual_vln_status_topic', internnav_status_topic)
+    internnav_timing_mode = LaunchArgument(
+        name='internnav_timing_mode',
+        default_value='wall',
+        choices=['wall', 'sim_time_realworld'],
+        description='Command timing emulation mode for direct official-client InternNav eval'
+    )
+    dual_vln_timing_mode = declare_legacy_alias('dual_vln_timing_mode', internnav_timing_mode)
+    internnav_model_latency_sec = LaunchArgument(
+        name='internnav_model_latency_sec',
+        default_value='0.3',
+        description='Sim-time command delay used by internnav_timing_manager'
+    )
+    dual_vln_model_latency_sec = declare_legacy_alias('dual_vln_model_latency_sec', internnav_model_latency_sec)
+    internnav_latency_policy = LaunchArgument(
+        name='internnav_latency_policy',
+        default_value='fixed',
+        choices=['fixed', 'measured'],
+        description='Latency source used by internnav_timing_manager'
+    )
+    dual_vln_latency_policy = declare_legacy_alias('dual_vln_latency_policy', internnav_latency_policy)
+    internnav_raw_cmd_vel_topic = LaunchArgument(
+        name='internnav_raw_cmd_vel_topic',
+        default_value='internnav/raw_cmd_vel',
+        description='Raw official-client cmd_vel topic consumed by internnav_timing_manager'
+    )
+    dual_vln_raw_cmd_vel_topic = declare_legacy_alias('dual_vln_raw_cmd_vel_topic', internnav_raw_cmd_vel_topic)
     enable_collision_monitor = LaunchArgument(
         name='enable_collision_monitor',
         default_value='true',
@@ -528,6 +554,10 @@ def generate_launch_description():
                     **dual_vln_direct_cmd_vel.dict,
                     **dual_vln_command_service.dict,
                     **dual_vln_status_topic.dict,
+                    **dual_vln_timing_mode.dict,
+                    **dual_vln_model_latency_sec.dict,
+                    **dual_vln_latency_policy.dict,
+                    **dual_vln_raw_cmd_vel_topic.dict,
                     **enable_collision_monitor.dict,
                     **robot_launch_file.dict,
                     **debug.dict,

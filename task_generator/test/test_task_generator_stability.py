@@ -1,5 +1,6 @@
 import asyncio
 import importlib.util
+import os
 import struct
 import sys
 import time
@@ -197,6 +198,54 @@ def _robot_manager_stub(*, rosparams=None):
     manager._pose = SimpleNamespace(position=SimpleNamespace(x=1.0, y=1.0))
     manager._is_dual_vln_robot = lambda: True
     return manager
+
+
+def test_compat_rosparam_prefers_non_default_legacy_alias_over_primary_default():
+    manager = _robot_manager_stub(rosparams={
+        'internnav_timing_mode': 'wall',
+        'dual_vln_timing_mode': 'sim_time_realworld',
+    })
+
+    assert manager._get_compat_rosparam(
+        str,
+        'internnav_timing_mode',
+        'dual_vln_timing_mode',
+        'wall',
+        empty_is_missing=True,
+    ) == 'sim_time_realworld'
+
+
+def test_compat_rosparam_keeps_primary_non_default_over_legacy_alias():
+    manager = _robot_manager_stub(rosparams={
+        'internnav_timing_mode': 'sim_time_realworld',
+        'dual_vln_timing_mode': 'wall',
+    })
+
+    assert manager._get_compat_rosparam(
+        str,
+        'internnav_timing_mode',
+        'dual_vln_timing_mode',
+        'wall',
+        empty_is_missing=True,
+    ) == 'sim_time_realworld'
+
+
+def test_eval_env_can_override_timing_mode_after_compat_lookup(monkeypatch):
+    manager = _robot_manager_stub(rosparams={
+        'internnav_timing_mode': 'wall',
+        'dual_vln_timing_mode': 'wall',
+    })
+    monkeypatch.setenv('ARENA_EVAL_INTERNNAV_TIMING_MODE', 'sim_time_realworld')
+
+    selected = manager._get_compat_rosparam(
+        str,
+        'internnav_timing_mode',
+        'dual_vln_timing_mode',
+        'wall',
+        empty_is_missing=True,
+    )
+
+    assert os.environ.get('ARENA_EVAL_INTERNNAV_TIMING_MODE', selected) == 'sim_time_realworld'
 
 
 def test_dual_vln_status_sensor_freshness_accepts_only_fresh_rgb_and_depth():
