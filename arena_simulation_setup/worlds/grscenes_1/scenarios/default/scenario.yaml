@@ -1,0 +1,30 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [-2.77418, -8.42772, 87.68628]
+  behavior_tree: ./BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [-2.71804, -7.03833, 6.96097]
+  - [-0.30416, -6.74362, 60.80251]
+  - [0.49579, -5.31212, 82.40536]
+  - [0.74841, -3.41751, 76.75948]
+  - [1.08523, -1.98602, 79.85446]
+  - [1.32381, -0.65276, 79.85446]
+- name: hunav_2
+  model: male_adult_medical_01
+  pose: [6.17965, -3.47364, 175.60129]
+  behavior_tree: ./BTRegularNav.xml
+  velocity: 1.0
+  desired_velocity: 1.2
+  waypoints:
+  - [4.3552, -3.3333, 101.0702]
+  - [4.10259, -2.04215, 77.69198]
+  - [4.43941, -0.49839, -3.09406]
+  - [6.51647, -0.61066, -3.09406]
+robots:
+- start: [-4.0934, -3.8666, 4.16408]
+  goal: [6.17965, -3.47364, -4.39871]

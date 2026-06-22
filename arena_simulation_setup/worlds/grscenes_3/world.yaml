@@ -9,7 +9,7 @@ world_type: "usd"
 
 usd_scene:
   # Path to the GRScenes USD file
-  path: "/data/scenes/commercial_scenes/scenes/MV4AFHQKTKJZ2AABAAAAAEA8_usd/start_result_navigation.usd"
+  path: "/data/scenes/commercial_scenes/scenes/MV4AFHQKTKJZ2AABAAAAAEA8_usd/trimed_navigation.usd"
   scale: 0.01  # Convert cm to meters
   position: [0.0, 0.0, 0.0]
   orientation: [0.0, 0.0, 0.0, 1.0]  # quaternion [x, y, z, w]
