@@ -254,12 +254,17 @@ def _check_model_control(run_dir: Path, manifest: dict[str, Any]) -> dict[str, A
 
 def _check_metrics(run_dir: Path, social_metrics: dict[str, Any] | None) -> dict[str, Any]:
     metrics_path = run_dir / 'metrics.csv'
+    vln_task_metrics_path = run_dir / 'vln_task_metrics.json'
     social_path = run_dir / 'social_metrics.json'
     social_present = isinstance(social_metrics, dict)
+    vln_task_metrics = _read_json(vln_task_metrics_path)
+    strict_task_present = isinstance(vln_task_metrics, dict)
     base_metrics = social_metrics.get('base_metrics') if social_present else {}
     base_first = base_metrics.get('first') if isinstance(base_metrics, dict) else {}
     episode_result = str(base_first.get('result') or '') if isinstance(base_first, dict) else ''
-    task_success = episode_result == 'GOAL_REACHED'
+    legacy_task_success = episode_result == 'GOAL_REACHED'
+    strict_task_success = bool(vln_task_metrics.get('strict_task_success')) if strict_task_present else False
+    strict_social_success = bool(social_metrics.get('strict_social_success')) if social_present else False
     try:
         path_length_m = float(social_metrics.get('path_length_m') or 0.0) if social_present else 0.0
     except Exception:
@@ -275,15 +280,23 @@ def _check_metrics(run_dir: Path, social_metrics: dict[str, Any] | None) -> dict
     return {
         "pass": (
             metrics_path.exists()
+            and strict_task_present
             and social_present
             and bool(social_metrics.get('humans_present'))
-            and bool(social_metrics.get('social_success'))
+            and strict_task_success
+            and strict_social_success
             and robot_moved
         ),
         "metrics_csv_present": metrics_path.exists(),
+        "vln_task_metrics_present": strict_task_present,
         "social_metrics_present": social_path.exists(),
         "social_success": social_metrics.get('social_success') if social_present else None,
-        "task_success": task_success,
+        "strict_social_success": social_metrics.get('strict_social_success') if social_present else None,
+        "legacy_task_success": legacy_task_success,
+        "strict_task_success": strict_task_success if strict_task_present else None,
+        "strict_task_failure_reasons": vln_task_metrics.get('strict_task_failure_reasons') if strict_task_present else [],
+        "strict_social_failure_reasons": social_metrics.get('strict_social_failure_reasons') if social_present else [],
+        "task_success": legacy_task_success,
         "episode_result": episode_result or None,
         "path_length_m": path_length_m,
         "robot_moved": robot_moved,
@@ -295,6 +308,7 @@ def _check_metrics(run_dir: Path, social_metrics: dict[str, Any] | None) -> dict
                 'human_collision_count',
                 'crowd_freezing_time_sec',
                 'social_success',
+                'strict_social_success',
             )
         ) if social_present else False,
     }
@@ -371,6 +385,16 @@ def _diagnostic_warnings(checks: dict[str, Any], manifest: dict[str, Any], socia
             path_length_m = 0.0
         if str(params.get('local_planner', '')).lower() == 'dual_vln' and path_length_m < 0.1:
             warnings.append(f'robot appears stationary: path_length_m={path_length_m:.3f}')
+        if social_metrics.get('social_success') and not social_metrics.get('strict_social_success'):
+            warnings.append('legacy social_success is true but strict_social_success is false')
+
+    strict_task_metrics = _read_json(Path(str((manifest.get('artifacts') or {}).get('vln_task_metrics_path') or '')))
+    if not isinstance(strict_task_metrics, dict):
+        strict_task_metrics = _read_json(Path(str(manifest.get('result_dir_absolute') or '')) / 'vln_task_metrics.json')
+    if isinstance(strict_task_metrics, dict):
+        legacy_first = ((social_metrics or {}).get('base_metrics') or {}).get('first') if isinstance(social_metrics, dict) else {}
+        if isinstance(legacy_first, dict) and legacy_first.get('result') == 'GOAL_REACHED' and not strict_task_metrics.get('strict_task_success'):
+            warnings.append('legacy GOAL_REACHED is true but strict_task_success is false')
 
     model_control = checks.get('model_control') if isinstance(checks.get('model_control'), dict) else {}
     if model_control.get('missing_model_control_loop'):

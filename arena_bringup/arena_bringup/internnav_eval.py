@@ -2676,6 +2676,7 @@ def main() -> int:
     launch_cmd.extend(args.extra_launch_args)
 
     metrics_cmd = ['ros2', 'run', 'arena_evaluation', 'metrics', '--dir', output_dir]
+    vln_task_metrics_cmd = ['ros2', 'run', 'arena_evaluation', 'vln_task_metrics', '--dir', output_dir]
     social_metrics_cmd = ['ros2', 'run', 'arena_evaluation', 'social_metrics', '--dir', output_dir]
     artifact_validation_cmd = ['ros2', 'run', 'arena_bringup', 'social_nav_validation', '--dir', output_dir]
     postprocess_commands = [
@@ -2684,6 +2685,7 @@ def main() -> int:
     ]
     if args.social_eval:
         postprocess_commands.extend([
+            ' '.join(vln_task_metrics_cmd),
             ' '.join(social_metrics_cmd),
             ' '.join(artifact_validation_cmd),
         ])
@@ -2729,6 +2731,7 @@ def main() -> int:
                 ],
                 'required_metrics': [
                     'metrics.csv',
+                    'vln_task_metrics.json',
                     'social_metrics.json',
                     'artifact_validation.json',
                 ],
@@ -2810,6 +2813,7 @@ def main() -> int:
             'internnav_timing_summary_path': os.path.join(output_dir, 'internnav_timing_summary.json'),
             'rtf_csv_path': os.path.join(output_dir, 'rtf.csv'),
             'social_metrics_path': os.path.join(output_dir, 'social_metrics.json') if args.social_eval else None,
+            'vln_task_metrics_path': os.path.join(output_dir, 'vln_task_metrics.json') if args.social_eval else None,
             'artifact_validation_path': os.path.join(output_dir, 'artifact_validation.json') if args.social_eval else None,
             'postprocess_commands_file': postprocess_commands_path,
             'videos_dir': videos_dir if args.save_eval_video else None,
@@ -2821,6 +2825,7 @@ def main() -> int:
             'launch_returncode': None,
             'metrics_returncode': None,
             'social_metrics_returncode': None,
+            'vln_task_metrics_returncode': None,
             'artifact_validation_returncode': None,
             'end_reason': 'running',
             'video_recorder_returncode': None,
@@ -2836,6 +2841,7 @@ def main() -> int:
                 'launch_returncode': None,
                 'metrics_returncode': None,
                 'social_metrics_returncode': None,
+                'vln_task_metrics_returncode': None,
                 'artifact_validation_returncode': None,
                 'timed_out': False,
                 'end_reason': 'vln_instruction_manifest_lookup_failed',
@@ -2919,6 +2925,7 @@ def main() -> int:
                     'launch_returncode': None,
                     'metrics_returncode': None,
                     'social_metrics_returncode': None,
+                    'vln_task_metrics_returncode': None,
                     'artifact_validation_returncode': None,
                     'timed_out': False,
                     'end_reason': 'external_preflight_failed',
@@ -3014,24 +3021,31 @@ def main() -> int:
     deadline = time.monotonic() + launch_timeout_sec
     launch_returncode = None
     metrics_returncode = None
+    vln_task_metrics_returncode = None
     social_metrics_returncode = None
     artifact_validation_returncode = None
     finished_observed = False
     timed_out = False
 
     def run_social_postprocess() -> int:
-        nonlocal social_metrics_returncode, artifact_validation_returncode
+        nonlocal vln_task_metrics_returncode, social_metrics_returncode, artifact_validation_returncode
         if not args.social_eval:
             return 0
+        vln_task_metrics_result = subprocess.run(vln_task_metrics_cmd, env=env)
+        vln_task_metrics_returncode = vln_task_metrics_result.returncode
         social_metrics_result = subprocess.run(social_metrics_cmd, env=env)
         social_metrics_returncode = social_metrics_result.returncode
         artifact_validation_result = subprocess.run(artifact_validation_cmd, env=env)
         artifact_validation_returncode = artifact_validation_result.returncode
+        manifest['result']['vln_task_metrics_returncode'] = vln_task_metrics_returncode
         manifest['result']['social_metrics_returncode'] = social_metrics_returncode
         manifest['result']['artifact_validation_returncode'] = artifact_validation_returncode
+        manifest['artifacts']['vln_task_metrics_present'] = os.path.exists(os.path.join(output_dir, 'vln_task_metrics.json'))
         manifest['artifacts']['social_metrics_present'] = os.path.exists(os.path.join(output_dir, 'social_metrics.json'))
         manifest['artifacts']['artifact_validation_present'] = os.path.exists(os.path.join(output_dir, 'artifact_validation.json'))
         _write_yaml(manifest_path, manifest)
+        if vln_task_metrics_returncode != 0:
+            return vln_task_metrics_returncode
         if social_metrics_returncode != 0:
             return social_metrics_returncode
         return artifact_validation_returncode or 0
@@ -3120,6 +3134,7 @@ def main() -> int:
             'finished_observed': finished_observed,
             'launch_returncode': launch_returncode,
             'metrics_returncode': metrics_returncode,
+            'vln_task_metrics_returncode': vln_task_metrics_returncode,
             'social_metrics_returncode': social_metrics_returncode,
             'artifact_validation_returncode': artifact_validation_returncode,
             'timed_out': timed_out,

@@ -1,0 +1,98 @@
+import json
+
+import yaml
+
+from arena_bringup.social_nav_metrics_aggregate import aggregate_summary, summarize_run
+
+
+def test_aggregate_reports_legacy_and_strict_rates_separately(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "run_manifest.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "parameters": {
+                    "world": "grscenes_5",
+                    "robot": "Ai2_Bot2",
+                    "local_planner": "dual_vln",
+                    "human": "hunav",
+                    "scenario_file": "default",
+                },
+                "result": {"end_reason": "finished"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "vln_task_metrics.json").write_text(
+        json.dumps(
+            {
+                "strict_task_success": False,
+                "strict_task_failure_reasons": ["goal_not_reached"],
+                "goal": {"navigation_error_m": 1.5, "oracle_error_m": 1.0},
+                "vln": {"spl": 0.0, "ndtw": 0.2},
+                "static_occupancy": {"collision_sample_count": 2},
+                "commanded_stuck": {"commanded_stuck_time_sec": 0.0},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "social_metrics.json").write_text(
+        json.dumps(
+            {
+                "humans_present": True,
+                "social_success": True,
+                "strict_social_success": False,
+                "strict_social_failure_reasons": ["static_occupancy_collision"],
+                "path_length_m": 2.0,
+                "min_human_distance_m": 1.0,
+                "min_footprint_clearance_m": 0.4,
+                "near_miss_count": 0,
+                "human_collision_count": 0,
+                "footprint_near_miss_count": 0,
+                "footprint_human_collision_count": 0,
+                "personal_space_violation_time_sec": 0.0,
+                "footprint_personal_space_violation_time_sec": 0.0,
+                "crowd_freezing_time_sec": 0.0,
+                "max_humans_observed": 2,
+                "base_metrics": {"first": {"result": "GOAL_REACHED"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "artifact_validation.json").write_text(
+        json.dumps(
+            {
+                "overall_pass": False,
+                "social_nav_ready": False,
+                "failed_checks": ["metrics"],
+                "warnings": [
+                    "legacy GOAL_REACHED is true but strict_task_success is false",
+                    "legacy social_success is true but strict_social_success is false",
+                ],
+                "checks": {
+                    "metrics": {
+                        "episode_result": "GOAL_REACHED",
+                        "legacy_task_success": True,
+                        "strict_task_success": False,
+                        "strict_social_success": False,
+                        "robot_moved": True,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    row = summarize_run(run_dir)
+    summary = aggregate_summary([row])
+
+    assert row["legacy_task_success"] is True
+    assert row["strict_task_success"] is False
+    assert row["legacy_social_success"] is True
+    assert row["strict_social_success"] is False
+    assert "legacy_task_false_positive" in row["failure_tags"]
+    assert summary["legacy_task_success_rate"] == 1.0
+    assert summary["strict_task_success_rate"] == 0.0
+    assert summary["legacy_social_success_rate"] == 1.0
+    assert summary["strict_social_success_rate"] == 0.0
+    assert summary["benchmark_ready_rate"] == 0.0

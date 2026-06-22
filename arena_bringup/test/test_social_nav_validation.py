@@ -1,6 +1,14 @@
+import csv
 import json
 
-from arena_bringup.social_nav_validation import _check_dynamic_scene, _check_model_control, _trace_events
+from arena_bringup.social_nav_validation import _check_dynamic_scene, _check_metrics, _check_model_control, _trace_events
+
+
+def _write_rows(path, fieldnames, rows):
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def test_trace_events_accepts_official_client_event_field(tmp_path):
@@ -111,3 +119,59 @@ def test_dynamic_scene_check_fails_static_humans():
     assert result["pass"] is False
     assert "moving_human_count_below_threshold" in result["failures"]
     assert "human_robot_motion_overlap_below_threshold" in result["failures"]
+
+
+def test_metrics_check_requires_strict_task_and_social_success(tmp_path):
+    _write_rows(tmp_path / "metrics.csv", ["result"], [{"result": "GOAL_REACHED"}])
+    (tmp_path / "vln_task_metrics.json").write_text(
+        json.dumps({"strict_task_success": True, "strict_task_failure_reasons": []}),
+        encoding="utf-8",
+    )
+    social_metrics = {
+        "humans_present": True,
+        "social_success": True,
+        "strict_social_success": True,
+        "strict_social_failure_reasons": [],
+        "path_length_m": 1.0,
+        "base_metrics": {"first": {"result": "GOAL_REACHED"}},
+        "min_human_distance_m": 2.0,
+        "personal_space_violation_time_sec": 0.0,
+        "near_miss_count": 0,
+        "human_collision_count": 0,
+        "crowd_freezing_time_sec": 0.0,
+    }
+
+    result = _check_metrics(tmp_path, social_metrics)
+
+    assert result["pass"] is True
+    assert result["legacy_task_success"] is True
+    assert result["strict_task_success"] is True
+    assert result["strict_social_success"] is True
+
+
+def test_metrics_check_fails_legacy_goal_reached_when_strict_task_failed(tmp_path):
+    _write_rows(tmp_path / "metrics.csv", ["result"], [{"result": "GOAL_REACHED"}])
+    (tmp_path / "vln_task_metrics.json").write_text(
+        json.dumps({"strict_task_success": False, "strict_task_failure_reasons": ["goal_not_reached"]}),
+        encoding="utf-8",
+    )
+    social_metrics = {
+        "humans_present": True,
+        "social_success": True,
+        "strict_social_success": True,
+        "strict_social_failure_reasons": [],
+        "path_length_m": 1.0,
+        "base_metrics": {"first": {"result": "GOAL_REACHED"}},
+        "min_human_distance_m": 2.0,
+        "personal_space_violation_time_sec": 0.0,
+        "near_miss_count": 0,
+        "human_collision_count": 0,
+        "crowd_freezing_time_sec": 0.0,
+    }
+
+    result = _check_metrics(tmp_path, social_metrics)
+
+    assert result["pass"] is False
+    assert result["legacy_task_success"] is True
+    assert result["strict_task_success"] is False
+    assert result["strict_task_failure_reasons"] == ["goal_not_reached"]
