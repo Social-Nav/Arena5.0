@@ -1,6 +1,8 @@
 import asyncio
 import itertools
+import json
 import os
+import re
 import signal
 import sys
 import random
@@ -129,6 +131,104 @@ class IsaacEvalSimulator(IsaacSimulator):
                 f'({hard_timeout_sec:.1f}s for requested {float(timeout_sec):.1f}s); killed it'
             )
             return None
+
+    async def _run_ros2_service_call_subprocess(
+        self,
+        label: str,
+        srv_name: str,
+        srv_type: str,
+        request_payload: dict,
+        timeout_sec: float,
+        grace_sec: float = 2.0,
+    ) -> tuple[str, str, int] | None:
+        """Call an Isaac service through the ROS 2 CLI.
+
+        In this Docker + Isaac Sim setup, Python rclpy clients can discover
+        Isaac services while their async request never reaches the server.  The
+        ROS 2 CLI service caller has proven reliable because it creates a
+        short-lived participant with the CLI's service-call path.
+        """
+        hard_timeout_sec = max(float(timeout_sec), 1.0) + max(float(grace_sec), 0.0)
+        env = os.environ.copy()
+        env['ROS_DOMAIN_ID'] = os.environ.get('ROS_DOMAIN_ID', '1')
+        env['RMW_IMPLEMENTATION'] = os.environ.get('RMW_IMPLEMENTATION', 'rmw_fastrtps_cpp')
+        env['ROS_AUTOMATIC_DISCOVERY_RANGE'] = os.environ.get('ROS_AUTOMATIC_DISCOVERY_RANGE', 'SUBNET')
+        env['FASTDDS_BUILTIN_TRANSPORTS'] = os.environ.get('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4')
+        env['ROS_LOCALHOST_ONLY'] = os.environ.get('ROS_LOCALHOST_ONLY', '0')
+
+        proc = None
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                'ros2',
+                'service',
+                'call',
+                '--stdin',
+                srv_name,
+                srv_type,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env,
+                start_new_session=True,
+            )
+            stdin_text = json.dumps(request_payload)
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(stdin_text.encode('utf-8')),
+                timeout=hard_timeout_sec,
+            )
+            return (
+                stdout.decode('utf-8', errors='replace'),
+                stderr.decode('utf-8', errors='replace'),
+                int(proc.returncode or 0),
+            )
+        except asyncio.TimeoutError:
+            if proc is not None and proc.returncode is None:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                except Exception:
+                    proc.kill()
+                try:
+                    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=2.0)
+                    stdout_text = stdout.decode('utf-8', errors='replace')
+                    stderr_text = stderr.decode('utf-8', errors='replace')
+                    if stdout_text:
+                        self._logger.warning(
+                            f'{label} ros2 service call exceeded hard timeout but produced output; parsing it'
+                        )
+                        return stdout_text, stderr_text, int(proc.returncode or -signal.SIGKILL)
+                except Exception:
+                    pass
+            self._logger.error(
+                f'{label} ros2 service call exceeded hard timeout '
+                f'({hard_timeout_sec:.1f}s for requested {float(timeout_sec):.1f}s); killed it'
+            )
+            return None
+
+    @staticmethod
+    def _ros2_cli_bool(stdout_text: str, field: str = 'success') -> bool | None:
+        patterns = (
+            rf'\b{re.escape(field)}\s*=\s*(True|False)\b',
+            rf'\b{re.escape(field)}\s*:\s*(true|false|True|False)\b',
+        )
+        for pattern in patterns:
+            match = re.search(pattern, stdout_text)
+            if match:
+                return match.group(1).lower() == 'true'
+        return None
+
+    @staticmethod
+    def _ros2_cli_string(stdout_text: str, field: str) -> str:
+        patterns = (
+            rf'\b{re.escape(field)}\s*=\s*[\'"]([^\'"]*)[\'"]',
+            rf'\b{re.escape(field)}\s*:\s*[\'"]?([^\'"\n\r]*)[\'"]?',
+        )
+        for pattern in patterns:
+            match = re.search(pattern, stdout_text)
+            if match:
+                return match.group(1).strip()
+        return ''
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -944,6 +1044,53 @@ class IsaacEvalSimulator(IsaacSimulator):
         msg_pose = pose.to_msg() if hasattr(pose, 'to_msg') else pose
         timeout_sec = max(float(timeout_sec), 1.0)
 
+        request_payload = {
+            'name': name,
+            'usd_path': usd_path,
+            'robot_namespace': robot_namespace,
+            'base_frame': base_frame,
+            'pose': {
+                'position': {
+                    'x': float(msg_pose.position.x),
+                    'y': float(msg_pose.position.y),
+                    'z': float(msg_pose.position.z),
+                },
+                'orientation': {
+                    'x': float(msg_pose.orientation.x),
+                    'y': float(msg_pose.orientation.y),
+                    'z': float(msg_pose.orientation.z),
+                    'w': float(msg_pose.orientation.w),
+                },
+            },
+        }
+        self._logger.info(
+            f'Calling SpawnUsdRobot via ros2 service call '
+            f'(srv={srv_name}, name={name}, timeout={timeout_sec:.0f}s)'
+        )
+        cli_result = await self._run_ros2_service_call_subprocess(
+            'SpawnUsdRobot',
+            srv_name,
+            'isaacsim_msgs/srv/SpawnUsdRobot',
+            request_payload,
+            timeout_sec,
+            grace_sec=2.0,
+        )
+        if cli_result is None:
+            return None
+        stdout_text, stderr_text, returncode = cli_result
+        if stderr_text.strip():
+            self._logger.debug(f'SpawnUsdRobot ros2 service call stderr: {stderr_text.strip()[-500:]}')
+        path = self._ros2_cli_string(stdout_text, 'path')
+        if returncode == 0 and path:
+            result = {'success': True, 'message': '', 'path': path}
+            self._logger.info(f"SpawnUsdRobot succeeded: path={path}")
+            return result
+        self._logger.error(
+            f'SpawnUsdRobot ros2 service call failed '
+            f'(rc={returncode}, path={path!r}, stdout={stdout_text.strip()[:300]!r})'
+        )
+        return None
+
         ros_domain_id = os.environ.get('ROS_DOMAIN_ID', '1')
         rmw_implementation = os.environ.get('RMW_IMPLEMENTATION', 'rmw_fastrtps_cpp')
         discovery_range = os.environ.get('ROS_AUTOMATIC_DISCOVERY_RANGE', 'SUBNET')
@@ -961,7 +1108,15 @@ class IsaacEvalSimulator(IsaacSimulator):
             "node = rclpy.create_node('spawn_usd_robot_subprocess')\n"
             f"client = node.create_client(SpawnUsdRobot, {srv_name!r})\n"
             f"service_wait_timeout = min(max({timeout_sec!r}, 30.0), 180.0)\n"
-            "if not client.wait_for_service(timeout_sec=service_wait_timeout):\n"
+            "service_deadline = time.monotonic() + service_wait_timeout\n"
+            "service_seen = False\n"
+            "while time.monotonic() < service_deadline:\n"
+            "    services = {name for name, _types in node.get_service_names_and_types()}\n"
+            f"    if {srv_name!r} in services:\n"
+            "        service_seen = True\n"
+            "        break\n"
+            "    rclpy.spin_once(node, timeout_sec=0.25)\n"
+            "if not service_seen:\n"
             "    print(json.dumps({'success': False, 'message': 'Service unavailable', 'path': ''}), flush=True)\n"
             "    node.destroy_node()\n"
             "    rclpy.shutdown()\n"
@@ -1357,15 +1512,56 @@ class IsaacEvalSimulator(IsaacSimulator):
         timeout_sec: float = 1800.0,
     ) -> bool:
         """Call LoadUsdScene via subprocess to get a fresh DDS participant."""
-        import asyncio
         pos = position or [0.0, 0.0, 0.0]
         ori = orientation or [0.0, 0.0, 0.0, 1.0]
         srv_name = self._load_usd_scene_client.client.srv_name
+
+        request_payload = {
+            'usd_path': usd_path,
+            'scene_prim_path': scene_prim_path,
+            'scale': float(scale),
+            'position': [float(v) for v in list(pos)],
+            'orientation': [float(v) for v in list(ori)],
+            'add_colliders': bool(add_colliders),
+            'disable_collision_cooking': bool(disable_collision_cooking),
+        }
+        self._logger.info(
+            f'Calling LoadUsdScene via ros2 service call '
+            f'(srv={srv_name}, timeout={timeout_sec:.0f}s)'
+        )
+        cli_result = await self._run_ros2_service_call_subprocess(
+            'LoadUsdScene',
+            srv_name,
+            'isaacsim_msgs/srv/LoadUsdScene',
+            request_payload,
+            timeout_sec,
+            grace_sec=2.0,
+        )
+        if cli_result is None:
+            return False
+        stdout_text, stderr_text, returncode = cli_result
+        if stderr_text.strip():
+            self._logger.debug(f'LoadUsdScene ros2 service call stderr: {stderr_text.strip()[-500:]}')
+        success = self._ros2_cli_bool(stdout_text, 'success')
+        message = self._ros2_cli_string(stdout_text, 'message')
+        prim = self._ros2_cli_string(stdout_text, 'scene_prim_path')
+        if returncode == 0 and (success is True or 'already exists' in message):
+            self._logger.info(f'LoadUsdScene succeeded: prim={prim or scene_prim_path}')
+            return True
+        self._logger.error(
+            f'LoadUsdScene ros2 service call failed '
+            f'(rc={returncode}, success={success}, message={message!r}, stdout={stdout_text.strip()[:300]!r})'
+        )
+        return False
 
         ros_domain_id = os.environ.get('ROS_DOMAIN_ID', '1')
         rmw_implementation = os.environ.get('RMW_IMPLEMENTATION', 'rmw_fastrtps_cpp')
         discovery_range = os.environ.get('ROS_AUTOMATIC_DISCOVERY_RANGE', 'SUBNET')
         fastdds_transports = os.environ.get('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4')
+        wait_for_service_timeout_sec = max(
+            float(os.environ.get('ARENA_ISAAC_SERVICE_WAIT_TIMEOUT_SEC', '120.0')),
+            1.0,
+        )
 
         script = (
             "import rclpy, time, os, sys, json\n"
@@ -1377,7 +1573,15 @@ class IsaacEvalSimulator(IsaacSimulator):
             "rclpy.init()\n"
             f"node = rclpy.create_node('load_usd_scene_subprocess')\n"
             f"client = node.create_client(LoadUsdScene, '{srv_name}')\n"
-            "if not client.wait_for_service(timeout_sec=30.0):\n"
+            f"service_deadline = time.monotonic() + {wait_for_service_timeout_sec}\n"
+            "service_seen = False\n"
+            "while time.monotonic() < service_deadline:\n"
+            "    services = {name for name, _types in node.get_service_names_and_types()}\n"
+            f"    if {srv_name!r} in services:\n"
+            "        service_seen = True\n"
+            "        break\n"
+            "    rclpy.spin_once(node, timeout_sec=0.25)\n"
+            "if not service_seen:\n"
             "    print(json.dumps({'success': False, 'message': 'Service unavailable'}), flush=True)\n"
             "    node.destroy_node()\n"
             "    rclpy.shutdown()\n"
@@ -1405,6 +1609,7 @@ class IsaacEvalSimulator(IsaacSimulator):
 
         self._logger.info(
             f'Calling LoadUsdScene via subprocess (srv={srv_name}, timeout={timeout_sec:.0f}s, '
+            f'wait_for_service={wait_for_service_timeout_sec:.0f}s, '
             f'ROS_DOMAIN_ID={ros_domain_id}, RMW_IMPLEMENTATION={rmw_implementation})'
         )
         subprocess_result = await self._run_python_service_subprocess(
