@@ -1488,6 +1488,28 @@ def _is_static_fallback_gradient(image: np.ndarray) -> bool:
     )
 
 
+def _looks_like_corrupt_sim_top_down(image: np.ndarray) -> bool:
+    """Reject obvious non-camera or unsettled Replicator frames.
+
+    Isaac can emit a few texture-cache/collage frames immediately after reset
+    while the render product settles.  Valid top-down frames in these GRScenes
+    runs are mostly indoor geometry with limited highly saturated pixels; the
+    bad startup frames are dominated by unrelated high-saturation artwork or
+    close-up ego imagery.
+    """
+    if image.ndim != 3 or image.shape[2] != 3:
+        return True
+    sample = image.astype(np.float32) / 255.0
+    max_c = np.max(sample, axis=2)
+    min_c = np.min(sample, axis=2)
+    saturation = np.zeros_like(max_c)
+    nonzero = max_c > 1e-6
+    saturation[nonzero] = (max_c[nonzero] - min_c[nonzero]) / max_c[nonzero]
+    high_saturation_ratio = float(np.mean(saturation > 0.55))
+    very_dark_ratio = float(np.mean(max_c < 0.03))
+    return high_saturation_ratio > 0.35 or very_dark_ratio > 0.45
+
+
 def image_msg_to_numpy(message: Image):
     data = np.frombuffer(message.data, dtype=np.uint8)
     if message.encoding in ('rgb8', 'bgr8'):
@@ -1568,6 +1590,14 @@ class EvalVideoRecorder(Node):
         self.debug_overlay_fallback_frame_count = 0
         self.latest_sim_top_down = None
         self.latest_sim_top_down_generation = -1
+        self.sim_top_down_skipped_frame_count = 0
+        self.sim_top_down_corrupt_skip_count = 0
+        self.sim_top_down_warmup_sec = max(float(os.environ.get('ARENA_EVAL_VIDEO_SIM_TOP_DOWN_WARMUP_SEC', '20.0') or 20.0), 0.0)
+        self.sim_top_down_post_warmup_discard_frames = max(
+            int(os.environ.get('ARENA_EVAL_VIDEO_SIM_TOP_DOWN_POST_WARMUP_DISCARD_FRAMES', '5') or 5),
+            0,
+        )
+        self.sim_top_down_post_warmup_discard_count = 0
         self.latest_pose = None
         self.latest_pose_generation = -1
         self.latest_goal = None
@@ -1740,6 +1770,7 @@ class EvalVideoRecorder(Node):
         self.debug_overlay_fallback_frame_count = 0
         self.latest_sim_top_down = None
         self.latest_sim_top_down_generation = -1
+        self.sim_top_down_post_warmup_discard_count = 0
         self.latest_pose = None
         self.latest_pose_generation = -1
         self.latest_goal = None
@@ -1800,6 +1831,11 @@ class EvalVideoRecorder(Node):
             'top_down_frames': 0,
             'debug_overlay_frames': 0,
             'sim_top_down_frames': 0,
+            'sim_top_down_skipped_frames': 0,
+            'sim_top_down_corrupt_skipped_frames': 0,
+            'sim_top_down_warmup_sec': self.sim_top_down_warmup_sec,
+            'sim_top_down_post_warmup_discard_frames': self.sim_top_down_post_warmup_discard_frames,
+            'sim_top_down_post_warmup_discarded_frames': 0,
             'debug_overlay_fallback': False,
             'debug_overlay_source': self._debug_overlay_source_diagnostics(),
             'container': 'mp4',
@@ -1988,20 +2024,45 @@ class EvalVideoRecorder(Node):
             and self.latest_sim_top_down is not None
             and self.latest_sim_top_down_generation == self.reset_generation
         ):
-            # Isaac's top-down Replicator stream can emit one pre-settled frame
-            # right after task_reset while the camera/render product is being
-            # positioned.  Do not let that stale/incorrect frame become t=0 of
-            # sim_top_down.mp4; the visual validator samples t=0 as the episode
-            # baseline and expects an actual top-down camera view.
+            # Isaac's top-down Replicator stream can emit pre-settled or
+            # texture-cache frames right after task_reset while the camera/render
+            # product is being positioned.  Do not let those frames become t=0
+            # of sim_top_down.mp4; the visual validator samples t=0 as the
+            # episode baseline and expects an actual top-down camera view.
             sim_started_at = float(self.current_episode_info.get('started_at_wall_time') or 0.0)
-            if time.time() - sim_started_at < 0.5:
+            if time.time() - sim_started_at < self.sim_top_down_warmup_sec:
+                self.sim_top_down_skipped_frame_count += 1
                 self.current_episode_info['sim_top_down_warmup_skipped'] = True
-                self.current_episode_info['sim_top_down_warmup_sec'] = 0.5
+                self.current_episode_info['sim_top_down_warmup_sec'] = self.sim_top_down_warmup_sec
+                self.current_episode_info['sim_top_down_skipped_frames'] = int(self.sim_top_down_skipped_frame_count)
                 self.current_episode_info['last_frame_wall_time'] = time.time()
                 self.last_frame_time = now
                 self._write_index()
                 return
             sim_top_down_frame = np.asarray(self.latest_sim_top_down, dtype=np.uint8)
+            if self.sim_top_down_post_warmup_discard_count < self.sim_top_down_post_warmup_discard_frames:
+                self.sim_top_down_skipped_frame_count += 1
+                self.sim_top_down_post_warmup_discard_count += 1
+                self.current_episode_info['sim_top_down_post_warmup_discard_frames'] = int(
+                    self.sim_top_down_post_warmup_discard_frames
+                )
+                self.current_episode_info['sim_top_down_post_warmup_discarded_frames'] = int(
+                    self.sim_top_down_post_warmup_discard_count
+                )
+                self.current_episode_info['sim_top_down_skipped_frames'] = int(self.sim_top_down_skipped_frame_count)
+                self.current_episode_info['last_frame_wall_time'] = time.time()
+                self.last_frame_time = now
+                self._write_index()
+                return
+            if _looks_like_corrupt_sim_top_down(sim_top_down_frame):
+                self.sim_top_down_skipped_frame_count += 1
+                self.sim_top_down_corrupt_skip_count += 1
+                self.current_episode_info['sim_top_down_corrupt_skipped_frames'] = int(self.sim_top_down_corrupt_skip_count)
+                self.current_episode_info['sim_top_down_skipped_frames'] = int(self.sim_top_down_skipped_frame_count)
+                self.current_episode_info['last_frame_wall_time'] = time.time()
+                self.last_frame_time = now
+                self._write_index()
+                return
             self.sim_top_down_writer.write(sim_top_down_frame)
             self.current_episode_info['sim_top_down_frames'] += 1
         self.current_episode_info['last_frame_wall_time'] = time.time()
