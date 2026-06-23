@@ -449,13 +449,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
     def _publish_episode_outcome(self, reason: str) -> None:
         desired = int(self.conf.General.DESIRED_EPISODES.value)
         episode_index = max(int(self._completed_episodes) - 1, 0)
-        sim_time_sec = None
-        try:
-            sim_time_sec = float(self.sim_time.nanoseconds) / 1e9
-        except Exception:
-            sim_nanoseconds = getattr(self.time, 'nanoseconds', None)
-            if isinstance(sim_nanoseconds, (int, float)):
-                sim_time_sec = float(sim_nanoseconds) / 1e9
+        sim_time_sec = self._time_to_seconds(getattr(self, 'sim_time', None))
+        if sim_time_sec is None:
+            sim_time_sec = self._time_to_seconds(getattr(self, 'time', None))
         payload = {
             'episode_index': episode_index,
             'completed_episodes': int(self._completed_episodes),
@@ -469,6 +465,28 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             self._pub_episode_outcome.publish(String(data=json.dumps(payload, sort_keys=True)))
         except Exception as exc:
             self.get_logger().warn(f'Failed to publish episode outcome: {exc}')
+
+    @staticmethod
+    def _time_to_seconds(value) -> float | None:
+        if value is None:
+            return None
+        to_seconds = getattr(value, 'to_seconds', None)
+        if callable(to_seconds):
+            try:
+                return float(to_seconds())
+            except Exception:
+                pass
+        nanoseconds = getattr(value, 'nanoseconds', None)
+        if isinstance(nanoseconds, (int, float)):
+            return float(nanoseconds) / 1e9
+        sec = getattr(value, 'sec', None)
+        nanosec = getattr(value, 'nanosec', None)
+        if isinstance(sec, (int, float)) and isinstance(nanosec, (int, float)):
+            return float(sec) + float(nanosec) / 1e9
+        clock = getattr(value, 'clock', None)
+        if clock is not None:
+            return TaskGenerator._time_to_seconds(clock)
+        return None
 
     def _send_end_message_on_end(self):
         if self.conf.General.DESIRED_EPISODES.value < 0 or self._completed_episodes < self.conf.General.DESIRED_EPISODES.value:

@@ -466,7 +466,7 @@ def test_task_generator_episode_outcome_payload_contains_reason(monkeypatch):
     node._pub_episode_outcome = _Publisher()
     node.conf = SimpleNamespace(General=SimpleNamespace(DESIRED_EPISODES=SimpleNamespace(value=1)))
     node.get_logger = lambda: _Logger()
-    monkeypatch.setattr(TaskGenerator, 'sim_time', property(lambda _self: SimpleNamespace(nanoseconds=12_300_000_000)))
+    monkeypatch.setattr(TaskGenerator, 'sim_time', property(lambda _self: SimpleNamespace(sec=12, nanosec=300_000_000)))
     monkeypatch.setattr('task_generator.node.time.time', lambda: 456.0)
 
     node._publish_episode_outcome('sim_timeout')
@@ -480,3 +480,12 @@ def test_task_generator_episode_outcome_payload_contains_reason(monkeypatch):
     assert payload['reason'] == 'sim_timeout'
     assert payload['sim_time_sec'] == 12.3
     assert payload['wall_time'] == 456.0
+
+
+def test_task_generator_time_to_seconds_accepts_common_clock_shapes():
+    assert TaskGenerator._time_to_seconds(SimpleNamespace(sec=1, nanosec=250_000_000)) == 1.25
+    assert TaskGenerator._time_to_seconds(SimpleNamespace(nanoseconds=2_500_000_000)) == 2.5
+    assert TaskGenerator._time_to_seconds(SimpleNamespace(to_seconds=lambda: 3.75)) == 3.75
+    assert TaskGenerator._time_to_seconds(
+        SimpleNamespace(clock=SimpleNamespace(sec=4, nanosec=500_000_000))
+    ) == 4.5
