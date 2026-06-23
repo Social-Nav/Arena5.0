@@ -6,6 +6,7 @@ from arena_bringup.social_nav_validation import (
     _check_metrics,
     _check_model_control,
     _check_videos,
+    _diagnostic_warnings,
     _trace_events,
 )
 
@@ -92,6 +93,14 @@ def test_video_check_reports_debug_overlay_fallback(tmp_path):
                     "debug_overlay_video": str(video_path),
                     "debug_overlay_frames": 1,
                     "debug_overlay_fallback": True,
+                    "debug_overlay_source": {
+                        "status": "no_post_reset_model_debug_image",
+                        "topic": "/task_generator_node/Ai2_Bot2/internnav/debug_image",
+                        "received_count": 0,
+                        "post_reset_received_count": 0,
+                        "model_frame_count": 0,
+                        "fallback_frame_count": 1,
+                    },
                     "sim_top_down_video": str(video_path),
                     "sim_top_down_frames": 1,
                     "map_top_down_video": str(video_path),
@@ -103,6 +112,8 @@ def test_video_check_reports_debug_overlay_fallback(tmp_path):
 
     assert result["pass"] is True
     assert result["videos"]["ego_debug_overlay"]["fallback"] is True
+    assert result["videos"]["ego_debug_overlay"]["source_status"] == "no_post_reset_model_debug_image"
+    assert result["videos"]["ego_debug_overlay"]["source"]["fallback_frame_count"] == 1
 
 
 def test_dynamic_scene_check_requires_motion_overlap_and_interaction():
@@ -242,3 +253,24 @@ def test_metrics_check_reports_strict_social_as_default_social_success(tmp_path)
     assert result["legacy_social_success"] is True
     assert result["social_success"] is False
     assert result["strict_social_success"] is False
+
+
+def test_diagnostic_warnings_report_unsupported_language_predicates(tmp_path):
+    strict_task = {
+        "strict_task_success": True,
+        "language_task_contract": {
+            "unsupported_predicates_present": True,
+            "unsupported_predicates": ["bddl_semantic_predicates", "orientation_at_goal"],
+        },
+    }
+    task_path = tmp_path / "vln_task_metrics.json"
+    task_path.write_text(json.dumps(strict_task), encoding="utf-8")
+    manifest = {
+        "artifacts": {"vln_task_metrics_path": str(task_path)},
+        "parameters": {},
+    }
+
+    warnings = _diagnostic_warnings({}, manifest, {"base_metrics": {"first": {"result": "GOAL_REACHED"}}})
+
+    assert any("unsupported predicates" in warning for warning in warnings)
+    assert any("bddl_semantic_predicates" in warning for warning in warnings)

@@ -171,6 +171,11 @@ def _check_videos(run_dir: Path, video_index: dict[str, Any] | None) -> dict[str
         }
         if label == 'ego_debug_overlay':
             results[label]["fallback"] = bool(ep.get('debug_overlay_fallback')) if ep else False
+            source = ep.get('debug_overlay_source') if isinstance(ep, dict) else None
+            results[label]["source"] = source if isinstance(source, dict) else {}
+            source_status = results[label]["source"].get("status")
+            if source_status:
+                results[label]["source_status"] = source_status
         if not results[label]["pass"]:
             if label == 'ego_debug_overlay':
                 results[label]["diagnostic"] = "debug_overlay_missing_or_empty"
@@ -400,6 +405,13 @@ def _diagnostic_warnings(checks: dict[str, Any], manifest: dict[str, Any], socia
         legacy_first = ((social_metrics or {}).get('base_metrics') or {}).get('first') if isinstance(social_metrics, dict) else {}
         if isinstance(legacy_first, dict) and legacy_first.get('result') == 'GOAL_REACHED' and not strict_task_metrics.get('strict_task_success'):
             warnings.append('legacy GOAL_REACHED is true but strict_task_success is false')
+        task_contract = strict_task_metrics.get('language_task_contract')
+        if isinstance(task_contract, dict) and task_contract.get('unsupported_predicates_present'):
+            unsupported = task_contract.get('unsupported_predicates')
+            if isinstance(unsupported, list) and unsupported:
+                warnings.append('language task contract uses native scenario goal; unsupported predicates: ' + ', '.join(str(item) for item in unsupported))
+            else:
+                warnings.append('language task contract uses native scenario goal; richer semantic predicates are not scored')
 
     model_control = checks.get('model_control') if isinstance(checks.get('model_control'), dict) else {}
     if model_control.get('missing_model_control_loop'):
@@ -410,7 +422,9 @@ def _diagnostic_warnings(checks: dict[str, Any], manifest: dict[str, Any], socia
     if isinstance(overlay, dict) and overlay.get('diagnostic') == 'debug_overlay_missing_or_empty':
         warnings.append('debug overlay video missing or empty')
     if isinstance(overlay, dict) and overlay.get('fallback'):
-        warnings.append('debug overlay uses ego-camera fallback; model debug image was unavailable')
+        source = overlay.get('source') if isinstance(overlay.get('source'), dict) else {}
+        source_status = source.get('status') or 'unknown'
+        warnings.append(f'debug overlay uses ego-camera fallback; model debug image source={source_status}')
     return warnings
 
 

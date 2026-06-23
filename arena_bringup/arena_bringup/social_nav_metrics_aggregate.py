@@ -32,6 +32,10 @@ SUMMARY_FIELDS = [
     'social_nav_ready',
     'benchmark_ready',
     'debug_overlay_fallback',
+    'debug_overlay_source_status',
+    'debug_overlay_model_frames',
+    'debug_overlay_fallback_frames',
+    'debug_overlay_received_count',
     'path_length_m',
     'episode_duration_sec',
     'episode_timeout',
@@ -118,6 +122,7 @@ def summarize_run(run_dir: Path) -> dict[str, Any]:
     video_check = checks.get('videos', {}) if isinstance(checks, dict) else {}
     video_results = video_check.get('videos', {}) if isinstance(video_check, dict) else {}
     debug_overlay = video_results.get('ego_debug_overlay', {}) if isinstance(video_results, dict) else {}
+    debug_overlay_source = debug_overlay.get('source', {}) if isinstance(debug_overlay, dict) else {}
 
     base_metrics = social.get('base_metrics', {}) if isinstance(social, dict) else {}
     base_first = base_metrics.get('first', {}) if isinstance(base_metrics, dict) else {}
@@ -187,6 +192,10 @@ def summarize_run(run_dir: Path) -> dict[str, Any]:
         'social_nav_ready': social_nav_ready,
         'benchmark_ready': benchmark_ready,
         'debug_overlay_fallback': _as_bool(debug_overlay.get('fallback')) if isinstance(debug_overlay, dict) else False,
+        'debug_overlay_source_status': debug_overlay_source.get('status') if isinstance(debug_overlay_source, dict) else '',
+        'debug_overlay_model_frames': _int_or_zero(debug_overlay_source.get('model_frame_count') if isinstance(debug_overlay_source, dict) else None),
+        'debug_overlay_fallback_frames': _int_or_zero(debug_overlay_source.get('fallback_frame_count') if isinstance(debug_overlay_source, dict) else None),
+        'debug_overlay_received_count': _int_or_zero(debug_overlay_source.get('received_count') if isinstance(debug_overlay_source, dict) else None),
         'path_length_m': _float_or_none(social.get('path_length_m') if isinstance(social, dict) else None),
         'episode_duration_sec': _float_or_none(timing_metrics.get('duration_sec') if isinstance(timing_metrics, dict) else None),
         'episode_timeout': _as_bool(timing_metrics.get('timed_out')) if isinstance(timing_metrics, dict) else False,
@@ -269,6 +278,9 @@ def failure_tags(row: dict[str, Any], manifest: dict[str, Any], validation: dict
         tags.append('stale_observation_candidate')
     if row.get('debug_overlay_fallback'):
         tags.append('debug_overlay_fallback')
+        source_status = str(row.get('debug_overlay_source_status') or '')
+        if source_status:
+            tags.append(f'debug_overlay_source_{source_status}')
     if not tags and row.get('strict_social_success') and row.get('strict_task_success'):
         return []
     return _dedupe(tags)

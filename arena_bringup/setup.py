@@ -59,6 +59,7 @@ setup(
             'grscenes_episode_to_eval_config = arena_bringup.grscenes_episode_to_eval_config:main',
             'internnav_timing_manager = arena_bringup.internnav_timing_manager:main',
             'internnav_timing_plot = arena_bringup.internnav_timing_plot:main',
+            'benchmark_failure_report = arena_bringup.benchmark_failure_report:main',
         ],
         'launch_ros.node_action': [
             'NodeLogLevelExtension = arena_bringup.extensions.NodeLogLevelExtension:NodeLogLevelExtension',

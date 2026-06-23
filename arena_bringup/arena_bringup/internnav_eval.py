@@ -1560,6 +1560,12 @@ class EvalVideoRecorder(Node):
         self.camera_info_generation = -1
         self.latest_debug_overlay = None
         self.latest_debug_overlay_generation = -1
+        self.debug_overlay_received_count = 0
+        self.debug_overlay_post_reset_count = 0
+        self.debug_overlay_decode_failures = 0
+        self.debug_overlay_invalid_frame_count = 0
+        self.debug_overlay_model_frame_count = 0
+        self.debug_overlay_fallback_frame_count = 0
         self.latest_sim_top_down = None
         self.latest_sim_top_down_generation = -1
         self.latest_pose = None
@@ -1726,6 +1732,12 @@ class EvalVideoRecorder(Node):
         self.camera_info_generation = -1
         self.latest_debug_overlay = None
         self.latest_debug_overlay_generation = -1
+        self.debug_overlay_received_count = 0
+        self.debug_overlay_post_reset_count = 0
+        self.debug_overlay_decode_failures = 0
+        self.debug_overlay_invalid_frame_count = 0
+        self.debug_overlay_model_frame_count = 0
+        self.debug_overlay_fallback_frame_count = 0
         self.latest_sim_top_down = None
         self.latest_sim_top_down_generation = -1
         self.latest_pose = None
@@ -1788,6 +1800,8 @@ class EvalVideoRecorder(Node):
             'top_down_frames': 0,
             'debug_overlay_frames': 0,
             'sim_top_down_frames': 0,
+            'debug_overlay_fallback': False,
+            'debug_overlay_source': self._debug_overlay_source_diagnostics(),
             'container': 'mp4',
             'started_at_wall_time': time.time(),
         }
@@ -1804,6 +1818,30 @@ class EvalVideoRecorder(Node):
 
     def _streams_ready_for_episode(self):
         return self._camera_ready() and self._has_fresh_pose()
+
+    def _debug_overlay_source_diagnostics(self):
+        if not self.debug_overlay_topic:
+            status = 'disabled'
+        elif self.debug_overlay_model_frame_count > 0:
+            status = 'model_debug_image'
+        elif self.debug_overlay_post_reset_count <= 0:
+            status = 'no_post_reset_model_debug_image'
+        elif self.debug_overlay_invalid_frame_count > 0:
+            status = 'invalid_model_debug_image'
+        else:
+            status = 'fallback_only'
+        return {
+            'status': status,
+            'topic': self.debug_overlay_topic,
+            'received_count': int(self.debug_overlay_received_count),
+            'post_reset_received_count': int(self.debug_overlay_post_reset_count),
+            'decode_failures': int(self.debug_overlay_decode_failures),
+            'invalid_frame_count': int(self.debug_overlay_invalid_frame_count),
+            'model_frame_count': int(self.debug_overlay_model_frame_count),
+            'fallback_frame_count': int(self.debug_overlay_fallback_frame_count),
+            'latest_generation': int(self.latest_debug_overlay_generation),
+            'reset_generation': int(self.reset_generation),
+        }
 
     def _map_world_to_pixel(self, x, y):
         if self.map_image is None:
@@ -1921,26 +1959,30 @@ class EvalVideoRecorder(Node):
         self.current_episode_info['top_down_frames'] += 1
         self.current_episode_info['ego_video_codec'] = getattr(self.ego_writer, 'codec', None)
         self.current_episode_info['top_down_video_codec'] = getattr(self.top_writer, 'codec', None)
-        if (
-            self.debug_overlay_writer is not None
-            and self.latest_debug_overlay is not None
-            and self.latest_debug_overlay_generation == self.reset_generation
-        ):
-            debug_overlay_frame = np.asarray(self.latest_debug_overlay, dtype=np.uint8)
-            if not _is_static_fallback_gradient(debug_overlay_frame):
-                self.debug_overlay_writer.write(debug_overlay_frame)
+        if self.debug_overlay_writer is not None:
+            wrote_model_overlay = False
+            if self.latest_debug_overlay is not None and self.latest_debug_overlay_generation == self.reset_generation:
+                debug_overlay_frame = np.asarray(self.latest_debug_overlay, dtype=np.uint8)
+                if not _is_static_fallback_gradient(debug_overlay_frame):
+                    self.debug_overlay_writer.write(debug_overlay_frame)
+                    self.debug_overlay_model_frame_count += 1
+                    self.current_episode_info['debug_overlay_frames'] += 1
+                    self.current_episode_info['debug_overlay_video_codec'] = getattr(self.debug_overlay_writer, 'codec', None)
+                    wrote_model_overlay = True
+                else:
+                    self.debug_overlay_invalid_frame_count += 1
+            if not wrote_model_overlay:
+                fallback_overlay = PILImage.fromarray(ego_frame).convert('RGB')
+                draw = ImageDraw.Draw(fallback_overlay)
+                draw.rectangle((8, 8, min(fallback_overlay.width - 8, 430), 58), fill=(0, 0, 0), outline=(255, 180, 0), width=2)
+                draw.text((16, 18), 'InternNav debug overlay unavailable', fill=(255, 220, 80))
+                draw.text((16, 36), 'showing ego camera fallback', fill=(255, 255, 255))
+                self.debug_overlay_writer.write(np.asarray(fallback_overlay, dtype=np.uint8))
+                self.debug_overlay_fallback_frame_count += 1
                 self.current_episode_info['debug_overlay_frames'] += 1
                 self.current_episode_info['debug_overlay_video_codec'] = getattr(self.debug_overlay_writer, 'codec', None)
-        elif self.debug_overlay_writer is not None:
-            fallback_overlay = PILImage.fromarray(ego_frame).convert('RGB')
-            draw = ImageDraw.Draw(fallback_overlay)
-            draw.rectangle((8, 8, min(fallback_overlay.width - 8, 430), 58), fill=(0, 0, 0), outline=(255, 180, 0), width=2)
-            draw.text((16, 18), 'InternNav debug overlay unavailable', fill=(255, 220, 80))
-            draw.text((16, 36), 'showing ego camera fallback', fill=(255, 255, 255))
-            self.debug_overlay_writer.write(np.asarray(fallback_overlay, dtype=np.uint8))
-            self.current_episode_info['debug_overlay_frames'] += 1
-            self.current_episode_info['debug_overlay_video_codec'] = getattr(self.debug_overlay_writer, 'codec', None)
-            self.current_episode_info['debug_overlay_fallback'] = True
+                self.current_episode_info['debug_overlay_fallback'] = True
+            self.current_episode_info['debug_overlay_source'] = self._debug_overlay_source_diagnostics()
         if (
             self.sim_top_down_writer is not None
             and self.latest_sim_top_down is not None
@@ -2017,11 +2059,15 @@ class EvalVideoRecorder(Node):
         self._maybe_write_frame()
 
     def _on_debug_overlay_image(self, msg: Image):
+        self.debug_overlay_received_count += 1
         image = image_msg_to_numpy(msg)
         if image is None:
+            self.debug_overlay_decode_failures += 1
             return
         self.latest_debug_overlay = image
         self.latest_debug_overlay_generation = self.reset_generation if self.reset_seen else -1
+        if self.reset_seen:
+            self.debug_overlay_post_reset_count += 1
 
     def _on_sim_top_down_image(self, msg: Image):
         image = image_msg_to_numpy(msg)

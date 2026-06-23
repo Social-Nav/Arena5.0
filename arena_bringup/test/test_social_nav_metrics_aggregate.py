@@ -94,6 +94,12 @@ def test_aggregate_reports_legacy_and_strict_rates_separately(tmp_path):
                         "videos": {
                             "ego_debug_overlay": {
                                 "fallback": True,
+                                "source": {
+                                    "status": "no_post_reset_model_debug_image",
+                                    "received_count": 0,
+                                    "model_frame_count": 0,
+                                    "fallback_frame_count": 12,
+                                },
                             }
                         }
                     }
@@ -115,12 +121,17 @@ def test_aggregate_reports_legacy_and_strict_rates_separately(tmp_path):
     assert row["min_footprint_clearance_time_sec"] == 12.5
     assert row["min_footprint_clearance_human_id"] == "7"
     assert row["debug_overlay_fallback"] is True
+    assert row["debug_overlay_source_status"] == "no_post_reset_model_debug_image"
+    assert row["debug_overlay_received_count"] == 0
+    assert row["debug_overlay_model_frames"] == 0
+    assert row["debug_overlay_fallback_frames"] == 12
     assert row["legacy_social_success"] is True
     assert row["social_success"] is False
     assert row["strict_social_success"] is False
     assert "legacy_task_false_positive" in row["failure_tags"]
     assert "timeout" in row["failure_tags"]
     assert "debug_overlay_fallback" in row["failure_tags"]
+    assert "debug_overlay_source_no_post_reset_model_debug_image" in row["failure_tags"]
     assert summary["task_success_rate"] == 0.0
     assert summary["social_success_rate"] == 0.0
     assert summary["legacy_task_success_rate"] == 1.0
