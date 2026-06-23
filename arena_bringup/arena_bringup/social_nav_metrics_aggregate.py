@@ -40,8 +40,12 @@ SUMMARY_FIELDS = [
     'ndtw',
     'robot_moved',
     'goal_progress_m',
+    'diagnostic_goal_progress_m',
+    'diagnostic_goal_distance_min_m',
     'min_human_distance_m',
     'min_footprint_clearance_m',
+    'min_footprint_clearance_time_sec',
+    'min_footprint_clearance_human_id',
     'near_miss_count',
     'human_collision_count',
     'footprint_near_miss_count',
@@ -125,14 +129,36 @@ def summarize_run(run_dir: Path) -> dict[str, Any]:
     fault = diagnostics.get('fault_candidates', {}) if isinstance(diagnostics, dict) else {}
     stale_camera_count = fault.get('stale_record_count', 0) if isinstance(fault, dict) else 0
     goal_distance = diagnostics.get('goal_distance', {}) if isinstance(diagnostics, dict) else {}
-    goal_progress = goal_distance.get('progress_first_minus_last') if isinstance(goal_distance, dict) else None
+    odom_goal_distance = diagnostics.get('odom_goal_distance', {}) if isinstance(diagnostics, dict) else {}
+    diagnostic_goal_progress = goal_distance.get('progress_first_minus_last') if isinstance(goal_distance, dict) else None
+    if diagnostic_goal_progress is None and isinstance(odom_goal_distance, dict):
+        diagnostic_goal_progress = odom_goal_distance.get('progress_first_minus_last')
+    diagnostic_goal_distance_min = goal_distance.get('min') if isinstance(goal_distance, dict) else None
+    if diagnostic_goal_distance_min is None and isinstance(odom_goal_distance, dict):
+        diagnostic_goal_distance_min = odom_goal_distance.get('min')
     goal_metrics = vln_task.get('goal', {}) if isinstance(vln_task, dict) else {}
+    start_distance_m = None
+    final_distance_m = None
+    if isinstance(goal_metrics, dict):
+        start_xy = _xy(goal_metrics.get('start_xy'))
+        goal_xy = _xy(goal_metrics.get('goal_xy'))
+        final_xy = _xy(goal_metrics.get('final_xy'))
+        if start_xy is not None and goal_xy is not None:
+            start_distance_m = _distance(start_xy, goal_xy)
+        if final_xy is not None and goal_xy is not None:
+            final_distance_m = _distance(final_xy, goal_xy)
+    goal_progress_m = (
+        start_distance_m - final_distance_m
+        if start_distance_m is not None and final_distance_m is not None
+        else diagnostic_goal_progress
+    )
     vln_metrics = vln_task.get('vln', {}) if isinstance(vln_task, dict) else {}
     timing_metrics = vln_task.get('episode_timing', {}) if isinstance(vln_task, dict) else {}
     static_occupancy = vln_task.get('static_occupancy', {}) if isinstance(vln_task, dict) else {}
     commanded_stuck = vln_task.get('commanded_stuck', {}) if isinstance(vln_task, dict) else {}
     strict_task_failures = vln_task.get('strict_task_failure_reasons', []) if isinstance(vln_task, dict) else []
     strict_social_failures = social.get('strict_social_failure_reasons', []) if isinstance(social, dict) else []
+    min_footprint_sample = social.get('min_footprint_clearance_sample', {}) if isinstance(social, dict) else {}
     failed_checks = validation.get('failed_checks', []) if isinstance(validation, dict) else []
     warnings = validation.get('warnings', []) if isinstance(validation, dict) else []
     benchmark_ready = strict_task_success and strict_social_success and artifact_pass and social_nav_ready
@@ -164,9 +190,17 @@ def summarize_run(run_dir: Path) -> dict[str, Any]:
         'spl': _float_or_none(vln_metrics.get('spl') if isinstance(vln_metrics, dict) else None),
         'ndtw': _float_or_none(vln_metrics.get('ndtw') if isinstance(vln_metrics, dict) else None),
         'robot_moved': metrics_check.get('robot_moved'),
-        'goal_progress_m': _float_or_none(goal_progress),
+        'goal_progress_m': _float_or_none(goal_progress_m),
+        'diagnostic_goal_progress_m': _float_or_none(diagnostic_goal_progress),
+        'diagnostic_goal_distance_min_m': _float_or_none(diagnostic_goal_distance_min),
         'min_human_distance_m': _float_or_none(social.get('min_human_distance_m') if isinstance(social, dict) else None),
         'min_footprint_clearance_m': _float_or_none(social.get('min_footprint_clearance_m') if isinstance(social, dict) else None),
+        'min_footprint_clearance_time_sec': _float_or_none(
+            min_footprint_sample.get('time_sec') if isinstance(min_footprint_sample, dict) else None
+        ),
+        'min_footprint_clearance_human_id': (
+            min_footprint_sample.get('human_id') if isinstance(min_footprint_sample, dict) else ''
+        ),
         'near_miss_count': _int_or_zero(social.get('near_miss_count') if isinstance(social, dict) else None),
         'human_collision_count': _int_or_zero(social.get('human_collision_count') if isinstance(social, dict) else None),
         'footprint_near_miss_count': _int_or_zero(social.get('footprint_near_miss_count') if isinstance(social, dict) else None),
@@ -310,6 +344,19 @@ def _float_or_none(value: Any) -> float | None:
         return float(value)
     except Exception:
         return None
+
+
+def _xy(value: Any) -> tuple[float, float] | None:
+    if not isinstance(value, (list, tuple)) or len(value) < 2:
+        return None
+    try:
+        return (float(value[0]), float(value[1]))
+    except Exception:
+        return None
+
+
+def _distance(first: tuple[float, float], second: tuple[float, float]) -> float:
+    return ((first[0] - second[0]) ** 2 + (first[1] - second[1]) ** 2) ** 0.5
 
 
 def _int_or_zero(value: Any) -> int:
