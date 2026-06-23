@@ -1,5 +1,6 @@
 import argparse
 import json
+import math
 import os
 import re
 import signal
@@ -843,6 +844,19 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
     if not records:
         return None
 
+    def _coerce_xy(value) -> tuple[float, float] | None:
+        if isinstance(value, dict) and 'x' in value and 'y' in value:
+            try:
+                return (float(value['x']), float(value['y']))
+            except Exception:
+                return None
+        if isinstance(value, (list, tuple)) and len(value) >= 2:
+            try:
+                return (float(value[0]), float(value[1]))
+            except Exception:
+                return None
+        return None
+
     action_counts: dict[str, int] = {}
     no_action_status_counts: dict[str, int] = {}
     statuses: dict[str, int] = {}
@@ -876,6 +890,8 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
     final_goal_distances = []
     yaw_errors = []
     commands = []
+    current_goal_xy: tuple[float, float] | None = None
+    odom_goal_distance_samples = []
     event_counts: dict[str, int] = {}
     for rec in records:
         event_type = str(rec.get('event_type') or rec.get('event') or 'model_result')
@@ -970,9 +986,26 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
         if abs(vx) <= 0.01 and abs(wz) <= 0.01:
             stop_count += 1
         goal = payload.get('goal') if isinstance(payload.get('goal'), dict) else {}
+        goal_xy = _coerce_xy(goal) or _coerce_xy(debug.get('goal'))
+        if goal_xy is not None:
+            current_goal_xy = goal_xy
         dist = goal.get('goal_distance', debug.get('goal_distance'))
         final_dist = debug.get('final_goal_distance')
         yaw = goal.get('yaw_error', debug.get('yaw_error'))
+        odom_xy = _coerce_xy(debug.get('odom')) or _coerce_xy(payload.get('odom'))
+        if current_goal_xy is not None and odom_xy is not None:
+            odom_goal_distance = math.hypot(odom_xy[0] - current_goal_xy[0], odom_xy[1] - current_goal_xy[1])
+            odom_goal_distance_samples.append(
+                {
+                    'event_type': event_type,
+                    'status': status,
+                    'request_id': debug.get('request_id'),
+                    'http_idx': payload.get('http_idx'),
+                    'odom': [odom_xy[0], odom_xy[1]],
+                    'goal': [current_goal_xy[0], current_goal_xy[1]],
+                    'distance_m': odom_goal_distance,
+                }
+            )
         if isinstance(dist, (float, int)):
             goal_distances.append(float(dist))
         if isinstance(final_dist, (float, int)):
@@ -1014,12 +1047,25 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
         if first_final_distance is not None and last_final_distance is not None
         else None
     )
+    odom_goal_distances = [sample['distance_m'] for sample in odom_goal_distance_samples]
+    first_odom_goal_distance = odom_goal_distances[0] if odom_goal_distances else None
+    last_odom_goal_distance = odom_goal_distances[-1] if odom_goal_distances else None
+    min_odom_goal_distance = min(odom_goal_distances) if odom_goal_distances else None
+    odom_goal_progress = (
+        first_odom_goal_distance - last_odom_goal_distance
+        if first_odom_goal_distance is not None and last_odom_goal_distance is not None
+        else None
+    )
+    min_odom_goal_sample = None
+    if odom_goal_distance_samples:
+        min_odom_goal_sample = min(odom_goal_distance_samples, key=lambda sample: sample['distance_m'])
     ratio_total = control_record_count or total
     rotate_ratio = rotate_count / ratio_total if ratio_total else 0.0
     forward_ratio = forward_count / ratio_total if ratio_total else 0.0
     yaw_sign_mismatch_ratio = yaw_sign_mismatch / yaw_sign_check_count if yaw_sign_check_count else 0.0
+    effective_goal_progress = progress if progress is not None else odom_goal_progress
     flags = []
-    if rotate_ratio >= 0.65 and (progress is None or progress < 0.5):
+    if rotate_ratio >= 0.65 and (effective_goal_progress is None or effective_goal_progress < 0.5):
         flags.append('rotate_heavy_low_progress')
     if yaw_sign_mismatch_ratio >= 0.45:
         flags.append('possible_action_or_yaw_sign_mismatch')
@@ -1081,6 +1127,14 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
             'last': last_final_distance,
             'min': min_final_distance,
             'progress_first_minus_last': final_progress,
+        },
+        'odom_goal_distance': {
+            'first': first_odom_goal_distance,
+            'last': last_odom_goal_distance,
+            'min': min_odom_goal_distance,
+            'progress_first_minus_last': odom_goal_progress,
+            'sample_count': len(odom_goal_distance_samples),
+            'min_sample': min_odom_goal_sample,
         },
         'fault_candidates': {
             'flags': flags,
