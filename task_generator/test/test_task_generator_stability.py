@@ -466,7 +466,7 @@ def test_task_generator_episode_outcome_payload_contains_reason(monkeypatch):
     node._pub_episode_outcome = _Publisher()
     node.conf = SimpleNamespace(General=SimpleNamespace(DESIRED_EPISODES=SimpleNamespace(value=1)))
     node.get_logger = lambda: _Logger()
-    monkeypatch.setattr(TaskGenerator, 'time', property(lambda _self: SimpleNamespace(nanoseconds=12_300_000_000)))
+    monkeypatch.setattr(TaskGenerator, 'sim_time', property(lambda _self: SimpleNamespace(nanoseconds=12_300_000_000)))
     monkeypatch.setattr('task_generator.node.time.time', lambda: 456.0)
 
     node._publish_episode_outcome('sim_timeout')

@@ -449,14 +449,20 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
     def _publish_episode_outcome(self, reason: str) -> None:
         desired = int(self.conf.General.DESIRED_EPISODES.value)
         episode_index = max(int(self._completed_episodes) - 1, 0)
-        sim_nanoseconds = getattr(self.time, 'nanoseconds', None)
+        sim_time_sec = None
+        try:
+            sim_time_sec = float(self.sim_time.nanoseconds) / 1e9
+        except Exception:
+            sim_nanoseconds = getattr(self.time, 'nanoseconds', None)
+            if isinstance(sim_nanoseconds, (int, float)):
+                sim_time_sec = float(sim_nanoseconds) / 1e9
         payload = {
             'episode_index': episode_index,
             'completed_episodes': int(self._completed_episodes),
             'desired_episodes': desired,
             'reason': str(reason or 'unknown'),
             'finished': desired >= 0 and int(self._completed_episodes) >= desired,
-            'sim_time_sec': float(sim_nanoseconds) / 1e9 if isinstance(sim_nanoseconds, (int, float)) else None,
+            'sim_time_sec': sim_time_sec,
             'wall_time': time.time(),
         }
         try:
