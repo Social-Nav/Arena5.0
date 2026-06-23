@@ -340,14 +340,20 @@ every JSON file: `goal_progress_m`, `diagnostic_goal_progress_m`,
 from the ego camera fallback path because the model debug image stream was not
 available.  The video artifact can still be usable for visual review, but the
 run should be tagged so model-side debug stream coverage is not overstated.
+Use `debug_overlay_source_status`, `debug_overlay_model_frames`,
+`debug_overlay_fallback_frames`, and `debug_overlay_received_count` to
+distinguish a fully missing debug stream from a short startup fallback.  For
+example, `debug_overlay_source_status=model_debug_image` with non-zero model
+frames means the model overlay was recorded after startup, while any non-zero
+fallback frames should still be preserved as an instrumentation-readiness tag.
 
 ### Recent GRScenes strict benchmark output
 
-The 2026-06-23 `grscenes_5 + Ai2_Bot2 + InternNav` Isaac run wrote complete
-strict benchmark artifacts to:
+The 2026-06-23 `grscenes_5 + Ai2_Bot2 + InternNav` Isaac rerun with debug
+overlay source diagnostics wrote complete strict benchmark artifacts to:
 
 ```text
-/home/ubuntu/arena_jazzy_ws/outputs/grscenes_benchmark_quality_eval_20260623/20260623_090711_grscenes_5_Ai2_Bot2_internnav
+/home/ubuntu/arena_jazzy_ws/outputs/grscenes_benchmark_quality_eval_20260623_rerun/20260623_095109_grscenes_5_Ai2_Bot2_internnav
 ```
 
 This run verifies that the pipeline can automatically produce videos,
@@ -356,15 +362,20 @@ This run verifies that the pipeline can automatically produce videos,
 benchmark success:
 
 - `strict_task_success=false` with `episode_timeout`, `goal_not_reached`,
-  `commanded_stuck`, and `static_occupancy_collision`.
+  and `static_occupancy_collision`.
 - `strict_social_success=false` with `footprint_human_collision`,
-  `footprint_near_miss`, `static_occupancy_collision`, and `commanded_stuck`.
+  `footprint_near_miss`, and `static_occupancy_collision`.
 - `dynamic_scene_success=true`, `moving_human_count=2`, and manual review of
   `sim_top_down.mp4` confirms animated HuNav pedestrians are visible and walking.
 - Legacy success fields can look optimistic for this run, so aggregate failure
   tags include `legacy_task_false_positive` and `legacy_social_false_positive`.
-- `debug_overlay_fallback=true`, so model debug-image coverage remains a known
-  instrumentation gap.
+- `debug_overlay_fallback=true`, but `debug_overlay_source.status` is
+  `model_debug_image` with 1066 model frames and 3 startup fallback frames.
+  The run remains tagged for readiness review, but the overlay is not empty.
+- `frame_analysis/video_frame_analysis.json` records a manual keyframe review:
+  `sim_top_down` is visual PASS, `ego_debug_overlay` is
+  `PASS_WITH_READINESS_WARNING`, and strict task/social failures remain the
+  reason the run is not benchmark-ready.
 
 For the 2026-05-17 video rerun, the aggregate-ready acceptance outputs were:
 

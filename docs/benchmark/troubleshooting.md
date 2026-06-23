@@ -174,6 +174,11 @@ prove that model-side debug-image publishing is healthy.
 
 - inspect `video_index.json` and `artifact_validation.json` for the per-video
   `fallback` flag
+- inspect `debug_overlay_source.status`, `model_frame_count`, and
+  `fallback_frame_count`; `status=model_debug_image` with a small fallback count
+  usually means only startup frames fell back, while
+  `no_post_reset_model_debug_image` means the model stream never arrived after
+  reset
 - inspect `ego_observation.mp4` and `ego_debug_overlay.mp4` together; the
   fallback overlay should still show action/command diagnostics over the ego view
 - keep the run tagged with `debug_overlay_fallback` in aggregate output
