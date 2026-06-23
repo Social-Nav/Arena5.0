@@ -32,6 +32,8 @@ SUMMARY_FIELDS = [
     'social_nav_ready',
     'benchmark_ready',
     'path_length_m',
+    'episode_duration_sec',
+    'episode_timeout',
     'navigation_error_m',
     'oracle_error_m',
     'spl',
@@ -126,6 +128,7 @@ def summarize_run(run_dir: Path) -> dict[str, Any]:
     goal_progress = goal_distance.get('progress_first_minus_last') if isinstance(goal_distance, dict) else None
     goal_metrics = vln_task.get('goal', {}) if isinstance(vln_task, dict) else {}
     vln_metrics = vln_task.get('vln', {}) if isinstance(vln_task, dict) else {}
+    timing_metrics = vln_task.get('episode_timing', {}) if isinstance(vln_task, dict) else {}
     static_occupancy = vln_task.get('static_occupancy', {}) if isinstance(vln_task, dict) else {}
     commanded_stuck = vln_task.get('commanded_stuck', {}) if isinstance(vln_task, dict) else {}
     strict_task_failures = vln_task.get('strict_task_failure_reasons', []) if isinstance(vln_task, dict) else []
@@ -154,6 +157,8 @@ def summarize_run(run_dir: Path) -> dict[str, Any]:
         'social_nav_ready': social_nav_ready,
         'benchmark_ready': benchmark_ready,
         'path_length_m': _float_or_none(social.get('path_length_m') if isinstance(social, dict) else None),
+        'episode_duration_sec': _float_or_none(timing_metrics.get('duration_sec') if isinstance(timing_metrics, dict) else None),
+        'episode_timeout': _as_bool(timing_metrics.get('timed_out')) if isinstance(timing_metrics, dict) else False,
         'navigation_error_m': _float_or_none(goal_metrics.get('navigation_error_m') if isinstance(goal_metrics, dict) else None),
         'oracle_error_m': _float_or_none(goal_metrics.get('oracle_error_m') if isinstance(goal_metrics, dict) else None),
         'spl': _float_or_none(vln_metrics.get('spl') if isinstance(vln_metrics, dict) else None),
@@ -217,7 +222,7 @@ def failure_tags(row: dict[str, Any], manifest: dict[str, Any], validation: dict
         tags.append('personal_space_violation')
     if not row.get('strict_task_success'):
         result = manifest.get('result', {}) if isinstance(manifest, dict) else {}
-        if result.get('timed_out') or result.get('end_reason') == 'timeout':
+        if row.get('episode_timeout') or result.get('timed_out') or result.get('end_reason') == 'timeout':
             tags.append('timeout')
         else:
             tags.append('task_failure')

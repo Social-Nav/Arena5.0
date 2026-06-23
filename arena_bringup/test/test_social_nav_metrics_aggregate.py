@@ -28,6 +28,7 @@ def test_aggregate_reports_legacy_and_strict_rates_separately(tmp_path):
             {
                 "strict_task_success": False,
                 "strict_task_failure_reasons": ["goal_not_reached"],
+                "episode_timing": {"duration_sec": 120.0, "timed_out": True},
                 "goal": {"navigation_error_m": 1.5, "oracle_error_m": 1.0},
                 "vln": {"spl": 0.0, "ndtw": 0.2},
                 "static_occupancy": {"collision_sample_count": 2},
@@ -89,10 +90,13 @@ def test_aggregate_reports_legacy_and_strict_rates_separately(tmp_path):
     assert row["legacy_task_success"] is True
     assert row["task_success"] is False
     assert row["strict_task_success"] is False
+    assert row["episode_timeout"] is True
+    assert row["episode_duration_sec"] == 120.0
     assert row["legacy_social_success"] is True
     assert row["social_success"] is False
     assert row["strict_social_success"] is False
     assert "legacy_task_false_positive" in row["failure_tags"]
+    assert "timeout" in row["failure_tags"]
     assert summary["task_success_rate"] == 0.0
     assert summary["social_success_rate"] == 0.0
     assert summary["legacy_task_success_rate"] == 1.0
