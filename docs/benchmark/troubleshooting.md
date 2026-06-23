@@ -156,6 +156,30 @@ The run produces metadata files but no valid `.mp4`, or the videos are encoded w
 - confirm the input RGB topic really receives robot camera frames
 - for social-navigation acceptance, extract first/middle/last frames from `ego_observation`, `ego_debug_overlay`, `sim_top_down`, and `map_top_down_follow`; write the review to `frame_analysis/video_frame_analysis.json` and rerun `social_nav_validation`
 
+## Ego debug overlay uses fallback imagery
+
+### Symptom
+
+`ego_debug_overlay.mp4` exists and has frames, but `artifact_validation.json` or
+aggregate output reports `debug_overlay_fallback=true`.
+
+### Most likely cause
+
+The recorder could build an overlay from the ego camera stream, but the model
+debug image stream was unavailable for that episode.  This is not the same as an
+empty video: the video can still be useful for visual review, but it does not
+prove that model-side debug-image publishing is healthy.
+
+### Action
+
+- inspect `video_index.json` and `artifact_validation.json` for the per-video
+  `fallback` flag
+- inspect `ego_observation.mp4` and `ego_debug_overlay.mp4` together; the
+  fallback overlay should still show action/command diagnostics over the ego view
+- keep the run tagged with `debug_overlay_fallback` in aggregate output
+- debug the model/debug-image publisher separately before claiming full
+  instrumentation coverage
+
 ## Social-navigation validation fails with empty humans or odom
 
 ### Symptom
@@ -209,6 +233,42 @@ meshes sliding across the floor.
 - reject patches that call `RemoveAnimationGraphAPICommand`,
   `XformPrim.set_world_poses`, `XformPrim.set_local_poses`, or direct
   `person.state.position = ...` from the HuNav replay path
+
+## Legacy metrics report success but strict benchmark metrics fail
+
+### Symptom
+
+`metrics.csv` contains `GOAL_REACHED` or a social report has
+`social_success=true`, while `artifact_validation.json` reports
+`social_nav_ready=false` and aggregate output contains
+`legacy_task_false_positive` or `legacy_social_false_positive`.
+
+### Most likely cause
+
+The legacy base metrics are compatibility outputs and may use stale
+`start_goal.csv` or point-distance social thresholds.  GRScenes benchmark
+acceptance uses `vln_task_metrics.json` and strict social fields instead.  These
+strict metrics check the native scenario goal, timeout status, commanded-stuck
+intervals, static map occupancy, footprint-aware human clearance, and dynamic
+scene validity.
+
+### Action
+
+- open `vln_task_metrics.json` first and inspect:
+  - `strict_task_success`
+  - `strict_task_failure_reasons`
+  - `goal_metrics.navigation_error_m`
+  - `commanded_stuck.commanded_stuck_intervals`
+  - `static_occupancy.first_collision_sample`
+- open `social_metrics.json` and inspect:
+  - `strict_social_success`
+  - `strict_social_failure_reasons`
+  - `min_footprint_clearance_sample`
+  - `footprint_human_collision_events`
+  - `footprint_near_miss_events`
+- use `review_intervals` and the sample `time_sec` fields to jump into
+  `sim_top_down.mp4` and `map_top_down_follow.mp4`
+- do not report benchmark task/social success from `metrics.csv` alone
 
 ## External InternNav trace is missing or adapter reports missing `.npy`
 
@@ -274,3 +334,39 @@ Make sure the fallback publisher only writes to fallback topics and that the act
 ### Action
 
 Run metrics through the package entrypoint and point it at the run directory. The current resolver tries to bridge between manifest-based directories and the legacy recorder data layout.
+
+## Strict GRScenes run fails near furniture or pedestrians
+
+### Symptom
+
+The episode launches, videos are complete, HuNav humans move, and InternNav
+commands are present, but the strict result fails with combinations of:
+
+- `episode_timeout`
+- `goal_not_reached`
+- `commanded_stuck`
+- `static_occupancy_collision`
+- `footprint_human_collision`
+- `footprint_near_miss`
+
+### Most likely cause
+
+This is a real benchmark failure, not necessarily a pipeline failure.  Typical
+cases are: the robot gets physically trapped near furniture or a wall, the
+executed odom never reaches the native scenario goal tolerance, or the robot
+passes too close to a moving HuNav pedestrian.
+
+### Action
+
+- confirm the dynamic scene is valid with `dynamic_scene_success`,
+  `moving_human_count`, and `human_motion_total_m`
+- confirm InternNav was active with `internnav_diagnostic_summary.json`
+  event counts and command stats
+- use `goal_metrics.oracle_error_m` to distinguish "never close to goal" from
+  "passed near goal but finished elsewhere"
+- review `static_occupancy.first_collision_sample` and
+  `commanded_stuck.commanded_stuck_intervals` in `sim_top_down.mp4`
+- review `min_footprint_clearance_sample` and social event samples in
+  `sim_top_down.mp4`
+- keep the run in aggregate output as a strict failure unless the evidence points
+  to bad map/scenario metadata rather than robot behavior

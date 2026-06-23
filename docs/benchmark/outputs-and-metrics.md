@@ -159,6 +159,13 @@ The main calculated fields are:
 | `collision_amount` | Rising-edge count of laser scans with ranges below the robot radius. |
 | `result` | `TIMEOUT`, `COLLISION`, or `GOAL_REACHED` based on timeout, collision count, and final distance to goal. |
 
+`metrics.csv` is kept for backward compatibility, but it is not the benchmark
+success gate for GRScenes social-navigation runs.  In recorded GRScenes data the
+legacy `start_goal.csv` can be stale or incomplete, so a row with
+`result=GOAL_REACHED` is only a base-metrics signal.  Benchmark success must be
+read from `vln_task_metrics.json`, `social_metrics.json`, and
+`artifact_validation.json`.
+
 Generate the base metrics for a run directory with:
 
 ```bash
@@ -170,6 +177,39 @@ InternNav social-eval runs normally invoke this during post-processing unless
 
 The Arena evaluator environment must include `pandas`; it is declared by the
 `arena_evaluation` package and the top-level Arena Python environment.
+
+## Strict VLN task metrics
+
+Social-VLN benchmark runs write `vln_task_metrics.json` after the base metrics.
+This file uses the native GRScenes/Arena scenario metadata as the authoritative
+start and goal contract, then audits the executed odom and command streams.
+
+Important output fields:
+
+- `strict_task_success`: true only when the episode does not time out, reaches
+  the scenario goal within tolerance, avoids commanded-stuck intervals, and does
+  not occupy static map obstacles.
+- `strict_task_failure_reasons`: failure taxonomy such as `episode_timeout`,
+  `goal_not_reached`, `commanded_stuck`, and `static_occupancy_collision`.
+- `goal_metrics.navigation_error_m`: final distance to the scenario goal.
+- `goal_metrics.oracle_error_m`: best distance to the scenario goal at any point
+  on the executed trajectory.
+- `goal_metrics.goal_tolerance_m`: tolerance used for the strict goal check.
+- `start_goal_consistency`: comparison between native scenario metadata and
+  recorder `start_goal.csv`; mismatches are warnings against trusting legacy
+  success fields.
+- `commanded_stuck.commanded_stuck_time_sec` and
+  `commanded_stuck.commanded_stuck_intervals`: intervals where commands request
+  motion but odom shows insufficient progress.
+- `static_occupancy.collision_sample_count`,
+  `static_occupancy.first_collision_sample`, and `static_occupancy.intervals`:
+  map-occupancy evidence for the robot footprint intersecting static obstacles.
+
+Strict task success is the VLN instruction-completion gate currently available
+in Arena.  It verifies that the robot reached the annotated target implied by
+the recorded instruction and scenario contract.  It does not yet evaluate richer
+BDDL predicates beyond the goal contract unless those predicates are projected
+into the scenario metadata and strict metrics config.
 
 ## Social-navigation metrics
 
@@ -198,6 +238,25 @@ Important output fields:
 - `crowd_freezing_time_sec`: time inside personal space while robot speed is below the freezing threshold
 - `large_teleports`: odom jumps above the teleport threshold, used to reject invalid motion traces
 - `social_success`: true only when humans are present, there are no human collisions, no near misses, and no large teleports
+- `strict_social_success`: benchmark social gate; this preserves the legacy
+  social checks and also fails when the dynamic scene is invalid, footprint
+  clearance violates human safety thresholds, or strict task diagnostics expose
+  static-obstacle/stuck behavior.
+- `strict_social_failure_reasons`: failure taxonomy such as
+  `dynamic_scene_failed`, `footprint_human_collision`,
+  `footprint_near_miss`, `point_near_miss`, `point_human_collision`,
+  `large_teleport`, `static_occupancy_collision`, and `commanded_stuck`.
+- `min_distance_sample`: robot/human sample at the minimum point-distance.
+- `min_footprint_clearance_m`: minimum clearance after subtracting robot and
+  human radii.  Negative values mean the footprints overlap.
+- `min_footprint_clearance_sample`: auditable sample containing simulation time,
+  robot pose, human id, human position, point distance, and footprint clearance.
+- `point_near_miss_events`, `point_human_collision_events`,
+  `footprint_near_miss_events`, and `footprint_human_collision_events`:
+  event-level evidence for social safety failures.
+- `review_intervals`: simulation-time intervals to inspect in the videos for
+  commanded-stuck and static-occupancy failures imported from strict task
+  metrics.
 
 Run it manually with:
 
@@ -209,6 +268,12 @@ ros2 run arena_evaluation social_metrics --dir /path/to/run_dir
 metrics.  For `dual_vln` social-eval runs, it requires artifacts, human samples,
 and robot movement; social acceptance is therefore not inferred from a launch
 return code alone.
+
+The validation gate treats strict task and strict social success as required for
+`social_nav_ready=true`.  If legacy `metrics.csv` reports `GOAL_REACHED` while
+`strict_task_success=false`, validation emits a false-positive warning.  If a
+legacy or older social field reports success while `strict_social_success=false`,
+validation emits the corresponding social false-positive warning.
 
 ## Aggregating Dynamic Social VLN runs
 
@@ -238,12 +303,68 @@ failure tags.  Current failure tags include:
 - `collision`
 - `near_miss`
 - `personal_space_violation`
+- `legacy_task_false_positive`
+- `legacy_social_false_positive`
+- `footprint_collision`
+- `footprint_near_miss`
+- `static_occupancy_collision`
+- `commanded_stuck`
 - `timeout`
+- `debug_overlay_fallback`
 - `task_failure`
 - `stale_observation_candidate`
 
 `stale_observation_candidate` is treated as a failure tag only for unsuccessful
 runs; successful runs may still report stale-record diagnostics for triage.
+
+Aggregate rows expose both legacy and strict rates:
+
+- `legacy_task_success` / `legacy_task_success_rate`: compatibility view based
+  on `metrics.csv`.
+- `strict_task_success` / `strict_task_success_rate`: benchmark task gate based
+  on `vln_task_metrics.json`.
+- `legacy_social_success` / `legacy_social_success_rate`: compatibility view
+  for older social reports.
+- `strict_social_success` / `strict_social_success_rate`: benchmark social gate.
+- `benchmark_ready`: true only when strict task, strict social, artifact
+  validation, and `social_nav_ready` are all true.
+
+The aggregate also carries audit fields for reviewing failures without opening
+every JSON file: `goal_progress_m`, `diagnostic_goal_progress_m`,
+`diagnostic_goal_distance_min_m`, `navigation_error_m`,
+`min_footprint_clearance_m`, `min_footprint_clearance_time_sec`,
+`min_footprint_clearance_human_id`, `static_occupancy_collision_samples`,
+`commanded_stuck_time_sec`, and `debug_overlay_fallback`.
+
+`debug_overlay_fallback=true` means `ego_debug_overlay.mp4` exists but was built
+from the ego camera fallback path because the model debug image stream was not
+available.  The video artifact can still be usable for visual review, but the
+run should be tagged so model-side debug stream coverage is not overstated.
+
+### Recent GRScenes strict benchmark output
+
+The 2026-06-23 `grscenes_5 + Ai2_Bot2 + InternNav` Isaac run wrote complete
+strict benchmark artifacts to:
+
+```text
+/home/ubuntu/arena_jazzy_ws/outputs/grscenes_benchmark_quality_eval_20260623/20260623_090711_grscenes_5_Ai2_Bot2_internnav
+```
+
+This run verifies that the pipeline can automatically produce videos,
+`metrics.csv`, `vln_task_metrics.json`, `social_metrics.json`,
+`artifact_validation.json`, and aggregate rows.  It is intentionally not a
+benchmark success:
+
+- `strict_task_success=false` with `episode_timeout`, `goal_not_reached`,
+  `commanded_stuck`, and `static_occupancy_collision`.
+- `strict_social_success=false` with `footprint_human_collision`,
+  `footprint_near_miss`, `static_occupancy_collision`, and `commanded_stuck`.
+- `dynamic_scene_success=true`, `moving_human_count=2`, and manual review of
+  `sim_top_down.mp4` confirms animated HuNav pedestrians are visible and walking.
+- Legacy success fields can look optimistic for this run, so aggregate failure
+  tags include `legacy_task_false_positive` and `legacy_social_false_positive`.
+- `debug_overlay_fallback=true`, so model debug-image coverage remains a known
+  instrumentation gap.
 
 For the 2026-05-17 video rerun, the aggregate-ready acceptance outputs were:
 
