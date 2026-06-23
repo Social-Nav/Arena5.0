@@ -20,7 +20,10 @@ from task_generator.shared import Pose, rosparam_set
 from . import Namespaced, Props_
 from .modules import TM_Module
 from .obstacles import TM_Obstacles
-from .robots import TM_Robots
+from .robots import DONE_REASON_RUNNING, TM_Robots
+
+
+DONE_REASON_FORCE_RESET = "force_reset"
 
 # import training.srv as training_srvs
 
@@ -329,6 +332,12 @@ class Task(_TaskRegistry, NodeInterface, Props_):
             bool: True if the task is done, False otherwise.
         """
         return self._force_reset or await self.__tm_robots.done
+
+    @property
+    def last_done_reason(self) -> str:
+        if self._force_reset:
+            return DONE_REASON_FORCE_RESET
+        return str(getattr(self.__tm_robots, 'last_done_reason', DONE_REASON_RUNNING))
 
     async def set_robot_position(self, pose: Pose):
         """

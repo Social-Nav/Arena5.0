@@ -1,5 +1,6 @@
 import asyncio
 import importlib.util
+import json
 import os
 import struct
 import sys
@@ -69,7 +70,11 @@ if importlib.util.find_spec('rclpy') is None:
     sensor_msgs.msg.__getattr__ = lambda name: object
     std_msgs = _module('std_msgs')
     std_msgs.msg = _module('std_msgs.msg')
-    std_msgs.msg.String = type('String', (), {})
+    class _String:
+        def __init__(self, data=''):
+            self.data = data
+
+    std_msgs.msg.String = _String
 
     ament_index_python = _module('ament_index_python')
     ament_index_python.packages = _module('ament_index_python.packages')
@@ -151,6 +156,7 @@ if importlib.util.find_spec('rclpy') is None:
 
 from task_generator.manager.robot_manager import robot_manager as robot_manager_module
 from task_generator.manager.robot_manager.robot_manager import RobotManager
+from task_generator.node import TaskGenerator
 from task_generator.tasks.robots import TM_Robots
 
 
@@ -418,3 +424,59 @@ def test_tm_robots_done_uses_separate_wall_timeout_factor(monkeypatch):
 
     monkeypatch.setattr(time, 'monotonic', lambda: 251.0)
     assert asyncio.run(mode.done) is True
+
+
+def test_tm_robots_done_records_sim_timeout_reason(monkeypatch):
+    mode = TM_Robots.__new__(TM_Robots)
+    mode._NodeInterface__node = SimpleNamespace(
+        conf=SimpleNamespace(Robot=SimpleNamespace(TIMEOUT=SimpleNamespace(value=10))),
+        rosparam=_RosParamAccessor({'timeout_wall_factor': 5.0, 'timeout_wall_sec': 0.0}),
+    )
+    mode._PROPS = SimpleNamespace(clock=SimpleNamespace(clock=SimpleNamespace(sec=11)), robots={})
+    mode._last_reset = 0
+    mode._last_reset_wall = 100.0
+    monkeypatch.setattr(time, 'monotonic', lambda: 101.0)
+
+    assert asyncio.run(mode.done) is True
+    assert mode.last_done_reason == 'sim_timeout'
+
+
+def test_tm_robots_done_records_goal_reached_reason():
+    mode = TM_Robots.__new__(TM_Robots)
+    mode._NodeInterface__node = SimpleNamespace(
+        conf=SimpleNamespace(Robot=SimpleNamespace(TIMEOUT=SimpleNamespace(value=10))),
+        rosparam=_RosParamAccessor({'timeout_wall_factor': 5.0, 'timeout_wall_sec': 0.0}),
+    )
+    robot = SimpleNamespace(is_done=_done_true())
+    mode._PROPS = SimpleNamespace(clock=SimpleNamespace(clock=SimpleNamespace(sec=1)), robots={'robot': robot})
+    mode._last_reset = 0
+    mode._last_reset_wall = time.monotonic()
+
+    assert asyncio.run(mode.done) is True
+    assert mode.last_done_reason == 'goal_reached'
+
+
+async def _done_true():
+    return True
+
+
+def test_task_generator_episode_outcome_payload_contains_reason(monkeypatch):
+    node = TaskGenerator.__new__(TaskGenerator)
+    node._completed_episodes = 1
+    node._pub_episode_outcome = _Publisher()
+    node.conf = SimpleNamespace(General=SimpleNamespace(DESIRED_EPISODES=SimpleNamespace(value=1)))
+    node.get_logger = lambda: _Logger()
+    monkeypatch.setattr(TaskGenerator, 'time', property(lambda _self: SimpleNamespace(nanoseconds=12_300_000_000)))
+    monkeypatch.setattr('task_generator.node.time.time', lambda: 456.0)
+
+    node._publish_episode_outcome('sim_timeout')
+
+    assert len(node._pub_episode_outcome.messages) == 1
+    payload = json.loads(node._pub_episode_outcome.messages[0].data)
+    assert payload['episode_index'] == 0
+    assert payload['completed_episodes'] == 1
+    assert payload['desired_episodes'] == 1
+    assert payload['finished'] is True
+    assert payload['reason'] == 'sim_timeout'
+    assert payload['sim_time_sec'] == 12.3
+    assert payload['wall_time'] == 456.0

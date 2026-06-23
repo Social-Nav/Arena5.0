@@ -156,6 +156,76 @@ raise SystemExit(0 if done['seen'] else 1)
     )
 
 
+def _start_episode_outcome_watcher(
+    env: dict[str, str],
+    topic: str,
+    output_path: str,
+    task_reset_topic: str,
+    scenario_reset_topic: str,
+) -> subprocess.Popen:
+    python_bin = _eval_python_executable(env)
+    watcher_code = r'''
+import json
+import sys
+import time
+from pathlib import Path
+
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
+from std_msgs.msg import Int16, String
+
+topic = sys.argv[1]
+output_path = Path(sys.argv[2])
+task_reset_topic = sys.argv[3]
+scenario_reset_topic = sys.argv[4]
+rclpy.init()
+node = Node('internnav_eval_episode_outcome_watcher')
+qos = QoSProfile(depth=1)
+qos.reliability = ReliabilityPolicy.RELIABLE
+qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
+state = {'seen': False, 'reset_seen': False, 'last_reset_monotonic': 0.0}
+
+def _on_outcome(msg):
+    if not state['reset_seen'] or (time.monotonic() - state['last_reset_monotonic']) < 0.5:
+        return
+    try:
+        payload = json.loads(msg.data)
+    except Exception:
+        payload = {'raw': msg.data}
+    if not isinstance(payload, dict):
+        payload = {'raw': payload}
+    payload.setdefault('received_wall_time', time.time())
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+    state['seen'] = True
+
+def _on_reset(_msg):
+    state['reset_seen'] = True
+    state['last_reset_monotonic'] = time.monotonic()
+
+node.create_subscription(String, topic, _on_outcome, qos)
+node.create_subscription(Int16, task_reset_topic, _on_reset, 10)
+node.create_subscription(Int16, scenario_reset_topic, _on_reset, 10)
+try:
+    while rclpy.ok() and not state['seen']:
+        rclpy.spin_once(node, timeout_sec=0.5)
+finally:
+    node.destroy_node()
+    rclpy.shutdown()
+
+raise SystemExit(0 if state['seen'] else 1)
+'''
+
+    return subprocess.Popen(
+        [python_bin, '-c', watcher_code, topic, output_path, task_reset_topic, scenario_reset_topic],
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+
 def _start_status_watcher(
     env: dict[str, str],
     topic: str,
@@ -1104,6 +1174,11 @@ def _scenario_reset_topic(task_reset_topic: str, robot: str) -> str:
     # scenario_reset stream during eval.  Reuse task_reset as the canonical
     # episode boundary so watchers/recorders do not wait on a dead topic.
     return task_reset_topic
+
+
+def _episode_outcome_topic(finished_topic: str, task_reset_topic: str) -> str:
+    root = _task_root_from_topic(finished_topic or task_reset_topic)
+    return f'{root}/episode_outcome'
 
 
 def _world_map_yaml_path(sim_setup_share: str, world: str) -> str:
@@ -2225,8 +2300,14 @@ def _classify_end_reason(
     launch_returncode: int | None,
     timed_out: bool,
     internnav_status,
+    episode_outcome=None,
     internnav_diagnostic_summary=None,
 ):
+    if finished_observed and isinstance(episode_outcome, dict):
+        reason = str(episode_outcome.get('reason') or '').strip()
+        if reason in {'goal_reached', 'sim_timeout', 'wall_timeout', 'force_reset'}:
+            return f'episode_{reason}'
+
     if finished_observed and not timed_out and launch_returncode in (None, 0):
         if isinstance(internnav_diagnostic_summary, dict):
             final_distance = internnav_diagnostic_summary.get('final_goal_distance')
@@ -2545,6 +2626,7 @@ def main() -> int:
     dual_vln_status_path = os.path.join(output_dir, 'internnav_status.json')
     internnav_trace_path = os.path.join(output_dir, 'internnav_trace.jsonl')
     internnav_diagnostic_summary_path = os.path.join(output_dir, 'internnav_diagnostic_summary.json')
+    episode_outcome_path = os.path.join(output_dir, 'episode_outcome.json')
     postprocess_commands_path = os.path.join(output_dir, 'postprocess_commands.txt')
     videos_dir = os.path.join(output_dir, 'videos')
     video_index_path = os.path.join(output_dir, 'video_index.json')
@@ -2578,6 +2660,7 @@ def main() -> int:
     robot_scan_topic = _robot_topic(args.task_reset_topic, args.robot, 'scan')
     robot_command_service = str(args.dual_vln_command_service or '').strip() or _robot_topic(args.task_reset_topic, args.robot, 'get_command')
     robot_scenario_reset_topic = _scenario_reset_topic(args.task_reset_topic, args.robot)
+    episode_outcome_topic = _episode_outcome_topic(args.finished_topic, args.task_reset_topic)
     map_yaml_path = _world_map_yaml_path(sim_setup_share, args.world)
 
     snapshot_files = {}
@@ -2792,6 +2875,7 @@ def main() -> int:
             'dual_vln_model_output_topic': robot_model_output_topic,
             'dual_vln_command_service': robot_command_service,
             'finished_topic': args.finished_topic,
+            'episode_outcome_topic': episode_outcome_topic,
             'task_reset_topic': args.task_reset_topic,
             'launch_timeout_sec': args.launch_timeout_sec,
             'shutdown_grace_period_sec': args.shutdown_grace_period_sec,
@@ -2809,6 +2893,7 @@ def main() -> int:
             'dual_vln_status_path': dual_vln_status_path,
             'internnav_trace_path': internnav_trace_path,
             'internnav_diagnostic_summary_path': internnav_diagnostic_summary_path,
+            'episode_outcome_path': episode_outcome_path,
             'internnav_timing_trace_path': os.path.join(output_dir, 'internnav_timing_trace.jsonl'),
             'internnav_timing_summary_path': os.path.join(output_dir, 'internnav_timing_summary.json'),
             'rtf_csv_path': os.path.join(output_dir, 'rtf.csv'),
@@ -2999,6 +3084,13 @@ def main() -> int:
         args.task_reset_topic,
         robot_scenario_reset_topic,
     )
+    outcome_proc = _start_episode_outcome_watcher(
+        env,
+        episode_outcome_topic,
+        episode_outcome_path,
+        args.task_reset_topic,
+        robot_scenario_reset_topic,
+    )
     # Direct official-client mode does not require wrapper status for pass/fail,
     # but the official ROS client publishes a JSON status stream.  Record it per
     # run so batch sweeps get run-local model/control evidence even when the
@@ -3077,12 +3169,15 @@ def main() -> int:
     finally:
         if finished_proc.poll() is None:
             _terminate_process_tree(finished_proc, grace_period_sec=2.0)
+        if outcome_proc.poll() is None:
+            _terminate_process_tree(outcome_proc, grace_period_sec=2.0)
         if status_proc is not None and status_proc.poll() is None:
             _terminate_process_tree(status_proc, grace_period_sec=2.0)
         if video_proc is not None and video_proc.poll() is None:
             _terminate_process_tree(video_proc, grace_period_sec=5.0)
 
     dual_vln_status = _read_json_if_exists(dual_vln_status_path)
+    episode_outcome = _read_json_if_exists(episode_outcome_path)
     internnav_diagnostic_summary = _write_internnav_diagnostic_summary(
         internnav_trace_path,
         internnav_diagnostic_summary_path,
@@ -3117,12 +3212,14 @@ def main() -> int:
         launch_returncode=launch_returncode,
         timed_out=timed_out,
         internnav_status=dual_vln_status,
+        episode_outcome=episode_outcome,
         internnav_diagnostic_summary=internnav_diagnostic_summary,
     )
 
     manifest['artifacts']['internnav_status_present'] = dual_vln_status is not None
     manifest['artifacts']['internnav_trace_present'] = os.path.exists(internnav_trace_path)
     manifest['artifacts']['internnav_diagnostic_summary_present'] = internnav_diagnostic_summary is not None
+    manifest['artifacts']['episode_outcome_present'] = episode_outcome is not None
     manifest['artifacts']['snapshot_files'] = sorted(snapshot_files.values())
     manifest['artifacts']['video_index_present'] = video_index is not None
     manifest['artifacts']['video_index'] = video_index
@@ -3139,6 +3236,7 @@ def main() -> int:
             'artifact_validation_returncode': artifact_validation_returncode,
             'timed_out': timed_out,
             'end_reason': end_reason,
+            'episode_outcome': episode_outcome,
             'dual_vln_status': dual_vln_status,
             'internnav_diagnostic_summary': internnav_diagnostic_summary,
             'video_recorder_returncode': video_returncode,

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import traceback
+import time
 
 import arena_robots.Robot
 import arena_simulation_setup.tree.assets.Object
@@ -113,6 +114,16 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         self._pub_finished = self.create_publisher(
             Empty,
             self.service_namespace('finished'),
+            QoSProfile(
+                depth=1,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            ),
+        )
+
+        self._pub_episode_outcome = self.create_publisher(
+            String,
+            self.service_namespace('episode_outcome'),
             QoSProfile(
                 depth=1,
                 reliability=ReliabilityPolicy.RELIABLE,
@@ -417,7 +428,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
                 should_reset = False
                 async with self._reset_lock:
                     if await self._task.is_done:
+                        done_reason = str(getattr(self._task, 'last_done_reason', 'unknown') or 'unknown')
                         self._completed_episodes += 1
+                        self._publish_episode_outcome(done_reason)
                         self._send_end_message_on_end()
 
                         if self.conf.General.DESIRED_EPISODES.value >= 0 and \
@@ -432,6 +445,24 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         except Exception as e:
             self.get_logger().error(f"Error in task status check: {e}\n{traceback.format_exc()}")
             raise
+
+    def _publish_episode_outcome(self, reason: str) -> None:
+        desired = int(self.conf.General.DESIRED_EPISODES.value)
+        episode_index = max(int(self._completed_episodes) - 1, 0)
+        sim_nanoseconds = getattr(self.time, 'nanoseconds', None)
+        payload = {
+            'episode_index': episode_index,
+            'completed_episodes': int(self._completed_episodes),
+            'desired_episodes': desired,
+            'reason': str(reason or 'unknown'),
+            'finished': desired >= 0 and int(self._completed_episodes) >= desired,
+            'sim_time_sec': float(sim_nanoseconds) / 1e9 if isinstance(sim_nanoseconds, (int, float)) else None,
+            'wall_time': time.time(),
+        }
+        try:
+            self._pub_episode_outcome.publish(String(data=json.dumps(payload, sort_keys=True)))
+        except Exception as exc:
+            self.get_logger().warn(f'Failed to publish episode outcome: {exc}')
 
     def _send_end_message_on_end(self):
         if self.conf.General.DESIRED_EPISODES.value < 0 or self._completed_episodes < self.conf.General.DESIRED_EPISODES.value:
