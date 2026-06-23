@@ -169,6 +169,8 @@ def _check_videos(run_dir: Path, video_index: dict[str, Any] | None) -> dict[str
             "codec": codec,
             "pass": bool(path and path.exists() and frames > 0),
         }
+        if label == 'ego_debug_overlay':
+            results[label]["fallback"] = bool(ep.get('debug_overlay_fallback')) if ep else False
         if not results[label]["pass"]:
             if label == 'ego_debug_overlay':
                 results[label]["diagnostic"] = "debug_overlay_missing_or_empty"
@@ -407,6 +409,8 @@ def _diagnostic_warnings(checks: dict[str, Any], manifest: dict[str, Any], socia
     overlay = (videos.get('videos') or {}).get('ego_debug_overlay') if isinstance(videos.get('videos'), dict) else {}
     if isinstance(overlay, dict) and overlay.get('diagnostic') == 'debug_overlay_missing_or_empty':
         warnings.append('debug overlay video missing or empty')
+    if isinstance(overlay, dict) and overlay.get('fallback'):
+        warnings.append('debug overlay uses ego-camera fallback; model debug image was unavailable')
     return warnings
 
 

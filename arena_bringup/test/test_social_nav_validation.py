@@ -1,7 +1,13 @@
 import csv
 import json
 
-from arena_bringup.social_nav_validation import _check_dynamic_scene, _check_metrics, _check_model_control, _trace_events
+from arena_bringup.social_nav_validation import (
+    _check_dynamic_scene,
+    _check_metrics,
+    _check_model_control,
+    _check_videos,
+    _trace_events,
+)
 
 
 def _write_rows(path, fieldnames, rows):
@@ -71,6 +77,32 @@ def test_wrapper_model_control_still_requires_status(tmp_path):
     assert result["pass"] is False
     assert result["status_present"] is False
     assert result["status_required"] is True
+
+
+def test_video_check_reports_debug_overlay_fallback(tmp_path):
+    video_path = tmp_path / "ego_debug_overlay.mp4"
+    video_path.write_bytes(b"not-empty")
+    result = _check_videos(
+        tmp_path,
+        {
+            "episodes": [
+                {
+                    "ego_video": str(video_path),
+                    "ego_frames": 1,
+                    "debug_overlay_video": str(video_path),
+                    "debug_overlay_frames": 1,
+                    "debug_overlay_fallback": True,
+                    "sim_top_down_video": str(video_path),
+                    "sim_top_down_frames": 1,
+                    "map_top_down_video": str(video_path),
+                    "top_down_frames": 1,
+                }
+            ]
+        },
+    )
+
+    assert result["pass"] is True
+    assert result["videos"]["ego_debug_overlay"]["fallback"] is True
 
 
 def test_dynamic_scene_check_requires_motion_overlap_and_interaction():

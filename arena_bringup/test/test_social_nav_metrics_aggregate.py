@@ -89,6 +89,13 @@ def test_aggregate_reports_legacy_and_strict_rates_separately(tmp_path):
                         "strict_task_success": False,
                         "strict_social_success": False,
                         "robot_moved": True,
+                    },
+                    "videos": {
+                        "videos": {
+                            "ego_debug_overlay": {
+                                "fallback": True,
+                            }
+                        }
                     }
                 },
             }
@@ -107,11 +114,13 @@ def test_aggregate_reports_legacy_and_strict_rates_separately(tmp_path):
     assert row["goal_progress_m"] == 3.5
     assert row["min_footprint_clearance_time_sec"] == 12.5
     assert row["min_footprint_clearance_human_id"] == "7"
+    assert row["debug_overlay_fallback"] is True
     assert row["legacy_social_success"] is True
     assert row["social_success"] is False
     assert row["strict_social_success"] is False
     assert "legacy_task_false_positive" in row["failure_tags"]
     assert "timeout" in row["failure_tags"]
+    assert "debug_overlay_fallback" in row["failure_tags"]
     assert summary["task_success_rate"] == 0.0
     assert summary["social_success_rate"] == 0.0
     assert summary["legacy_task_success_rate"] == 1.0
