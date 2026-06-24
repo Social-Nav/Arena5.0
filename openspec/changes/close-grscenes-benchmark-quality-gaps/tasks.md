@@ -30,7 +30,7 @@
 - Full Isaac eval completed with `launch_returncode=0`; strict post-processing completed and intentionally returned benchmark failure.
 - Videos are complete: `ego_observation.mp4`, `ego_debug_overlay.mp4`, `sim_top_down.mp4`, and `map_top_down_follow.mp4`.
 - Frame analysis is attached at `frame_analysis/video_frame_analysis.json`; `sim_top_down` is visually valid, and `ego_debug_overlay` is `PASS_WITH_READINESS_WARNING`.
-- Aggregate summary: `strict_task_success_rate=0.0`, `strict_social_success_rate=0.0`, `benchmark_ready_rate=0.0`; legacy task/social success rates are both `1.0`, proving the old success fields were false positives for this episode.
+- Aggregate summary: `strict_task_success_rate=0.0`, `strict_social_success_rate=0.0`, `benchmark_ready_rate=0.0`; validation warnings show the old `metrics.csv` result was a false positive for this episode.
 - Classification: HuNav dynamic scene is valid; current blockers are `goal_not_reached`, `episode_timeout`, `static_occupancy_collision`, `footprint_human_collision`, `footprint_near_miss`, and debug-overlay startup fallback.
 
 ### 4.5 Representative Set Snapshot
@@ -50,7 +50,7 @@
   - Full Isaac eval completed with complete videos and `sim_top_down` visual spot check passing at t=0, 0.5, 10, and 60 seconds.
   - Strict result: `strict_task_success=false` with `episode_timeout`, `goal_not_reached`, `static_occupancy_collision`; `strict_social_success=false` with `footprint_human_collision`, `footprint_near_miss`, `static_occupancy_collision`.
   - Dynamic evidence: `moving_human_count=2`, `human_motion_total_m=26.3596`, `human_robot_motion_overlap_time_sec=3.7100`, and `human_robot_interaction_time_sec=2.8083`.
-- Across all three representative runs, legacy task/social success fields are `true`, while strict task/social success are `false`; the benchmark now exposes these as model/safety failures instead of reporting false-positive success.
+- Across all three representative runs, strict task/social success are `false`; the benchmark now exposes these as model/safety failures instead of reporting false-positive success from legacy metrics.
 
 ## 5. Documentation And Handoff
 

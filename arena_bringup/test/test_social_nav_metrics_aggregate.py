@@ -5,7 +5,7 @@ import yaml
 from arena_bringup.social_nav_metrics_aggregate import aggregate_summary, summarize_run
 
 
-def test_aggregate_reports_legacy_and_strict_rates_separately(tmp_path):
+def test_aggregate_reports_strict_rates_and_diagnostic_warnings(tmp_path):
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     (run_dir / "run_manifest.yaml").write_text(
@@ -85,7 +85,6 @@ def test_aggregate_reports_legacy_and_strict_rates_separately(tmp_path):
                 "checks": {
                     "metrics": {
                         "episode_result": "GOAL_REACHED",
-                        "legacy_task_success": True,
                         "strict_task_success": False,
                         "strict_social_success": False,
                         "robot_moved": True,
@@ -112,7 +111,6 @@ def test_aggregate_reports_legacy_and_strict_rates_separately(tmp_path):
     row = summarize_run(run_dir)
     summary = aggregate_summary([row])
 
-    assert row["legacy_task_success"] is True
     assert row["task_success"] is False
     assert row["strict_task_success"] is False
     assert row["episode_timeout"] is True
@@ -125,18 +123,14 @@ def test_aggregate_reports_legacy_and_strict_rates_separately(tmp_path):
     assert row["debug_overlay_received_count"] == 0
     assert row["debug_overlay_model_frames"] == 0
     assert row["debug_overlay_fallback_frames"] == 12
-    assert row["legacy_social_success"] is True
     assert row["social_success"] is False
     assert row["strict_social_success"] is False
-    assert "legacy_task_false_positive" in row["failure_tags"]
     assert "timeout" in row["failure_tags"]
     assert "debug_overlay_fallback" in row["failure_tags"]
     assert "debug_overlay_source_no_post_reset_model_debug_image" in row["failure_tags"]
     assert summary["task_success_rate"] == 0.0
     assert summary["social_success_rate"] == 0.0
-    assert summary["legacy_task_success_rate"] == 1.0
     assert summary["strict_task_success_rate"] == 0.0
-    assert summary["legacy_social_success_rate"] == 1.0
     assert summary["strict_social_success_rate"] == 0.0
     assert summary["benchmark_ready_rate"] == 0.0
 
@@ -206,7 +200,6 @@ def test_aggregate_falls_back_to_internnav_odom_goal_progress(tmp_path):
                 "checks": {
                     "metrics": {
                         "episode_result": "TIMEOUT",
-                        "legacy_task_success": False,
                         "strict_task_success": False,
                         "strict_social_success": True,
                         "robot_moved": True,

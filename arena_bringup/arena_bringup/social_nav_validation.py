@@ -269,9 +269,7 @@ def _check_metrics(run_dir: Path, social_metrics: dict[str, Any] | None) -> dict
     base_metrics = social_metrics.get('base_metrics') if social_present else {}
     base_first = base_metrics.get('first') if isinstance(base_metrics, dict) else {}
     episode_result = str(base_first.get('result') or '') if isinstance(base_first, dict) else ''
-    legacy_task_success = episode_result == 'GOAL_REACHED'
     strict_task_success = bool(vln_task_metrics.get('strict_task_success')) if strict_task_present else False
-    legacy_social_success = bool(social_metrics.get('legacy_social_success', social_metrics.get('social_success'))) if social_present else False
     strict_social_success = bool(social_metrics.get('strict_social_success', social_metrics.get('social_success'))) if social_present else False
     try:
         path_length_m = float(social_metrics.get('path_length_m') or 0.0) if social_present else 0.0
@@ -299,9 +297,7 @@ def _check_metrics(run_dir: Path, social_metrics: dict[str, Any] | None) -> dict
         "vln_task_metrics_present": strict_task_present,
         "social_metrics_present": social_path.exists(),
         "social_success": strict_social_success if social_present else None,
-        "legacy_social_success": legacy_social_success if social_present else None,
         "strict_social_success": social_metrics.get('strict_social_success') if social_present else None,
-        "legacy_task_success": legacy_task_success,
         "strict_task_success": strict_task_success if strict_task_present else None,
         "strict_task_failure_reasons": vln_task_metrics.get('strict_task_failure_reasons') if strict_task_present else [],
         "strict_social_failure_reasons": social_metrics.get('strict_social_failure_reasons') if social_present else [],

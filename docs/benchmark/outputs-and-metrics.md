@@ -237,11 +237,10 @@ Important output fields:
 - `human_collision_count`: rising-edge count for entering the human-collision radius
 - `crowd_freezing_time_sec`: time inside personal space while robot speed is below the freezing threshold
 - `large_teleports`: odom jumps above the teleport threshold, used to reject invalid motion traces
-- `social_success`: true only when humans are present, there are no human collisions, no near misses, and no large teleports
-- `strict_social_success`: benchmark social gate; this preserves the legacy
-  social checks and also fails when the dynamic scene is invalid, footprint
-  clearance violates human safety thresholds, or strict task diagnostics expose
-  static-obstacle/stuck behavior.
+- `social_success` / `strict_social_success`: benchmark social gate.  This
+  fails when the dynamic scene is invalid, footprint clearance violates human
+  safety thresholds, point-distance checks fail, large teleports occur, or
+  strict task diagnostics expose static-obstacle/stuck behavior.
 - `strict_social_failure_reasons`: failure taxonomy such as
   `dynamic_scene_failed`, `footprint_human_collision`,
   `footprint_near_miss`, `point_near_miss`, `point_human_collision`,
@@ -270,10 +269,9 @@ and robot movement; social acceptance is therefore not inferred from a launch
 return code alone.
 
 The validation gate treats strict task and strict social success as required for
-`social_nav_ready=true`.  If legacy `metrics.csv` reports `GOAL_REACHED` while
-`strict_task_success=false`, validation emits a false-positive warning.  If a
-legacy or older social field reports success while `strict_social_success=false`,
-validation emits the corresponding social false-positive warning.
+`social_nav_ready=true`.  Legacy `metrics.csv` remains available as provenance,
+but its `GOAL_REACHED` result is not reported as benchmark task success.  If it
+disagrees with strict task metrics, validation emits a diagnostic warning.
 
 ## Aggregating Dynamic Social VLN runs
 
@@ -303,8 +301,6 @@ failure tags.  Current failure tags include:
 - `collision`
 - `near_miss`
 - `personal_space_violation`
-- `legacy_task_false_positive`
-- `legacy_social_false_positive`
 - `footprint_collision`
 - `footprint_near_miss`
 - `static_occupancy_collision`
@@ -317,15 +313,12 @@ failure tags.  Current failure tags include:
 `stale_observation_candidate` is treated as a failure tag only for unsuccessful
 runs; successful runs may still report stale-record diagnostics for triage.
 
-Aggregate rows expose both legacy and strict rates:
+Aggregate rows expose strict benchmark rates:
 
-- `legacy_task_success` / `legacy_task_success_rate`: compatibility view based
-  on `metrics.csv`.
-- `strict_task_success` / `strict_task_success_rate`: benchmark task gate based
-  on `vln_task_metrics.json`.
-- `legacy_social_success` / `legacy_social_success_rate`: compatibility view
-  for older social reports.
-- `strict_social_success` / `strict_social_success_rate`: benchmark social gate.
+- `task_success` / `strict_task_success` and their rates: benchmark task gate
+  based on `vln_task_metrics.json`.
+- `social_success` / `strict_social_success` and their rates: benchmark social
+  gate based on `social_metrics.json`.
 - `benchmark_ready`: true only when strict task, strict social, artifact
   validation, and `social_nav_ready` are all true.
 
@@ -367,8 +360,8 @@ benchmark success:
   `footprint_near_miss`, and `static_occupancy_collision`.
 - `dynamic_scene_success=true`, `moving_human_count=2`, and manual review of
   `sim_top_down.mp4` confirms animated HuNav pedestrians are visible and walking.
-- Legacy success fields can look optimistic for this run, so aggregate failure
-  tags include `legacy_task_false_positive` and `legacy_social_false_positive`.
+- Legacy `metrics.csv` can look optimistic for this run, so validation warnings
+  record that the legacy result disagrees with strict task success.
 - `debug_overlay_fallback=true`, but `debug_overlay_source.status` is
   `model_debug_image` with 1066 model frames and 3 startup fallback frames.
   The run remains tagged for readiness review, but the overlay is not empty.

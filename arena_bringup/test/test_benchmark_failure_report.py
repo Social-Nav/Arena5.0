@@ -71,7 +71,6 @@ def test_benchmark_failure_report_classifies_strict_failure(tmp_path):
         run_dir / "social_metrics.json",
         {
             "strict_social_success": False,
-            "legacy_social_success": True,
             "strict_social_failure_reasons": [
                 "footprint_human_collision",
                 "footprint_near_miss",

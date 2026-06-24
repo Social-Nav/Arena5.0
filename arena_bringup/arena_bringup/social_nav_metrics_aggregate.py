@@ -23,10 +23,8 @@ SUMMARY_FIELDS = [
     'scenario_file',
     'episode_result',
     'task_success',
-    'legacy_task_success',
     'strict_task_success',
     'social_success',
-    'legacy_social_success',
     'strict_social_success',
     'artifact_validation_pass',
     'social_nav_ready',
@@ -127,9 +125,7 @@ def summarize_run(run_dir: Path) -> dict[str, Any]:
     base_metrics = social.get('base_metrics', {}) if isinstance(social, dict) else {}
     base_first = base_metrics.get('first', {}) if isinstance(base_metrics, dict) else {}
     episode_result = str(metrics_check.get('episode_result') or base_first.get('result') or '')
-    legacy_task_success = bool(metrics_check.get('legacy_task_success')) if 'legacy_task_success' in metrics_check else episode_result == 'GOAL_REACHED'
     strict_task_success = bool(metrics_check.get('strict_task_success')) if 'strict_task_success' in metrics_check else _as_bool(vln_task.get('strict_task_success'))
-    legacy_social_success = _as_bool(social.get('legacy_social_success', social.get('social_success'))) if isinstance(social, dict) else False
     strict_social_success = _as_bool(social.get('strict_social_success', social.get('social_success'))) if isinstance(social, dict) else False
     artifact_pass = _as_bool(validation.get('overall_pass')) if isinstance(validation, dict) else False
     social_nav_ready = _as_bool(validation.get('social_nav_ready')) if isinstance(validation, dict) else False
@@ -183,10 +179,8 @@ def summarize_run(run_dir: Path) -> dict[str, Any]:
         'scenario_file': params.get('scenario_file') or '',
         'episode_result': episode_result,
         'task_success': strict_task_success,
-        'legacy_task_success': legacy_task_success,
         'strict_task_success': strict_task_success,
         'social_success': strict_social_success,
-        'legacy_social_success': legacy_social_success,
         'strict_social_success': strict_social_success,
         'artifact_validation_pass': artifact_pass,
         'social_nav_ready': social_nav_ready,
@@ -245,10 +239,6 @@ def failure_tags(row: dict[str, Any], manifest: dict[str, Any], validation: dict
     tags: list[str] = []
     if not row.get('artifact_validation_pass'):
         tags.append('artifact_failure')
-    if row.get('legacy_task_success') and not row.get('strict_task_success'):
-        tags.append('legacy_task_false_positive')
-    if row.get('legacy_social_success') and not row.get('strict_social_success'):
-        tags.append('legacy_social_false_positive')
     if not row.get('humans_present'):
         tags.append('missing_humans')
     path_length = row.get('path_length_m')
@@ -308,8 +298,6 @@ def aggregate_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         'run_count': count,
         'task_success_rate': _rate(rows, 'task_success'),
         'social_success_rate': _rate(rows, 'social_success'),
-        'legacy_task_success_rate': _rate(rows, 'legacy_task_success'),
-        'legacy_social_success_rate': _rate(rows, 'legacy_social_success'),
         'strict_task_success_rate': _rate(rows, 'strict_task_success'),
         'strict_social_success_rate': _rate(rows, 'strict_social_success'),
         'benchmark_ready_rate': _rate(rows, 'benchmark_ready'),

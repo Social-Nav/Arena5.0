@@ -322,7 +322,6 @@ def generate_report(run_dir: str | Path, output: str | Path | None = None) -> di
             "episode_timing": vln_task.get("episode_timing", {}),
             "commanded_stuck": vln_task.get("commanded_stuck", {}),
             "static_occupancy": map_review,
-            "legacy_goal_reached_false_positive": vln_task.get("legacy_goal_reached_false_positive"),
         },
         "strict_social": {
             "success": social.get("strict_social_success"),
@@ -336,7 +335,9 @@ def generate_report(run_dir: str | Path, output: str | Path | None = None) -> di
             "footprint_near_miss_events": social.get("footprint_near_miss_events", []),
             "footprint_human_collision_events": social.get("footprint_human_collision_events", []),
             "review_intervals": social.get("review_intervals", {}),
-            "legacy_social_success": social.get("legacy_social_success"),
+        },
+        "legacy_diagnostics": {
+            "goal_reached_false_positive": vln_task.get("legacy_goal_reached_false_positive"),
         },
         "internnav": {
             "event_counts": diagnostics.get("event_counts", {}),

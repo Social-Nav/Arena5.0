@@ -19,13 +19,13 @@ enough evidence to locate the event in JSON artifacts and videos.
 
 ### Requirement: Aggregate rows preserve failure evidence
 
-The aggregate CLI MUST expose strict success, legacy success, readiness status,
-failure taxonomy, and key evidence fields in each row.
+The aggregate CLI MUST expose strict success, readiness status, failure
+taxonomy, and key evidence fields in each row.
 
 #### Scenario: Legacy success disagrees with strict success
-- **WHEN** a run has legacy task or social success but strict success is false
-- **THEN** aggregate output MUST include the corresponding false-positive failure
-  tag and preserve the strict failure reasons
+- **WHEN** a run has legacy task success but strict success is false
+- **THEN** validation output MUST include a diagnostic warning and aggregate
+  output MUST preserve the strict failure reasons
 
 #### Scenario: Debug overlay uses fallback
 - **WHEN** a run's debug overlay is generated from fallback imagery

@@ -187,9 +187,7 @@ def test_metrics_check_requires_strict_task_and_social_success(tmp_path):
     result = _check_metrics(tmp_path, social_metrics)
 
     assert result["pass"] is True
-    assert result["legacy_task_success"] is True
     assert result["task_success"] is True
-    assert result["legacy_social_success"] is True
     assert result["social_success"] is True
     assert result["strict_task_success"] is True
     assert result["strict_social_success"] is True
@@ -218,9 +216,7 @@ def test_metrics_check_fails_legacy_goal_reached_when_strict_task_failed(tmp_pat
     result = _check_metrics(tmp_path, social_metrics)
 
     assert result["pass"] is False
-    assert result["legacy_task_success"] is True
     assert result["task_success"] is False
-    assert result["legacy_social_success"] is True
     assert result["social_success"] is True
     assert result["strict_task_success"] is False
     assert result["strict_task_failure_reasons"] == ["goal_not_reached"]
@@ -234,7 +230,6 @@ def test_metrics_check_reports_strict_social_as_default_social_success(tmp_path)
     )
     social_metrics = {
         "humans_present": True,
-        "legacy_social_success": True,
         "social_success": False,
         "strict_social_success": False,
         "strict_social_failure_reasons": ["footprint_near_miss"],
@@ -250,7 +245,6 @@ def test_metrics_check_reports_strict_social_as_default_social_success(tmp_path)
     result = _check_metrics(tmp_path, social_metrics)
 
     assert result["pass"] is False
-    assert result["legacy_social_success"] is True
     assert result["social_success"] is False
     assert result["strict_social_success"] is False
 
