@@ -28,6 +28,11 @@ def generate_launch_description():
         choices=['true', 'false'],
         description='Enable VLN dataset logging'
     )
+    session_tag = LaunchArgument(
+        name='session_tag',
+        default_value='',
+        description='Label prepended to collected_data subdirectory',
+    )
 
     # TODO temporary
     world = LaunchArgument(
@@ -66,6 +71,7 @@ def generate_launch_description():
             launch_arguments={
                 'use_sim_time': use_sim_time.substitution,
                 'save_data': save_data.substitution,
+                'session_tag': session_tag.substitution,
                 # 'headless': headless.substitution
             }.items(),
         )

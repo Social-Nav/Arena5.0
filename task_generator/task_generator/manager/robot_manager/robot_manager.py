@@ -15,6 +15,7 @@ import rclpy.client
 import rclpy.logging
 import rclpy.publisher
 import rclpy.timer
+import tf2_ros
 from arena_rclpy_mixins.shared import Namespace
 from arena_robots.Robot import RobotView
 from nav2_msgs.srv import ClearCostmapAroundRobot, ClearEntireCostmap
@@ -127,6 +128,9 @@ class RobotManager(NodeInterface):
         self._goal_timer = None
 
         self._publish_goal_task: typing.Optional[asyncio.Task] = None
+
+        self._tf_buffer = tf2_ros.Buffer()
+        self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self.node)
 
     async def _odom_base_transform(self):
         """Launch a static transform publisher for odometry to base frame.
@@ -269,6 +273,23 @@ class RobotManager(NodeInterface):
         await asyncio.sleep(0.05)
         await self._clear_local_costmap(-1)
 
+    async def _clear_costmap(self, node_name: str, srv_name: str) -> bool:
+        """Call ClearEntireCostmap on the given service, guarded by lifecycle state."""
+        state = await self.node.get_lifecycle_state_async(node_name)
+        if state.id != lifecycle_msgs.msg.State.PRIMARY_STATE_ACTIVE:
+            return False
+
+        self._logger.info(f"Service name: {srv_name}")
+        cli = self.node.create_client_wrapper(ClearEntireCostmap, srv_name)
+        await cli.ensure()
+
+        result = await cli.call_timeout(ClearEntireCostmap.Request())
+        if result is None:
+            self._logger.error(f"service call failed for {srv_name}")
+            return False
+        self._logger.info(f"successfull service call for {srv_name}")
+        return True
+
     async def _clear_local_costmap(self, reset_distance: float = -1) -> bool:
         """Clear the local costmap around the robot.
 
@@ -310,6 +331,37 @@ class RobotManager(NodeInterface):
             f"successfull service call for {srv_name}"
         )
         return True
+
+    async def _clear_global_costmap(self) -> bool:
+        """Clear the entire global costmap (removes dynamic obstacle marks from previous episode)."""
+        node_name = self.node.service_namespace(self.name, 'global_costmap/global_costmap')
+        srv_name = os.path.abspath(node_name('../clear_entirely_global_costmap'))
+        return await self._clear_costmap(node_name, srv_name)
+
+    async def _wait_for_odom_tf(self, timeout_s: float = 10.0) -> bool:
+        """Wait until a *fresh* odom TF is available after the current reset.
+
+        rclpy.time.Time() accepts any cached TF including stale ones from the
+        previous episode. Instead we require the TF stamp to be newer than the
+        sim time captured at the start of the wait, ensuring pose_to_tf has
+        already published at least one transform reflecting the new robot pose.
+        """
+        odom_frame = self.frame(self._config.model_params.odom_frame)
+        period_s = 0.1
+        waited_s = 0.0
+        # Capture sim time now — we want a TF stamped *after* this point.
+        start_stamp = self.node.sim_time
+        while waited_s < timeout_s:
+            try:
+                tf = self._tf_buffer.lookup_transform("map", odom_frame, rclpy.time.Time())
+                tf_stamp = rclpy.time.Time.from_msg(tf.header.stamp)
+                if tf_stamp >= start_stamp:
+                    return True
+            except Exception:
+                pass
+            await asyncio.sleep(period_s)
+            waited_s += period_s
+        return False
 
     async def _wait_for_sim_tick(self, timeout_s: float = 1.5) -> bool:
         """Wait until simulation time advances at least once.
@@ -376,6 +428,9 @@ class RobotManager(NodeInterface):
                     self.namespace.robot_ns.ParamNamespace()("start"),
                     [self.start_pos.position.x, self.start_pos.position.y, self.start_pos.orientation.to_yaw()]
                 )
+
+        await self._clear_local_costmap()
+        await self._clear_global_costmap()
         if goal_pos is not None:
             self._goal_pos = self._environment_manager.realize(goal_pos)
             self._is_goal_reached = False
@@ -403,12 +458,19 @@ class RobotManager(NodeInterface):
         start_target: typing.Optional[Pose] = None,
     ):
         """Publish the goal to the robot once reset state is synchronized."""
-        if not await self._wait_for_sim_tick(timeout_s=1.5):
+        if not await self._wait_for_sim_tick(timeout_s=5.0):
             self._logger.warn(
                 "Simulation time did not advance before goal publish; nav may use stale pose."
             )
 
-        if start_target is not None and not await self._wait_for_pose_sync(start_target, timeout_s=2.0):
+        # Wait for a fresh odom TF first — pose_sync depends on self._pose
+        # which is driven by odom, so odom must be live before we check it.
+        if not await self._wait_for_odom_tf(timeout_s=10.0):
+            self._logger.warn(
+                "odom TF frame not available before goal publish; nav2 may fail."
+            )
+
+        if start_target is not None and not await self._wait_for_pose_sync(start_target, timeout_s=10.0):
             self._logger.warn(
                 "Odometry did not reach reset start pose before goal publish; proceeding anyway."
             )
@@ -504,18 +566,10 @@ class RobotManager(NodeInterface):
             self._nav_stop_ticks -= 1
 
     def _goal_status_callback(self, data: action_msgs.msg.GoalStatusArray):
-        """Callback for goal status updates.
-
-        Args:
-            data(action_msgs.msg.GoalStatusArray): The goal status data.
-        """
         last_goal = next(reversed(list(data.status_list)), None)
         status = last_goal.status if last_goal is not None else None
         reached = (status == action_msgs.msg.GoalStatus.STATUS_SUCCEEDED)
         if status in _TERMINAL_NAV_STATUSES:
-            # On any terminal nav status (succeeded, aborted, canceled):
-            # publish an immediate zero and arm the timer to keep publishing
-            # zeros for 1.5s to flush any stale velocity from the pipeline.
             if self._cmd_vel_pub is not None:
                 self._cmd_vel_pub.publish(geometry_msgs.msg.Twist())
             self._nav_stop_ticks = 15  # 1.5 s at 10 Hz

@@ -1,0 +1,41 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [-1.2069, -9.20553, 100.17551]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.82
+  desired_velocity: 1.03
+  waypoints:
+  - [-1.37999, -8.24116, 95.35583]
+  - [-1.45418, -7.44987, 30.46555]
+  - [-1.03381, -7.20259, 94.89909]
+  - [-1.25636, -4.60619, 86.90594]
+  - [-1.2069, -3.69126, 87.7974]
+  - [-1.13272, -1.7625, 128.15722]
+  - [-1.67673, -1.07013, 96.34019]
+  - [-1.70145, -0.84758, 96.34019]
+- name: hunav_2
+  model: male_adult_medical_01
+  pose: [-0.11888, 0.80917, -92.43665]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.76
+  desired_velocity: 0.96
+  waypoints:
+  - [-0.16834, -0.35303, -96.00901]
+  - [-0.36616, -2.23233, -107.44719]
+  - [-0.63816, -3.0978, -77.66091]
+  - [-0.46507, -3.88908, -88.12212]
+  - [-0.41562, -5.39747, -125.53768]
+  - [-0.66289, -5.74366, -72.03086]
+  - [-0.36616, -6.65858, -90.0]
+  - [-0.36616, -8.11752, -173.04704]
+  - [-1.37999, -8.24116, -173.04704]
+robot:
+  name: robot
+  pose: [0.82077, -3.8149, -112.43589]
+  waypoints:
+  - [-0.7618, -7.64769, -112.43589]
+  behavior: service robot travels through the open central lane to reposition away
+    from pedestrian endpoints

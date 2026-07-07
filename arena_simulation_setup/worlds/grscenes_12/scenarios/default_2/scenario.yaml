@@ -1,0 +1,41 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [0.25203, -9.70009, 142.76517]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.78
+  desired_velocity: 1.0
+  waypoints:
+  - [-0.36616, -9.23026, 147.09476]
+  - [-0.78653, -8.95826, 88.15239]
+  - [-0.7618, -8.1917, 119.05461]
+  - [-1.13272, -7.52405, 74.47589]
+  - [-1.00908, -7.07895, 161.56505]
+  - [-1.37999, -6.95532, 90.0]
+  - [-1.37999, -5.81784, 160.0169]
+  - [-1.924, -5.62002, 160.0169]
+- name: hunav_2
+  model: male_adult_medical_01
+  pose: [0.15312, 0.24044, -79.99202]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.72
+  desired_velocity: 0.92
+  waypoints:
+  - [0.30149, -0.6003, -90.0]
+  - [0.30149, -1.39159, -100.95406]
+  - [0.15312, -2.15815, -135.0]
+  - [-0.46507, -2.77634, -109.98311]
+  - [-0.66289, -3.32035, -105.70864]
+  - [-0.88544, -4.11163, -101.30993]
+  - [-1.00908, -4.72983, -69.27444]
+  - [-0.66289, -5.64475, 10.49148]
+  - [0.6724, -5.39747, 10.49148]
+robot:
+  name: robot
+  pose: [-0.09416, -4.77928, 116.39503]
+  waypoints:
+  - [-1.75091, -1.44104, 116.39503]
+  behavior: crosses the open waiting aisle for a short service run while avoiding
+    the busier left side

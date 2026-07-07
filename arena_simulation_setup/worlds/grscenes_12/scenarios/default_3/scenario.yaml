@@ -1,0 +1,40 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [0.6724, -7.89497, 163.61046]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.82
+  desired_velocity: 1.02
+  waypoints:
+  - [-0.16834, -7.64769, -73.30076]
+  - [-0.09416, -7.89497, 90.0]
+  - [-0.09416, -6.98004, 90.0]
+  - [-0.09416, -4.77928, 97.30576]
+  - [-0.21779, -3.8149, 35.53768]
+  - [0.30149, -3.44399, 90.0]
+  - [0.30149, -1.39159, 90.0]
+- name: hunav_2
+  model: male_adult_medical_01
+  pose: [-1.75091, -1.44104, -90.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.1
+  waypoints:
+  - [-1.75091, -1.9356, -24.22775]
+  - [-1.25636, -2.15815, -45.0]
+  - [-1.00908, -2.40542, -34.28688]
+  - [-0.46507, -2.77634, -109.98311]
+  - [-0.66289, -3.32035, -105.70864]
+  - [-0.88544, -4.11163, -101.30993]
+  - [-1.00908, -4.72983, -69.27444]
+  - [-0.66289, -5.64475, -98.36589]
+  - [-0.78653, -6.48549, -141.63251]
+  - [-1.37999, -6.95532, -141.63251]
+robot:
+  name: robot
+  pose: [0.6724, -5.39747, 95.85601]
+  waypoints:
+  - [0.07894, 0.3888, 95.85601]
+  behavior: moves through the central lower aisle for a short delivery run

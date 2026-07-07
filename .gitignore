@@ -70,3 +70,6 @@ __pycache__/
 
 # agents
 /arena_training/agents/
+
+# collected datasets / runtime outputs (data, not code)
+/collected_data/

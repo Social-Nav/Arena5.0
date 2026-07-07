@@ -1,0 +1,42 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [0.57349, -9.45281, 78.9298]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.77
+  desired_velocity: 1.02
+  waypoints:
+  - [0.79604, -8.31534, 90.0]
+  - [0.79604, -7.32623, 147.52881]
+  - [0.25203, -6.98004, 90.0]
+  - [0.25203, -5.19965, 91.7357]
+  - [0.20258, -3.56762, 93.81407]
+  - [0.15312, -2.82579, 105.94539]
+  - [-0.29198, -1.26795, 95.01311]
+  - [-0.41562, 0.14153, 95.01311]
+- name: hunav_2
+  model: male_adult_medical_01
+  pose: [0.30149, 0.66081, -70.34618]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.72
+  desired_velocity: 0.95
+  waypoints:
+  - [0.79604, -0.72394, -87.61406]
+  - [0.82077, -1.31741, -90.0]
+  - [0.82077, -3.8149, -91.10171]
+  - [0.79604, -5.10074, -108.43495]
+  - [0.44985, -6.1393, -99.2726]
+  - [0.25203, -7.35096, -150.94539]
+  - [0.02948, -7.4746, -167.66091]
+  - [-0.7618, -7.64769, 164.05461]
+  - [-1.45418, -7.44987, -84.64417]
+  - [-1.37999, -8.24116, -84.64417]
+robot:
+  name: robot
+  pose: [-1.25636, -4.60619, 62.13627]
+  waypoints:
+  - [0.79604, -0.72394, 62.13627]
+  behavior: navigates through the central open waiting area for a short delivery task
+    while avoiding the side edges

@@ -1,6 +1,6 @@
 image: map.png
-resolution: 0.05
-origin: [-5.798623, -5.935745, 0.0]
+resolution: 0.01
+origin: [-4.795, -4.935, 0.000]
 occupied_thresh: 0.65
 free_thresh: 0.196
 negate: 0

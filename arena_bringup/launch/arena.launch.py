@@ -122,6 +122,16 @@ def generate_launch_description():
         choices=['true', 'false'],
         description='Enable VLN dataset logging'
     )
+    session_tag = LaunchArgument(
+        name='session_tag',
+        default_value='',
+        description='Label prepended to collected_data subdirectory, e.g. grscenes_1__default',
+    )
+    task_generator_param_file = LaunchArgument(
+        name='task_generator_param_file',
+        default_value=os.path.join(get_package_share_directory('arena_bringup'), 'configs', 'task_generator.yaml'),
+        description='Override path for task_generator parameter yaml (default: arena_bringup configs/task_generator.yaml)',
+    )
     train_config = LaunchArgument(
         name='train_config',
         default_value='',
@@ -131,6 +141,13 @@ def generate_launch_description():
         name='train_mode',
         default_value=PythonExpression(['"', train_config.substitution, '" != ""']),
         description='If true, RL env publishes cmd_vel directly; nav2 controller output is silenced. Implied when train_config is provided.'
+    )
+    social_yielding = LaunchArgument(
+        name='social_yielding',
+        default_value='true',
+        choices=['true', 'false'],
+        description='Enable proactive-yielding pipeline: detect pedestrian block '
+                    '-> pause -> snapshot -> LLM pixel goal -> reproject -> yield replan',
     )
 
     def create_task_generators(
@@ -245,7 +262,7 @@ def generate_launch_description():
                     'headless': headlessness,
                     'reference': str(reference),
                     'prefix': prefix,
-                    'parameter_file': os.path.join(get_package_share_directory('arena_bringup'), 'configs', 'task_generator.yaml'),
+                    'parameter_file': task_generator_param_file.substitution,
                     **train_mode.dict,
                 }.items(),
             )
@@ -268,6 +285,7 @@ def generate_launch_description():
             'simulator': sim.substitution,
             **world.dict,
             **save_data.dict,
+            **session_tag.dict,
             'headless': PythonExpression([headless.substitution, '>0']),
         }.items(),
     )
@@ -299,6 +317,20 @@ def generate_launch_description():
             condition=launch.conditions.IfCondition(
                 PythonExpression(['"', train_config.substitution, '" != ""'])
             ),
+        ),
+        launch.actions.ExecuteProcess(
+            cmd=['bash', '-c',
+                 'source /opt/arena_ws/src/Arena/_meta/tools/source && '
+                 'python3 /opt/arena_ws/src/Arena/arena_isaac/arena_isaac/arena_isaac/social_yielding/proactive_yielding_trigger.py'],
+            output='screen',
+            condition=launch.conditions.IfCondition(social_yielding.substitution),
+        ),
+        launch.actions.ExecuteProcess(
+            cmd=['bash', '-c',
+                 'source /opt/arena_ws/src/Arena/_meta/tools/source && '
+                 'python3 /opt/arena_ws/src/Arena/arena_isaac/arena_isaac/arena_isaac/social_yielding/social_yielding_orchestrator.py'],
+            output='screen',
+            condition=launch.conditions.IfCondition(social_yielding.substitution),
         ),
     ])
     return ld

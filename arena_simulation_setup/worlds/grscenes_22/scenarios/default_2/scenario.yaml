@@ -1,0 +1,42 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [2.14951, -3.60175, 90.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.79
+  desired_velocity: 1.02
+  waypoints:
+  - [2.14951, -2.9822, 99.46232]
+  - [2.10305, -2.70341, 90.0]
+  - [2.10305, -1.82056, 91.30195]
+  - [2.08756, -1.13906, 92.43665]
+  - [2.05658, -0.41109, 92.04541]
+  - [2.04109, 0.02259, 83.77417]
+  - [2.13402, 0.87446, 90.0]
+  - [2.13402, 1.43205, 68.62938]
+  - [2.27342, 1.78829, 68.62938]
+- name: hunav_2
+  model: male_adult_medical_01
+  pose: [-3.5503, 1.04484, -0.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.71
+  desired_velocity: 0.96
+  waypoints:
+  - [-3.03917, 1.04484, -48.50353]
+  - [-2.68294, 0.64213, -5.5722]
+  - [-2.0479, 0.58018, -5.04245]
+  - [-0.99468, 0.48725, 19.79888]
+  - [-0.60746, 0.62664, 120.96376]
+  - [-0.88626, 1.0913, -15.66816]
+  - [0.38381, 0.73506, -121.32869]
+  - [0.16697, 0.37883, -148.49573]
+  - [-0.31318, 0.08454, -148.49573]
+robot:
+  name: robot
+  pose: [-1.73813, 1.86573, -57.29643]
+  waypoints:
+  - [1.9017, -3.8031, -57.29643]
+  behavior: crosses the open lower waiting area for a short service run while avoiding
+    the denser central foot traffic

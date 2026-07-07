@@ -3,12 +3,13 @@ controller_plugins:
 controller_plugins_dict:
   FollowPath:
     plugin: "nav2_social_mpc_controller::SocialMPCController"
-    transform_tolerance: 0.5
+    transform_tolerance: 1.0
     trajectorizer:
       omnidirectional: false
-      desired_linear_vel: ${max_vel_x:-0.6}
-      lookahead_dist: 2.0
-      max_angular_vel: 1.4
+      desired_linear_vel: 0.32
+      lookahead_dist: 0.6
+      max_angular_vel: 3.5
+      rotate_to_heading_min_angle: 0.9 # ~52 degrees in radians
       base_frame: "${frame:-}${robot_base_frame:-base_link}"
       time_step: 0.05
       max_time: 1.5
@@ -17,19 +18,26 @@ controller_plugins_dict:
       param_tol: 1.0e-9
       fn_tol: 1.0e-5
       gradient_tol: 1.0e-8
-      max_iterations: 40
-      control_horizon: 18
+      max_iterations: 50
+      min_linear_velocity: 0.0
+      control_horizon: 24
       parameter_block_length: 6
       discretization: 1
       debug_optimizer: false
       current_path_weight: 1.0
-      current_cmds_weight: 0.5
+      current_cmds_weight: 0.3
       weights:
-        distance_weight: 80.0
+        distance_weight: 300.0
         social_weight: 80.0
-        velocity_weight: 30.0
-        angle_weight: 200.0
-        agent_angle_weight: 20.0
+        velocity_weight: 20.0
+        angle_weight: 800.0
+        agent_angle_weight: 5.0
         velocity_feasibility_weight: 5.0
-        goal_align_weight: 10.0
-        obstacle_weight: 0.13
+        goal_align_weight: 20.0
+        obstacle_weight: 8.0
+        social_clear_distance: 2.0
+        social_safety_distance: 0.95
+        social_mid_gain: 1.5
+        social_near_gain: 12.0
+        social_retreat_gain: 0.0
+        social_retreat_distance: 0.0

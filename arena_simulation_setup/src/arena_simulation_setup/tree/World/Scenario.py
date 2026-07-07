@@ -13,17 +13,45 @@ from arena_simulation_setup.shared import DynamicObstacle, Obstacle, Pose
 from arena_simulation_setup.utils.cattrs import converter
 
 
+def _pose_from_deg(value) -> Pose:
+    if isinstance(value, (list, tuple)) and len(value) == 3 and all(isinstance(v, (int, float)) for v in value):
+        import math
+        return Pose.parse([value[0], value[1], math.radians(value[2])])
+    return Pose.converter(value)
+
+
 @attrs.define
 class RobotGoal:
-    start: Pose = attrs.field(converter=Pose.converter)
-    goal: Pose = attrs.field(converter=Pose.converter)
+    start: Pose = attrs.field(converter=_pose_from_deg)
+    goal: Pose = attrs.field(converter=_pose_from_deg)
 
     @classmethod
     def parse(cls, obj: dict) -> "RobotGoal":
         return cls(
-            start=Pose.parse(obj.get("start", [])),
-            goal=Pose.parse(obj.get("goal", [])),
+            start=_pose_from_deg(obj.get("start", [])),
+            goal=_pose_from_deg(obj.get("goal", [])),
         )
+
+    @classmethod
+    def from_scenario_robot(cls, robot: dict) -> "RobotGoal":
+        """Parse a single robot entry from a scenario file.
+
+        New format (current):
+            robot:
+              pose: [x, y, yaw_deg]              -> start
+              waypoints: [[x, y, yaw_deg], ...]  -> goal = last waypoint
+        Legacy format (still accepted):
+            start: [x, y, yaw_deg]
+            goal:  [x, y, yaw_deg]
+        """
+        if "start" in robot or "goal" in robot:
+            start = robot.get("start", robot.get("pose", []))
+            goal = robot.get("goal", [])
+        else:
+            start = robot.get("pose", [])
+            waypoints = robot.get("waypoints") or []
+            goal = waypoints[-1] if waypoints else start
+        return cls(start=start, goal=goal)
 
 
 @attrs.define
@@ -80,18 +108,35 @@ class ScenarioView(PathView):
                 for obs
                 in scenario.get("obstacles", {}).get("dynamic", [])
             ],
-            robots=[
-                converter.structure({**robot}, RobotGoal)
-                for robot
-                in scenario.get("robots", [])
-            ]
+            robots=self._parse_robots(scenario)
         )
+
+    @staticmethod
+    def _parse_robots(raw: dict) -> list[RobotGoal]:
+        """Extract robot start/goal(s) from a raw scenario dict.
+
+        Accepts the new singular ``robot:`` mapping, the plural ``robots:``
+        list, and the legacy ``start``/``goal`` entries interchangeably.
+        """
+        if not isinstance(raw, dict):
+            return []
+        robots = raw.get("robots")
+        if robots is None:
+            robot = raw.get("robot")
+            robots = [robot] if isinstance(robot, dict) else []
+        return [
+            RobotGoal.from_scenario_robot(r)
+            for r in robots
+            if isinstance(r, dict)
+        ]
 
     def load(self) -> Scenario:
         load_exc: Exception
         try:
             with open(self.scenario_path, 'r') as f:
-                scenario = converter.structure(yaml.safe_load(f), Scenario)
+                raw = yaml.safe_load(f)
+                scenario = converter.structure(raw, Scenario)
+                scenario.robots = self._parse_robots(raw)
                 for obj in itertools.chain(scenario.static, scenario.dynamic):
                     obj.included_from = self.path
             return scenario

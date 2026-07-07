@@ -1,0 +1,40 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [1.11335, -4.7346, 97.35238]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.82
+  desired_velocity: 1.05
+  waypoints:
+  - [0.99629, -3.82741, 144.16235]
+  - [0.46954, -3.44698, 137.48955]
+  - [0.11837, -3.12508, 113.42869]
+  - [-0.07185, -2.68612, 74.53878]
+  - [0.11837, -1.99841, 43.72697]
+  - [0.45491, -1.67651, 73.53999]
+  - [0.64512, -1.0327, 81.46924]
+  - [0.77681, -0.15478, 81.46924]
+- name: hunav_2
+  model: male_adult_medical_01
+  pose: [-4.43218, -2.02768, 21.80141]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.15
+  waypoints:
+  - [-3.8469, -1.79357, -18.43495]
+  - [-3.36405, -1.95452, 0.0]
+  - [-2.86656, -1.95452, -145.88552]
+  - [-3.77374, -2.56906, -78.40782]
+  - [-3.65669, -3.13971, -90.0]
+  - [-3.65669, -3.62257, -20.77225]
+  - [-3.23236, -3.78352, -68.87528]
+  - [-2.98361, -4.42733, -68.87528]
+robot:
+  name: robot
+  pose: [0.11837, -4.003, 163.55963]
+  waypoints:
+  - [-2.55929, -3.21287, 163.55963]
+  behavior: moves within the open waiting area along a wide safe corridor while avoiding
+    the office and kitchen crossings

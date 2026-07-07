@@ -1,0 +1,41 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [-1.90091, -1.77005, 93.01279]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [-1.96501, -0.55224, 64.0577]
+  - [-1.67658, 0.04064, -3.8568]
+  - [-0.25046, -0.0555, -88.5679]
+  - [-0.23443, -0.69646, -88.36342]
+  - [-0.20239, -1.81812, -82.40536]
+  - [-0.10624, -2.53919, -1.97494]
+  - [0.35845, -2.55522, -72.8241]
+  - [0.63085, -3.43653, -87.39744]
+  - [0.64688, -3.78905, -87.39744]
+- name: hunav_2
+  model: male_adult_medical_01
+  pose: [0.82314, 0.13678, -20.09523]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.1
+  waypoints:
+  - [1.48012, -0.10357, -95.71059]
+  - [1.41602, -0.74453, -90.0]
+  - [1.41602, -1.59379, -97.72183]
+  - [1.28783, -2.5392, -1.4321]
+  - [1.92878, -2.55522, -0.0]
+  - [2.95431, -2.55522, 1.24536]
+  - [3.6914, -2.5392, -0.73452]
+  - [4.94126, -2.55522, -0.73452]
+robot:
+  name: robot
+  pose: [2.39347, -3.98134, -3.76594]
+  waypoints:
+  - [8.72288, -4.39796, -3.76594]
+  behavior: moves through the central open aisle for a short delivery task while avoiding
+    shoppers near the right wall

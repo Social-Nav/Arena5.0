@@ -302,7 +302,7 @@ def generate_launch_description():
             executable='obstacle_distance_node',
             name='obstacle_distance',
             output='screen',
-            parameters=[{'costmap_topic': 'local_costmap/costmap'}],
+            parameters=[{'mode': 3, 'costmap_topic': 'local_costmap/costmap'}],
             condition=IfCondition(
                 PythonExpression(["'", local_planner.substitution, "' == 'social_mpc'"])
             ),

@@ -1,0 +1,44 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [-1.02511, 0.71936, 82.03039]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.82
+  desired_velocity: 1.08
+  waypoints:
+  - [-0.77826, 2.48255, 90.0]
+  - [-0.77826, 3.9989, 103.06932]
+  - [-1.4659, 6.96106, 6.70983]
+  - [-0.86642, 7.03159, -26.56505]
+  - [-0.33746, 6.76711, -3.91825]
+  - [0.94967, 6.67895, -29.95361]
+  - [1.98996, 6.07947, 50.64825]
+  - [2.71287, 6.96106, 4.3987]
+  - [4.31737, 7.08449, 57.99462]
+  - [4.67001, 7.64871, 57.99462]
+- name: hunav_2
+  model: male_adult_medical_01
+  pose: [7.63218, -1.44937, 112.52056]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.74
+  desired_velocity: 0.96
+  waypoints:
+  - [7.03269, -0.00355, 171.32683]
+  - [5.99241, 0.15513, 177.79741]
+  - [5.07555, 0.1904, 88.43065]
+  - [5.11081, 1.47753, 105.17292]
+  - [4.54659, 3.5581, 74.14063]
+  - [4.98739, 5.10971, 90.0]
+  - [4.98739, 6.23815, 19.79888]
+  - [5.86898, 6.55553, 98.56089]
+  - [5.62214, 8.1953, 137.29061]
+  - [4.70528, 9.04163, 137.29061]
+robot:
+  name: robot
+  pose: [7.54402, 5.79736, 162.49552]
+  waypoints:
+  - [0.66756, 7.96608, 162.49552]
+  behavior: patrols through the open central classroom space while avoiding the side
+    furniture zones
