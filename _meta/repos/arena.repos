@@ -79,3 +79,13 @@ repositories:
     type: git
     url: https://github.com/ductaingn/arena_hunav_sim_bridge.git
     version: humble
+
+  # social navigation (nav2 controller + costmap layer)
+  deps/nav2_social_mpc_controller:
+    type: git
+    url: https://github.com/Social-Nav/nav2_social_mpc_controller.git
+    version: feature/social_yielding
+  deps/nav2_social_costmap_plugin:
+    type: git
+    url: https://github.com/robotics-upo/nav2_social_costmap_plugin.git
+    version: humble
