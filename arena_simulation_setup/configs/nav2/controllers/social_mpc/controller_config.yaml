@@ -2,14 +2,28 @@ controller_plugins:
   - FollowPath
 controller_plugins_dict:
   FollowPath:
-    plugin: "nav2_social_mpc_controller::SocialMPCController"
+    # RotationShimController wraps the social-MPC controller. When the heading error to the
+    # path exceeds angular_dist_threshold it rotates in place first, then hands path-following
+    # off to the primary controller. This fixes the "barely completes a sharp turn" behaviour:
+    # big turns are now a clean in-place rotate instead of the MPC creeping around the corner.
+    plugin: "nav2_rotation_shim_controller::RotationShimController"
+    primary_controller: "nav2_social_mpc_controller::SocialMPCController"
+    angular_dist_threshold: 1.5708         # 90° — ENGAGE: start in-place rotate when heading err exceeds this. SOLE "rotate-first" knob. Narrow-space turns still arcing -> lower; stops too often -> raise.
+    angular_disengage_threshold: 0.35      # ~20° — DISENGAGE: stop in-place rotate & hand to MPC once heading err is within 20°; MPC arcs through the last ~20° while moving.
+    forward_sampling_distance: 0.5         # sample a point this far along the path to derive the heading
+    rotate_to_heading_angular_vel: 0.8     # rad/s during in-place rotate (1.5->0.8): overshoot≈ω²/(2·decel), so lowering ω cuts overshoot quadratically AND softens the stop. At 0.8 the coast (~9°) ≈ the disengage angle => lands on target instead of overshooting+braking. Raise toward 1.0 if big turns feel too slow.
+    max_angular_accel: 3.2
+    simulate_ahead_time: 1.0               # collision-check horizon during the rotate
+    rotate_to_goal_heading: false          # stop as soon as xy_goal_tolerance is met; do NOT spin to a final heading
+    closed_loop: true
+    # ---- primary controller (social_mpc) params, inline in the same FollowPath namespace ----
     transform_tolerance: 1.0
     trajectorizer:
       omnidirectional: false
-      desired_linear_vel: 0.32
-      lookahead_dist: 0.6
-      max_angular_vel: 3.5
-      rotate_to_heading_min_angle: 0.9 # ~52 degrees in radians
+      desired_linear_vel: 0.35   # reverted to arena-original
+      lookahead_dist: 0.3        # reverted to arena-original
+      max_angular_vel: 1.5       # reverted to arena-original
+      rotate_to_heading_min_angle: 3.14   # DISABLED trajectorizer in-place-rotate branch (was 30°): MPC now always gets a trackable arc reference (vx>0), never a pure-rotation ref it can't follow. In-place rotation owned solely by RotationShim above.
       base_frame: "${frame:-}${robot_base_frame:-base_link}"
       time_step: 0.05
       max_time: 1.5
@@ -19,7 +33,7 @@ controller_plugins_dict:
       fn_tol: 1.0e-5
       gradient_tol: 1.0e-8
       max_iterations: 50
-      min_linear_velocity: 0.0
+      min_linear_velocity: 0.0    # forbid reverse (optimizer may not command negative vx)
       control_horizon: 24
       parameter_block_length: 6
       discretization: 1
@@ -27,17 +41,18 @@ controller_plugins_dict:
       current_path_weight: 1.0
       current_cmds_weight: 0.3
       weights:
-        distance_weight: 300.0
-        social_weight: 80.0
-        velocity_weight: 20.0
-        angle_weight: 800.0
-        agent_angle_weight: 5.0
+        # reverted to upstream: first 8 from params/params.yaml, social_* gains from code defaults
+        distance_weight: 50.0
+        social_weight: 700.0
+        velocity_weight: 8.0
+        angle_weight: 180.0
+        agent_angle_weight: 0.0
         velocity_feasibility_weight: 5.0
-        goal_align_weight: 20.0
-        obstacle_weight: 8.0
+        goal_align_weight: 8.0
+        obstacle_weight: 0.2
         social_clear_distance: 2.0
-        social_safety_distance: 0.95
-        social_mid_gain: 1.5
-        social_near_gain: 12.0
-        social_retreat_gain: 0.0
-        social_retreat_distance: 0.0
+        social_safety_distance: 0.9
+        social_mid_gain: 1.0
+        social_near_gain: 6.0
+        # retreat cost removed at CODE level (computeRetreatCost deleted from social_work_cost_function);
+        # social_retreat_gain / social_retreat_distance no longer exist as params.

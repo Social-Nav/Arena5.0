@@ -71,6 +71,7 @@ namespace task_generator_gui
         bool generateWorld();
         void getParams();
         void setParams();
+        void doResetTask();   // fire the reset_task service exactly once (button-driven only)
         void setRobot();
         void checkRobotModel();
         bool hasNestedParameter(std::string parameter_name);

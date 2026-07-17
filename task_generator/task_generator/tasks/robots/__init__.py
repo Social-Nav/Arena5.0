@@ -17,9 +17,14 @@ class TM_Robots(TaskMode):
     """
 
     _last_reset: int
+    _last_clock_seen: int | None = None  # for clock-jump/rewind detection (B2)
+    # A single is_done poll is 0.5 s apart; any sim-clock step larger than this (s)
+    # between polls is treated as a pause/unpause jump, not real elapsed episode time.
+    _TIMEOUT_REBASELINE_STEP: int = 5
 
     async def reset(self, **kwargs):
         self._last_reset = self._PROPS.clock.clock.sec
+        self._last_clock_seen = self._last_reset
 
     async def set_position(self, pose: Pose):
         """
@@ -52,8 +57,20 @@ class TM_Robots(TaskMode):
             bool: True if all robots are done, False otherwise.
 
         """
-        if (self._PROPS.clock.clock.sec - self._last_reset) \
-                > self.node.conf.Robot.TIMEOUT.value:
+        now = self._PROPS.clock.clock.sec
+
+        # B2: the sim clock is frozen during the pause/unpause of a reset, and Isaac
+        # can jump it forward (or backward) on unpause. A raw (now - _last_reset)
+        # would then blow past TIMEOUT in a single step and fire a spurious reset —
+        # the "reset immediately after a reset" loop. Detect a non-monotonic /
+        # implausibly large step and re-baseline instead of counting it as elapsed.
+        if self._last_clock_seen is not None:
+            step = now - self._last_clock_seen
+            if step < 0 or step > self._TIMEOUT_REBASELINE_STEP:
+                self._last_reset = now  # clock jumped/rewound: restart the window
+        self._last_clock_seen = now
+
+        if (now - self._last_reset) > self.node.conf.Robot.TIMEOUT.value:
             return True
 
         if not self._PROPS.robots:

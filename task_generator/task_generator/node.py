@@ -197,9 +197,14 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         try:
             while True:
                 await asyncio.sleep(0.5)
+                # Read is_done under the lock, then RELEASE before reset_task():
+                # reset_task() acquires _reset_lock itself, so calling it while still
+                # holding the lock deadlocks (asyncio.Lock is non-reentrant) — which
+                # previously wedged auto-reset on the first is_done=True.
                 async with self._reset_lock:
-                    if await self._task.is_done:
-                        await self.reset_task()
+                    done = await self._task.is_done
+                if done:
+                    await self.reset_task()
         except asyncio.CancelledError:
             pass
         except Exception as e:

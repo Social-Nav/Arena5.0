@@ -48,7 +48,7 @@ def generate_launch_description():
     global_planner = LaunchArgument(
         name='global_planner',
         default_value='navfn',
-        description='global planner type [navfn]'
+        description='global planner type [navfn, smac_2d, smac_hybrid, smac_state_lattice]'
     )
     sim = LaunchArgument(
         name='sim',
@@ -144,7 +144,7 @@ def generate_launch_description():
     )
     social_yielding = LaunchArgument(
         name='social_yielding',
-        default_value='true',
+        default_value='false',
         choices=['true', 'false'],
         description='Enable proactive-yielding pipeline: detect pedestrian block '
                     '-> pause -> snapshot -> LLM pixel goal -> reproject -> yield replan',
@@ -283,6 +283,7 @@ def generate_launch_description():
         launch_arguments={
             **use_sim_time.dict,
             'simulator': sim.substitution,
+            **robot.dict,
             **world.dict,
             **save_data.dict,
             **session_tag.dict,

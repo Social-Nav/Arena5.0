@@ -33,6 +33,11 @@ def generate_launch_description():
         default_value='',
         description='Label prepended to collected_data subdirectory',
     )
+    robot = LaunchArgument(
+        name='robot',
+        default_value='jackal',
+        description='robot model name (forwarded to the Isaac process)',
+    )
 
     # TODO temporary
     world = LaunchArgument(
@@ -72,6 +77,7 @@ def generate_launch_description():
                 'use_sim_time': use_sim_time.substitution,
                 'save_data': save_data.substitution,
                 'session_tag': session_tag.substitution,
+                'robot': robot.substitution,
                 # 'headless': headless.substitution
             }.items(),
         )

@@ -1,7 +1,7 @@
 planner_plugins: ['GridBased']
 planner_plugins_dict:
   GridBased:
-    plugin: 'nav2_smac_planner/SmacPlannerLattice'
+    plugin: 'nav2_smac_planner::SmacPlannerLattice'
     allow_unknown: true
     tolerance: 0.25
     max_iterations: 1000000
