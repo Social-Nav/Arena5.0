@@ -25,18 +25,33 @@ How to read the three failure modes:
              cmd_vel_nav, it's the controller (RotationShim/MPC): compare G (global heading) vs wz sign.
 
 Run inside the arena container (env sourced):
-  python3 /opt/arena_ws/src/Arena/_meta/tools/motion_layers.py [ROBOT_NS]
+  python3 /opt/arena_ws/src/Arena/_meta/tools/motion_layers.py [ROBOT_NS] [--always]
+
+social_yielding mode (default): the tool watches `isaac/sim_running`. While the sim is
+PAUSED (blocked -> snapshot -> LLM) it stays quiet; on each paused->running edge (the
+orchestrator published the new yielding goal and unpaused) it prints a "YIELD RESUMED"
+banner + the new goal, then streams the per-layer cmd_vel lines until the next pause.
+Use --always to stream unconditionally regardless of sim_running (old behavior).
 """
 import math
 import sys
 
 import rclpy
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import PoseStamped, Twist
 from nav_msgs.msg import Odometry, Path
 from rcl_interfaces.msg import Log
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, DurabilityPolicy
+from std_msgs.msg import Bool
 
-NS = sys.argv[1] if len(sys.argv) > 1 else "/task_generator_node/Ai2_Bot2"
+# args: [ROBOT_NS] [--always]
+_args = [a for a in sys.argv[1:] if not a.startswith("-")]
+_flags = {a for a in sys.argv[1:] if a.startswith("-")}
+NS = _args[0] if _args else "/task_generator_node/Ai2_Bot2"
+# Default (social_yielding-aware): only stream while sim is RUNNING, and print a banner
+# on each paused->running edge (i.e. right after the orchestrator sends the new yielding
+# goal and unpauses). Pass --always to stream unconditionally (ignore sim_running gating).
+ALWAYS = "--always" in _flags
 
 
 def heading(path, ahead=0.5):
@@ -77,12 +92,37 @@ class Mon(Node):
         self.g = None
         self.l = None
         self.od = None
+        self.goal = None            # latest yielding/nav goal (PoseStamped)
+        self.running = None         # sim_running state (None=unknown yet)
         self.create_subscription(Path, f"{NS}/received_global_plan", lambda m: setattr(self, "g", m), 10)
         self.create_subscription(Path, f"{NS}/local_plan", lambda m: setattr(self, "l", m), 10)
         self.create_subscription(Odometry, f"{NS}/odom", lambda m: setattr(self, "od", m), 10)
         self.create_subscription(Log, "/rosout", self.on_log, 100)
+        self.create_subscription(PoseStamped, f"{NS}/goal_pose", lambda m: setattr(self, "goal", m), 10)
+        # sim_running is published latched (TRANSIENT_LOCAL) by run_isaacsim; match that QoS.
+        _state_qos = QoSProfile(depth=1)
+        _state_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        self.create_subscription(Bool, "isaac/sim_running", self.on_sim_running, _state_qos)
         self.create_timer(1.0, self.discover)
         self.create_timer(0.5, self.tick)
+
+    def on_sim_running(self, m):
+        prev = self.running
+        self.running = bool(m.data)
+        if prev is None:
+            print(f"  == sim_running = {self.running} ==", flush=True)
+            return
+        if self.running and not prev:
+            # paused -> running edge: this is the yield resume (new goal published + unpause)
+            g = self.goal
+            gs = (f"({g.pose.position.x:+.2f}, {g.pose.position.y:+.2f})"
+                  if g is not None else "unknown")
+            print("\n" + "=" * 62, flush=True)
+            print(f"  YIELD RESUMED  (sim unpaused) -> new goal = {gs}", flush=True)
+            print("  streaming per-layer cmd_vel until next pause ...", flush=True)
+            print("=" * 62, flush=True)
+        elif prev and not self.running:
+            print("\n  -- sim PAUSED (blocked -> snapshot -> LLM); streaming halted --", flush=True)
 
     def on_log(self, m):
         # Surface nav-node events inline so a wrong-turn's CAUSE shows in the same stream:
@@ -112,6 +152,11 @@ class Mon(Node):
         return known + rest
 
     def tick(self):
+        # In social_yielding mode, stay quiet while paused (or before sim_running is known);
+        # --always streams unconditionally.
+        if not ALWAYS and not self.running:
+            return
+
         gh = heading(self.g)
         lh = heading(self.l)
         dd = angdiff(gh, lh)
@@ -132,6 +177,9 @@ class Mon(Node):
 def main():
     rclpy.init()
     print(f"motion_layers on {NS}  (Ctrl-C to stop)")
+    mode = ("ALWAYS (stream regardless of sim_running)" if ALWAYS
+            else "social_yielding (quiet while paused; auto-print on each unpause/yield-resume)")
+    print(f"mode: {mode}")
     print("G/L/Δ = global/local plan heading & divergence (deg) | then each Twist layer | odom = measured")
     node = Mon()
     try:
