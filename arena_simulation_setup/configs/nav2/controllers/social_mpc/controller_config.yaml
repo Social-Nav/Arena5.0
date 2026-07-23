@@ -33,7 +33,7 @@ controller_plugins_dict:
       fn_tol: 1.0e-5
       gradient_tol: 1.0e-8
       max_iterations: 50
-      min_linear_velocity: 0.0    # forbid reverse (optimizer may not command negative vx)
+      min_linear_velocity: -0.1   # allow a little reverse: when obstacle cost pins vx=0 (robot wedged near inflation), the optimizer can back out of the high-cost zone instead of only spinning in place
       control_horizon: 24
       parameter_block_length: 6
       discretization: 1
@@ -44,12 +44,25 @@ controller_plugins_dict:
         # reverted to upstream: first 8 from params/params.yaml, social_* gains from code defaults
         distance_weight: 50.0
         social_weight: 700.0
-        velocity_weight: 8.0
-        angle_weight: 180.0
+        velocity_weight: 40.0   # 8->40: velocity is a 2nd-power (desired_vel - vx)^2 term; the distance
+                                # term is 4th-power ‖pos-endpoint‖^4 whose gradient VANISHES near a short
+                                # (~1.4m) path end, so early blocks solved to vx~0 while only later blocks
+                                # ramped up -> controller emits block[0]=~0 -> robot never starts. Boosting
+                                # velocity_weight forces vx>0 from the FIRST block. Lower toward 20 if it overshoots.
+        angle_weight: 60.0    # 180->60: align is a 4th-power ‖pos-pathpoint‖ term; at 180 it dominated
+                              # (align~170 vs velocity~97) and pinned vx=0 in narrow corridors. Lower it so
+                              # "precisely hug every path point" stops out-weighing "move forward".
         agent_angle_weight: 0.0
         velocity_feasibility_weight: 5.0
         goal_align_weight: 8.0
-        obstacle_weight: 0.2
+        obstacle_weight: 0.1    # 0.2->0.1: residual = weight*costmap_value, minimized SQUARED by Ceres.
+                                # At 0.2 a narrow corridor's high-but-traversable inflation centreline
+                                # (~200, < inscribed) summed to obstacle~3644 and dwarfed velocity/distance
+                                # -> vx[0] pinned to 0 (robot froze). 0.1 quarters the squared cost (~900)
+                                # so it traverses legal inflation while keeping more obstacle-avoidance
+                                # bias than 0.05. If it freezes again in tight corridors, drop toward 0.05;
+                                # if it hugs walls too much, this is the knob to raise. Real lethal/inscribed
+                                # (253/254) stays costly even here.
         social_clear_distance: 2.0
         social_safety_distance: 0.9
         social_mid_gain: 1.0

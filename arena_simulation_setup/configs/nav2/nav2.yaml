@@ -90,8 +90,8 @@ controller_server:
     # Goal checker parameters
     goal_checker:
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.3
-      yaw_goal_tolerance: 3.14
+      xy_goal_tolerance: 0.5
+      yaw_goal_tolerance: 6.2832   # 2*pi = 360deg => heading NOT checked at goal (arrive at position only)
       stateful: True
 
     controller_plugins: ${controller_plugins}
@@ -164,18 +164,20 @@ local_costmap:
         plugin: "nav2_social_costmap_plugin::SocialLayer"
         enabled: True
         people_topic: "/people"
-        cutoff: 10.0
-        amplitude: 254.0
-        covariance_front_height: 0.12
-        covariance_front_width: 0.12
-        covariance_rear_height: 0.12
-        covariance_rear_width: 0.12
-        covariance_when_still: 0.12
+        cutoff: 30.0    # 10->30: higher floor => smaller footprint. radius r=sqrt(-2*var*ln(cutoff/A))
+        amplitude: 150.0   # 254->150: peak no longer LETHAL/INSCRIBED (253). Pedestrian center is now a
+                           # strong-but-traversable cost, so it won't turn the robot's start cell lethal
+                           # (navfn can't plan from a lethal start) and won't pin MPC obstacle-cost so hard.
+        covariance_front_height: 0.06   # 0.12->0.06 (var/2). front r ~0.36m (was ~0.72 at cutoff30)
+        covariance_front_width: 0.06
+        covariance_rear_height: 0.06
+        covariance_rear_width: 0.06
+        covariance_when_still: 0.05      # 0.12->0.05: tightest, for STOPPED (Surprised) peds. still r ~0.33m
         use_vel_factor: True
         speed_factor_multiplier: 2.0
         use_passing: True
-        covariance_right_height: 0.12
-        covariance_right_width: 0.12
+        covariance_right_height: 0.06
+        covariance_right_width: 0.06
         publish_occgrid: False
       # voxel_layer (备用，切换时把 plugins 改回 ["voxel_layer", "inflation_layer"]):
       # voxel_layer:
@@ -226,7 +228,7 @@ global_costmap:
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
-        observation_sources: ${observation_sources_string}
+        observation_sources: ${observation_sources_string_global}
         ${**observation_sources_dict}: ''
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"

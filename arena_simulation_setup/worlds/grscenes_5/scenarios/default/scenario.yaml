@@ -1,71 +1,50 @@
 # Generated from topdown pixel waypoints
 
-# dynamic:
-# - name: hunav_1
-#   model: female_adult_business_02
-#   pose: [-2.40263, -2.69319, 88.12212]
-#   behavior_tree: BTRegularNav.xml
-#   velocity: 0.83
-#   desired_velocity: 1.08
-#   waypoints:
-#   - [-2.37901, -1.97268, 79.1597]
-#   - [-2.2727, -1.41752, 95.19443]
-#   - [-2.31995, -0.8978, 177.83893]
-#   - [-2.94597, -0.87418, 167.24788]
-#   - [-7.43445, 0.14163, 90.0]
-#   - [-7.43445, 0.44874, 83.65981]
-#   - [-7.38721, 0.87396, 77.81634]
-#   - [-7.16278, 1.9134, 66.97451]
-#   - [-6.96198, 2.38587, 138.36646]
-#   - [-7.2809, 2.66936, 81.57303]
-#   - [-7.1864, 3.30719, 48.36646]
-#   - [-6.71393, 3.83872, 141.63251]
-#   - [-7.2809, 4.28757, 44.19307]
-#   - [-6.85567, 4.70098, 103.24052]
-#   - [-6.90292, 4.90178, 141.34019]
-#   - [-7.43445, 5.32701, 61.29405]
-#   - [-7.16278, 5.8231, 112.01128]
-#   - [-7.38721, 6.37826, 90.0]
-#   - [-7.38721, 6.94522, 85.48601]
-#   - [-7.35177, 7.39407, 81.46923]
-#   - [-7.2809, 7.86654, 180.0]
-#   - [-7.77699, 7.86654, 133.02506]
-#   - [-8.10772, 8.22089, -172.64762]
-#   - [-8.47389, 8.17365, -150.01836]
-#   - [-8.781, 7.99647, -177.70939]
-#   - [-9.37159, 7.97285, 180.0]
-#   - [-9.95036, 7.97285, -175.42608]
-#   - [-10.54095, 7.9256, -155.37644]
-#   - [-10.82443, 7.79567, 120.69972]
-#   - [-11.04886, 8.17365, 102.80427]
-#   - [-11.16698, 8.69337, 90.0]
-#   - [-11.16698, 8.78786, 61.07357]
-#   - [-10.91893, 9.23671, 90.0]
-#   - [-10.91893, 9.56744, 100.61966]
-#   - [-11.09611, 10.51238, -23.4287]
-#   - [-10.74175, 10.35883, -27.55281]
-#   - [-10.47008, 10.21709, -20.55605]
-#   - [-10.37559, 10.18165, -1.0e-05]
-#   - [-9.59601, 10.18165, -2.86241]
-#   - [-9.12354, 10.15803, -1.0e-05]
-#   - [-8.75737, 10.15803, -10.00798]
-#   - [-7.95417, 10.01629, -10.00798]
-# - name: hunav_2
-#   model: male_adult_medical_01
-#   pose: [-14.95856, 10.80768, 5.52753]
-#   behavior_tree: BTRegularNav.xml
-#   velocity: 0.68
-#   desired_velocity: 0.92
-#   waypoints:
-#   - [-13.86006, 10.91398, -102.52881]
-#   - [-13.97818, 10.38245, -21.59531]
-#   - [-13.41122, 10.15803, 46.21887]
-#   - [-13.13955, 10.44151, 19.29004]
-#   - [-12.66707, 10.60688, 19.29004]
+dynamic:
+- name: hunav_1
+  model: male_adult_medical_01
+  pose: [-7.10372, 7.94922, 160.44175]
+  behavior_tree: BTScaredNav.xml   # Scared: flees away from the robot when it comes near. Resolved from arena_simulation_setup/configs/hunav/behavior_trees/ (verified present)
+  behavior:
+    type: 4        # BEH_SCARED (1=regular 2=impassive 3=surprised 4=scared 5=curious 6=threatening)
+    duration: 5.0  # seconds to keep fleeing after the robot is no longer near
+    once: false    # can be scared multiple times
+    dist: 5.0      # meters - distance at which the robot is noticed and fleeing starts
+    vel: 1.2       # runaway_vel: speed while fleeing the robot (faster than normal walk)
+    social_force_factor: 3.0  # scary_force_factor: strength of the repulsion away from the robot
+  velocity: 0.9
+  desired_velocity: 0.9
+  waypoints:
+  - [-8.00142, 8.26814, 165.47458]
+  - [-10.60001, 8.94141, -175.6013]
+  - [-11.21422, 8.89417, 85.37343]
+  - [-11.04886, 10.93761, -36.29263]
+  - [-10.2929, 10.38245, -7.05231]
+  - [-9.14716, 10.24071, -3.98253]
+  - [-7.2809, 10.11078, -3.98253]
+- name: hunav_2
+  model: female_adult_business_02
+  pose: [-14.62783, 10.40608, -90.0]
+  behavior_tree: BTScaredNav.xml   # Scared: flees away from the robot when it comes near
+  behavior:
+    type: 4        # BEH_SCARED
+    duration: 5.0
+    once: false
+    dist: 3.5
+    vel: 1.2
+    social_force_factor: 3.0
+  velocity: 0.68
+  desired_velocity: 0.4
+  waypoints:
+  - [-14.62783, 10.38245, -1.0e-05]
+  - [-13.97818, 10.38245, -21.59531]
+  - [-13.41122, 10.15803, -1.0e-05]
+  - [-12.56077, 10.15803, 103.32453]
+  - [-12.66707, 10.60688, 103.32453]
 robot:
   name: robot
-  pose: [-6.43045, 3.88597, 107.36662]
+  pose: [-6.53676, 11.61088, -86.20395]
   waypoints:
-  - [-7.38721, 6.94522, 107.36662]
-  behavior: delivers supplies along the wide main corridor while avoiding doorway
-    congestion
+  - [-7.16278, -1.27578, -86.20395]
+  behavior: moves along the main corridor for a delivery task while avoiding door
+    areas
