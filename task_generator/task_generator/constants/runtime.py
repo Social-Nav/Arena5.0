@@ -80,7 +80,7 @@ def Configuration(server: ROSParamServer):
 
             GOAL_TOLERANCE_ANGLE = server.ROSParam[float](
                 'goal_tolerance_angle',
-                30.0 * np.pi / 360.,
+                2.0 * np.pi,   # 360deg => heading not checked (position-only arrival)
             )
 
             SPAWN_ROBOT_SAFE_DIST = server.ROSParam[float](
