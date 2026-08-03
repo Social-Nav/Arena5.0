@@ -104,6 +104,7 @@ RUN  --mount=type=cache,target=/var/cache/apt,sharing=locked \
     timeout ${APT_TIMEOUT_SEC}s apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
+        ffmpeg \
         gnupg \
         lsb-release \
     && install -m 0755 -d /etc/apt/keyrings \

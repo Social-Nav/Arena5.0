@@ -105,6 +105,14 @@ services:
       - "$HOST_ARENA_WS_DIR/log:/opt/arena_ws/log"
       - "$HOST_ARENA_WS_DIR/.env:/opt/arena_ws/.env"
       - "${HOST_SCENES_DIR:-/tmp/arena_scenes}:/data/scenes"
+      - "$HOST_ARENA_WS_DIR/.docker/isaac/cache/kit:/isaac-sim/kit/cache"
+      - "$HOST_ARENA_WS_DIR/.docker/isaac/cache/ov:/root/.cache/ov"
+      - "$HOST_ARENA_WS_DIR/.docker/isaac/cache/pip:/root/.cache/pip"
+      - "$HOST_ARENA_WS_DIR/.docker/isaac/cache/glcache:/root/.cache/nvidia/GLCache"
+      - "$HOST_ARENA_WS_DIR/.docker/isaac/cache/computecache:/root/.nv/ComputeCache"
+      - "$HOST_ARENA_WS_DIR/.docker/isaac/data:/root/.local/share/ov/data"
+      - "$HOST_ARENA_WS_DIR/.docker/isaac/documents:/root/Documents"
+      - "$HOST_ARENA_WS_DIR/.docker/isaac/logs:/root/.nvidia-omniverse/logs"
     environment:
       - DISPLAY
       - TMPDIR=/tmp/shared

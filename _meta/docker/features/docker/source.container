@@ -6,6 +6,20 @@ export ARENA_FEATURES_DIR="$ARENA_WS_DIR/src/Arena/_meta/docker/features"
 export PYTHON_BUILD_MIRROR_URL="${PYTHON_BUILD_MIRROR_URL:-https://mirrors.tuna.tsinghua.edu.cn/python}"
 export PYTHON_BUILD_MIRROR_URL_SKIP_CHECKSUM="${PYTHON_BUILD_MIRROR_URL_SKIP_CHECKSUM:-1}"
 
+if [ -d "$ARENA_VENV_DIR" ]; then
+    case ":${PATH:-}:" in
+        *:"$ARENA_VENV_DIR/bin":*) ;;
+        *) export PATH="$ARENA_VENV_DIR/bin:${PATH:-}" ;;
+    esac
+    for site_packages in "$ARENA_VENV_DIR"/lib/python*/site-packages; do
+        [ -d "$site_packages" ] || continue
+        case ":${PYTHONPATH:-}:" in
+            *:"$site_packages":*) ;;
+            *) export PYTHONPATH="$site_packages${PYTHONPATH:+:$PYTHONPATH}" ;;
+        esac
+    done
+fi
+
 docker_env=""
 docker_env="${docker_env} ARENA_PROJECT_NAME=$ARENA_PROJECT_NAME"
 docker_env="${docker_env} ARENA_IMAGE=$ARENA_IMAGE"

@@ -24,6 +24,7 @@ class Constants:
         DUMMY = "dummy"
         HUNAV = "hunav"  # Added Hunavsim
         ISAAC = 'isaac'
+        GRSCENES_REPLAY = "grscenes_replay"
 
     class TaskMode:
         @enum.unique

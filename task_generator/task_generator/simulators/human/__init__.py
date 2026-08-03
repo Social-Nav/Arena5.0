@@ -344,3 +344,11 @@ async def lazy_hunavsim(**kwargs):
 async def isaacsim(**kwargs):
     from .isaac import IsaacHumanSimulator
     return IsaacHumanSimulator(**kwargs)
+
+
+@HumanSimulatorRegistry.register(Constants.HumanSimulator.GRSCENES_REPLAY)
+async def grscenes_replay(**kwargs):
+    # The replay publisher is launched separately and owns human_states/arena_peds.
+    # Task generator should still spawn static world geometry and robots normally.
+    from .dummy import DummyHumanSimulator
+    return DummyHumanSimulator(**kwargs)

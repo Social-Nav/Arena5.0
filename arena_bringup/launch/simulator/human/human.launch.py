@@ -1,6 +1,7 @@
 import os
 
 import launch
+import launch_ros.actions
 from ament_index_python.packages import get_package_share_directory
 
 from arena_bringup.substitutions import LaunchArgument, SelectAction
@@ -26,6 +27,28 @@ def generate_launch_description():
     launch_human_simulator.add(
         'isaac',
         launch.actions.GroupAction([])
+    )
+
+    launch_human_simulator.add(
+        'grscenes_replay',
+        launch_ros.actions.Node(
+            package='arena_bringup',
+            executable='grscenes_pedestrian_replay',
+            namespace=namespace.substitution,
+            name='grscenes_pedestrian_replay',
+            output='screen',
+            parameters=[
+                {'use_sim_time': True},
+                {
+                    'params_path': launch.substitutions.EnvironmentVariable(
+                        'ARENA_GRSCENES_REPLAY_PARAMS_PATH',
+                        default_value='',
+                    ),
+                    'human_states_topic': 'human_states',
+                    'arena_peds_topic': 'arena_peds',
+                },
+            ],
+        )
     )
 
     launch_human_simulator.add(

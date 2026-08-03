@@ -17,6 +17,15 @@ export ARENA_PROJECT_NAME="arena-$(basename "$ARENA_WS_DIR")"
 
 mkdir -p "$ARENA_DIR/.venv"
 mkdir -p "$ARENA_WS_DIR/build" "$ARENA_WS_DIR/install" "$ARENA_WS_DIR/log" "$ARENA_WS_DIR/deps" "$ARENA_WS_DIR/outputs"
+mkdir -p \
+    "$ARENA_WS_DIR/.docker/isaac/cache/kit" \
+    "$ARENA_WS_DIR/.docker/isaac/cache/ov" \
+    "$ARENA_WS_DIR/.docker/isaac/cache/pip" \
+    "$ARENA_WS_DIR/.docker/isaac/cache/glcache" \
+    "$ARENA_WS_DIR/.docker/isaac/cache/computecache" \
+    "$ARENA_WS_DIR/.docker/isaac/data" \
+    "$ARENA_WS_DIR/.docker/isaac/documents" \
+    "$ARENA_WS_DIR/.docker/isaac/logs"
 if [ ! -f "$ARENA_WS_DIR/.env" ] ; then
     touch "$ARENA_WS_DIR/.env"
 fi

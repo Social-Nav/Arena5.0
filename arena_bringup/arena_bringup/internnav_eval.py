@@ -1316,6 +1316,11 @@ def _load_video_backend():
 BACKEND_NAME, BACKEND_MODULE = _load_video_backend()
 
 
+VIDEO_RECORDER_FINALIZATION_DEADLINE_SEC = 330.0
+VIDEO_FFPROBE_TIMEOUT_CAP_SEC = 15.0
+VIDEO_FFMPEG_TIMEOUT_CAP_SEC = VIDEO_RECORDER_FINALIZATION_DEADLINE_SEC
+
+
 def _codec_is_h264(codec_name):
     if not codec_name:
         return False
@@ -1323,10 +1328,21 @@ def _codec_is_h264(codec_name):
     return normalized in {'h264', 'avc1', 'x264', 'libx264'}
 
 
-def _probe_video_codec(path: Path):
+def _remaining_subprocess_timeout(finalization_deadline, timeout_cap_sec, operation):
+    remaining = float(finalization_deadline) - time.monotonic()
+    if remaining <= 0.0:
+        return None, f'video finalization deadline exhausted before {operation}'
+    return min(float(timeout_cap_sec), remaining), None
+
+
+def _probe_video_codec(path: Path, *, timeout_sec):
     ffprobe_bin = shutil.which('ffprobe')
-    if ffprobe_bin is None or not path.exists():
-        return None
+    if ffprobe_bin is None:
+        return None, 'ffprobe not found on PATH'
+    if not path.exists():
+        return None, f'video file does not exist: {path}'
+    if float(timeout_sec) <= 0.0:
+        return None, f'ffprobe deadline exhausted before probing {path.name}'
     try:
         result = subprocess.run(
             [
@@ -1339,26 +1355,57 @@ def _probe_video_codec(path: Path):
             ],
             capture_output=True,
             text=True,
-            check=True,
+            check=False,
+            timeout=float(timeout_sec),
         )
-    except Exception:
-        return None
+    except subprocess.TimeoutExpired:
+        return None, f'ffprobe timed out after {float(timeout_sec):.3f}s while probing {path.name}'
+    except Exception as exc:
+        return None, f'ffprobe failed for {path.name}: {exc}'
+    if result.returncode != 0:
+        stderr = (result.stderr or '').strip()
+        return None, stderr or f'ffprobe failed with return code {result.returncode} for {path.name}'
     for line in result.stdout.splitlines():
         value = line.strip()
         if value:
-            return value
-    return None
+            return value, None
+    return None, f'ffprobe returned no video codec for {path.name}'
 
 
-def _transcode_to_h264(path: Path):
+def _probe_video_codec_before_deadline(path: Path, *, finalization_deadline, operation):
+    timeout_sec, deadline_error = _remaining_subprocess_timeout(
+        finalization_deadline,
+        VIDEO_FFPROBE_TIMEOUT_CAP_SEC,
+        operation,
+    )
+    if deadline_error:
+        return None, deadline_error
+    return _probe_video_codec(path, timeout_sec=timeout_sec)
+
+
+def _transcode_to_h264(path: Path, *, finalization_deadline):
     ffmpeg_bin = shutil.which('ffmpeg')
     if ffmpeg_bin is None:
         return False, 'ffmpeg not found on PATH'
     if not path.exists():
         return False, f'video file does not exist: {path}'
-    temp_path = path.with_name(f'{path.stem}.h264tmp{path.suffix}')
-    if temp_path.exists():
-        temp_path.unlink()
+    ffmpeg_timeout_sec, deadline_error = _remaining_subprocess_timeout(
+        finalization_deadline,
+        VIDEO_FFMPEG_TIMEOUT_CAP_SEC,
+        f'transcoding {path.name}',
+    )
+    if deadline_error:
+        return False, deadline_error
+
+    token = f'{os.getpid()}.{time.time_ns()}'
+    temp_path = path.with_name(f'.{path.stem}.h264tmp.{token}{path.suffix}')
+    backup_path = path.with_name(f'.{path.stem}.original.{token}{path.suffix}')
+    if temp_path.exists() or backup_path.exists():
+        return False, f'refusing to reuse existing transcode workspace for {path.name}'
+    success = False
+    backup_created = False
+    replacement_done = False
+    detail = ''
     try:
         result = subprocess.run(
             [
@@ -1373,24 +1420,69 @@ def _transcode_to_h264(path: Path):
             ],
             capture_output=True,
             text=True,
-            check=True,
+            check=False,
+            timeout=ffmpeg_timeout_sec,
         )
-    except subprocess.CalledProcessError as exc:
-        stderr = (exc.stderr or '').strip()
-        return False, stderr or f'ffmpeg failed with return code {exc.returncode}'
+        if result.returncode != 0:
+            stderr = (result.stderr or '').strip()
+            raise RuntimeError(stderr or f'ffmpeg failed with return code {result.returncode}')
+        if not temp_path.exists():
+            raise RuntimeError('ffmpeg did not create transcoded output')
+
+        temp_codec, probe_error = _probe_video_codec_before_deadline(
+            temp_path,
+            finalization_deadline=finalization_deadline,
+            operation=f'probing transcoded temp {temp_path.name}',
+        )
+        if probe_error:
+            raise RuntimeError(probe_error)
+        if not _codec_is_h264(temp_codec):
+            raise RuntimeError(f'transcoded temp file codec is {temp_codec!r}, expected h264')
+
+        os.link(path, backup_path)
+        backup_created = True
+        temp_path.replace(path)
+        replacement_done = True
+        detected, probe_error = _probe_video_codec_before_deadline(
+            path,
+            finalization_deadline=finalization_deadline,
+            operation=f'probing replaced file {path.name}',
+        )
+        if probe_error:
+            raise RuntimeError(probe_error)
+        if not _codec_is_h264(detected):
+            raise RuntimeError(f'replaced file codec is {detected!r}, expected h264')
+
+        backup_path.unlink()
+        backup_created = False
+        success = True
+        detail = detected
+    except subprocess.TimeoutExpired:
+        detail = f'ffmpeg timed out after {float(ffmpeg_timeout_sec):.3f}s while transcoding {path.name}'
     except Exception as exc:
-        return False, str(exc)
+        detail = str(exc)
+    finally:
+        cleanup_errors = []
+        if not success and backup_created and backup_path.exists():
+            try:
+                if replacement_done:
+                    backup_path.replace(path)
+                else:
+                    backup_path.unlink()
+                backup_created = False
+            except Exception as exc:
+                cleanup_errors.append(f'failed to restore original from {backup_path}: {exc}')
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except Exception as exc:
+                cleanup_errors.append(f'failed to remove owned temp {temp_path}: {exc}')
+        if backup_created and backup_path.exists():
+            cleanup_errors.append(f'original retained at {backup_path}')
+        if cleanup_errors:
+            detail = '; '.join([detail, *cleanup_errors]) if detail else '; '.join(cleanup_errors)
 
-    if not temp_path.exists():
-        return False, 'ffmpeg did not create transcoded output'
-
-    temp_path.replace(path)
-    detected = _probe_video_codec(path)
-    if _codec_is_h264(detected):
-        return True, detected or 'h264'
-
-    stderr = (result.stderr or '').strip()
-    return False, stderr or f'transcoded file codec is {detected!r}, expected h264'
+    return success, detail
 
 
 class VideoWriterWrapper:
@@ -1402,6 +1494,9 @@ class VideoWriterWrapper:
         self.codec = 'libx264' if BACKEND_NAME == 'imageio' else None
         self.actual_codec = None
         self.transcode_error = None
+        self.finalization_status = 'pending'
+        self._close_started = False
+        self._close_complete = False
 
     def _ensure_writer(self, frame: np.ndarray):
         if self._writer is not None:
@@ -1441,27 +1536,53 @@ class VideoWriterWrapper:
             return
         self._writer.write(frame[:, :, ::-1])
 
-    def close(self):
-        if self._writer is None:
-            return
-        if BACKEND_NAME == 'cv2':
-            self._writer.release()
-        else:
-            self._writer.close()
-        self._writer = None
-        detected_codec = _probe_video_codec(self.path) or self.codec
-        self.actual_codec = detected_codec
-        self.codec = detected_codec
+    def close(self, *, finalization_deadline):
+        if self._close_complete:
+            return self.finalization_status == 'complete'
+        if self._close_started:
+            return False
+
+        self._close_started = True
         self.transcode_error = None
-        if not _codec_is_h264(detected_codec):
-            ok, detail = _transcode_to_h264(self.path)
-            if ok:
-                self.actual_codec = _probe_video_codec(self.path) or 'h264'
-                self.codec = self.actual_codec
-            else:
-                self.transcode_error = (
-                    f'failed to transcode {self.path.name} to h264 from codec={detected_codec!r}: {detail}'
+        try:
+            if self._writer is not None:
+                if BACKEND_NAME == 'cv2':
+                    self._writer.release()
+                else:
+                    self._writer.close()
+                self._writer = None
+
+            detected_codec, probe_error = _probe_video_codec_before_deadline(
+                self.path,
+                finalization_deadline=finalization_deadline,
+                operation=f'probing original file {self.path.name}',
+            )
+            self.actual_codec = detected_codec
+            self.codec = detected_codec
+            if probe_error:
+                self.transcode_error = f'failed to probe {self.path.name}: {probe_error}'
+            elif not _codec_is_h264(detected_codec):
+                ok, detail = _transcode_to_h264(
+                    self.path,
+                    finalization_deadline=finalization_deadline,
                 )
+                if not ok:
+                    self.transcode_error = (
+                        f'failed to finalize {self.path.name} as h264 from codec={detected_codec!r}: {detail}'
+                    )
+                else:
+                    self.actual_codec = detail
+                    self.codec = detail
+            self.finalization_status = 'failed' if self.transcode_error else 'complete'
+        except Exception as exc:
+            self._writer = None
+            self.transcode_error = f'failed to close {self.path.name}: {exc}'
+            self.finalization_status = 'failed'
+        finally:
+            self._close_started = False
+            self._close_complete = True
+
+        return self.finalization_status == 'complete'
 
 
 def _is_static_fallback_gradient(image: np.ndarray) -> bool:
@@ -1508,6 +1629,62 @@ def _looks_like_corrupt_sim_top_down(image: np.ndarray) -> bool:
     high_saturation_ratio = float(np.mean(saturation > 0.55))
     very_dark_ratio = float(np.mean(max_c < 0.03))
     return high_saturation_ratio > 0.35 or very_dark_ratio > 0.45
+
+
+# Transient state, cleared by _clear_transient_error once real frames flow.  It
+# is recorded on every held-back frame so that an episode which ends while the
+# renderer is still settling explains itself instead of leaving an empty video
+# with no stated reason.
+EGO_RENDER_SETTLING_PREFIX = 'waiting for the ego render to settle'
+
+
+def _ego_chroma_noise_sigma(image) -> float:
+    """Estimate per-pixel sampling noise on the red-green opponent plane.
+
+    Immerkaer's structure-insensitive estimator: convolve with the 3x3 kernel
+    [[1, -2, 1], [-2, 4, -2], [1, -2, 1]] and scale the mean absolute response.
+    It is evaluated on R-G rather than luma because an unconverged RTX/DLSS
+    render carries independent noise per colour channel, while real scene
+    structure is strongly correlated across channels; the opponent plane
+    therefore separates unconverged sampling from ordinary scene detail far
+    better than luma, whose response is dominated by geometry edges.
+    """
+    if image.ndim != 3 or image.shape[2] != 3:
+        return 0.0
+    if image.shape[0] < 8 or image.shape[1] < 8:
+        return 0.0
+    plane = image[..., 0].astype(np.float64) - image[..., 1].astype(np.float64)
+    response = (
+        plane[:-2, :-2] - 2.0 * plane[:-2, 1:-1] + plane[:-2, 2:]
+        - 2.0 * plane[1:-1, :-2] + 4.0 * plane[1:-1, 1:-1] - 2.0 * plane[1:-1, 2:]
+        + plane[2:, :-2] - 2.0 * plane[2:, 1:-1] + plane[2:, 2:]
+    )
+    height, width = plane.shape
+    return float(
+        math.sqrt(math.pi / 2.0) * np.abs(response).sum() / (6.0 * (width - 2) * (height - 2))
+    )
+
+
+def _looks_like_unconverged_ego_render(image, sigma_threshold: float) -> bool:
+    """Reject ego frames whose RTX/DLSS sampling has not converged yet.
+
+    Isaac legitimately publishes a real camera Image before its temporal
+    accumulation has settled: the geometry and materials are already correct but
+    the frame carries dense chroma speckle.  Those frames are indistinguishable
+    from valid input to _is_static_fallback_gradient, which only matches one
+    deprecated synthetic test pattern, so they used to become t=0 of
+    ego_observation.mp4 and were consumed by the model's first inference.
+
+    Calibrated against the delivered runs (post-encode frames, the only ego
+    pixels ever retained): the leading anomalous frames measure 1.29-2.67 on
+    this statistic, whereas 614 known-good frames -- every mid-video sample from
+    all three runs, all leading frames of the clean pre-v1-dataset control, and
+    every post-convergence leading frame -- peak at 0.364.  The default
+    threshold of 1.0 sits 2.75x above that worst known-good frame.
+    """
+    if sigma_threshold <= 0.0:
+        return False
+    return _ego_chroma_noise_sigma(image) > sigma_threshold
 
 
 def image_msg_to_numpy(message: Image):
@@ -1566,8 +1743,11 @@ class EvalVideoRecorder(Node):
         self.goal_topic = goal_topic
         self.scan_topic = scan_topic
         self.finished = False
+        self.shutdown_requested = False
         self.current_episode = None
         self.current_episode_info = None
+        self._episode_finalization_state = 'idle'
+        self._last_close_ok = True
         self.ego_writer = None
         self.top_writer = None
         self.debug_overlay_writer = None
@@ -1598,6 +1778,34 @@ class EvalVideoRecorder(Node):
             0,
         )
         self.sim_top_down_post_warmup_discard_count = 0
+        # Ego render warm-up gate.  Same shape as the sim_top_down knobs above:
+        # a warm-up period, a post-warmup discard count and a content check.
+        # The warm-up and discard default to zero because ego_observation.mp4 is
+        # the primary artifact and its measured convergence is sub-second, so a
+        # clean stream must lose nothing; the content check does the work, and
+        # the timers stay available for a scene that needs a blunt instrument.
+        self.ego_skipped_frame_count = 0
+        self.ego_noise_skip_count = 0
+        self.ego_warmup_sec = max(float(os.environ.get('ARENA_EVAL_VIDEO_EGO_WARMUP_SEC', '0.0') or 0.0), 0.0)
+        self.ego_post_warmup_discard_frames = max(
+            int(os.environ.get('ARENA_EVAL_VIDEO_EGO_POST_WARMUP_DISCARD_FRAMES', '0') or 0),
+            0,
+        )
+        self.ego_post_warmup_discard_count = 0
+        self.ego_noise_sigma_threshold = max(
+            float(os.environ.get('ARENA_EVAL_VIDEO_EGO_NOISE_SIGMA', '1.0') or 1.0),
+            0.0,
+        )
+        # Fail-open deadline.  A stream that never converges must still produce a
+        # video and must say so loudly, never hang the run or silently truncate.
+        self.ego_settle_timeout_sec = max(
+            float(os.environ.get('ARENA_EVAL_VIDEO_EGO_SETTLE_TIMEOUT_SEC', '10.0') or 10.0),
+            0.0,
+        )
+        # The gate is armed only until the first ego frame is admitted, so no
+        # mid-episode frame can ever be dropped by the content check.
+        self.ego_stream_open = False
+        self.ego_settle_timed_out = False
         self.latest_pose = None
         self.latest_pose_generation = -1
         self.latest_goal = None
@@ -1628,6 +1836,8 @@ class EvalVideoRecorder(Node):
                 'preferred_codec': 'libx264',
                 'file_extension': '.mp4',
             },
+            'finalization_status': 'recording',
+            'finalization_errors': [],
             'episodes': [],
         }
 
@@ -1693,7 +1903,7 @@ class EvalVideoRecorder(Node):
             return
         if message.startswith('waiting for task_reset before opening video writers') or message.startswith(
             'waiting for fresh post-reset camera+odom messages before recording episode '
-        ):
+        ) or message.startswith(EGO_RENDER_SETTLING_PREFIX):
             try:
                 self.error_path.unlink()
             except Exception:
@@ -1706,51 +1916,72 @@ class EvalVideoRecorder(Node):
         return self.videos_dir / f'episode_{int(episode):04d}'
 
     def _close_episode(self, *, reason):
-        ego_writer = self.ego_writer
-        top_writer = self.top_writer
-        debug_overlay_writer = self.debug_overlay_writer
-        sim_top_down_writer = self.sim_top_down_writer
-        if ego_writer is not None:
-            ego_writer.close()
-            self.ego_writer = None
-        if top_writer is not None:
-            top_writer.close()
-            self.top_writer = None
-        if debug_overlay_writer is not None:
-            debug_overlay_writer.close()
-            self.debug_overlay_writer = None
-        if sim_top_down_writer is not None:
-            sim_top_down_writer.close()
-            self.sim_top_down_writer = None
-        if self.current_episode_info is not None:
-            if ego_writer is not None:
-                self.current_episode_info['ego_video_codec'] = getattr(ego_writer, 'codec', None)
-                self.current_episode_info['ego_video_codec_detected'] = getattr(ego_writer, 'actual_codec', None)
-            if top_writer is not None:
-                self.current_episode_info['top_down_video_codec'] = getattr(top_writer, 'codec', None)
-                self.current_episode_info['top_down_video_codec_detected'] = getattr(top_writer, 'actual_codec', None)
-                self.current_episode_info['map_top_down_video_codec'] = getattr(top_writer, 'codec', None)
-            if debug_overlay_writer is not None:
-                self.current_episode_info['debug_overlay_video_codec'] = getattr(debug_overlay_writer, 'codec', None)
-                self.current_episode_info['debug_overlay_video_codec_detected'] = getattr(debug_overlay_writer, 'actual_codec', None)
-            if sim_top_down_writer is not None:
-                self.current_episode_info['sim_top_down_video_codec'] = getattr(sim_top_down_writer, 'codec', None)
-                self.current_episode_info['sim_top_down_video_codec_detected'] = getattr(sim_top_down_writer, 'actual_codec', None)
+        if self.current_episode_info is None or self._episode_finalization_state == 'closed':
+            return self._last_close_ok
+        if self._episode_finalization_state == 'closing':
+            return False
 
-            transcode_errors = [
-                getattr(writer, 'transcode_error', None)
-                for writer in (ego_writer, top_writer, debug_overlay_writer, sim_top_down_writer)
-                if writer is not None and getattr(writer, 'transcode_error', None)
-            ]
-            if transcode_errors:
-                self.current_episode_info['video_transcode_errors'] = transcode_errors
-                self._record_error('\n'.join(transcode_errors))
-            self.current_episode_info['close_reason'] = reason
-            self.current_episode_info['finished_at_wall_time'] = time.time()
+        self._episode_finalization_state = 'closing'
+        self._last_close_ok = False
+        episode_info = self.current_episode_info
+        writers = (
+            ('ego', self.ego_writer),
+            ('top_down', self.top_writer),
+            ('debug_overlay', self.debug_overlay_writer),
+            ('sim_top_down', self.sim_top_down_writer),
+        )
+        finalization_deadline = time.monotonic() + VIDEO_RECORDER_FINALIZATION_DEADLINE_SEC
+        episode_info['video_finalization_deadline_sec'] = VIDEO_RECORDER_FINALIZATION_DEADLINE_SEC
+        finalization_errors = []
+        try:
+            for stream_name, writer in writers:
+                if writer is None:
+                    continue
+                try:
+                    close_ok = bool(writer.close(finalization_deadline=finalization_deadline))
+                    error = getattr(writer, 'transcode_error', None)
+                except Exception as exc:
+                    close_ok = False
+                    error = f'failed to finalize {stream_name} video: {exc}'
+                codec = getattr(writer, 'codec', None)
+                actual_codec = getattr(writer, 'actual_codec', None)
+                episode_info[f'{stream_name}_video_codec'] = codec
+                episode_info[f'{stream_name}_video_codec_detected'] = actual_codec
+                episode_info[f'{stream_name}_video_finalization_status'] = 'complete' if close_ok else 'failed'
+                if stream_name == 'top_down':
+                    episode_info['map_top_down_video_codec'] = codec
+                    episode_info['map_top_down_video_codec_detected'] = actual_codec
+                if not close_ok:
+                    error = error or f'{stream_name} video finalization did not complete'
+                    stream_error = f'{stream_name}: {error}'
+                    episode_info[f'{stream_name}_video_finalization_error'] = stream_error
+                    finalization_errors.append(stream_error)
+
+            episode_info['video_finalization_status'] = 'failed' if finalization_errors else 'complete'
+            episode_info['video_finalization_errors'] = list(finalization_errors)
+            episode_info['close_reason'] = reason
+            episode_info['finished_at_wall_time'] = time.time()
+            prior_errors = list(self.index.get('finalization_errors') or [])
+            all_errors = prior_errors + finalization_errors
+            self.index['finalization_errors'] = all_errors
+            self.index['finalization_status'] = 'failed' if all_errors else 'complete'
+            if all_errors:
+                self._record_error('\n'.join(all_errors))
+            else:
+                self._clear_transient_error()
             self._write_index()
-        self.current_episode = None
-        self.current_episode_info = None
-        self.trajectory_world = []
+            self._last_close_ok = not all_errors
+        finally:
+            self.ego_writer = None
+            self.top_writer = None
+            self.debug_overlay_writer = None
+            self.sim_top_down_writer = None
+            self.current_episode = None
+            self.current_episode_info = None
+            self._episode_finalization_state = 'closed'
+            self.trajectory_world = []
+
+        return self._last_close_ok
 
     def _reset_episode_stream_state(self):
         self.last_frame_time = 0.0
@@ -1771,6 +2002,13 @@ class EvalVideoRecorder(Node):
         self.latest_sim_top_down = None
         self.latest_sim_top_down_generation = -1
         self.sim_top_down_post_warmup_discard_count = 0
+        # Re-arm the ego gate for the next episode and zero its counters so the
+        # figures reported per episode in video_index.json describe that episode.
+        self.ego_skipped_frame_count = 0
+        self.ego_noise_skip_count = 0
+        self.ego_post_warmup_discard_count = 0
+        self.ego_stream_open = False
+        self.ego_settle_timed_out = False
         self.latest_pose = None
         self.latest_pose_generation = -1
         self.latest_goal = None
@@ -1819,6 +2057,8 @@ class EvalVideoRecorder(Node):
         self.top_writer = VideoWriterWrapper(top_path, self.fps)
         self.debug_overlay_writer = VideoWriterWrapper(debug_overlay_path, self.fps) if self.debug_overlay_topic else None
         self.sim_top_down_writer = VideoWriterWrapper(sim_top_down_path, self.fps) if self.sim_top_down_topic else None
+        self._episode_finalization_state = 'open'
+        self.index['finalization_status'] = 'recording'
         self.current_episode_info = {
             'episode': int(self.current_episode),
             'directory': str(episode_dir),
@@ -1836,6 +2076,14 @@ class EvalVideoRecorder(Node):
             'sim_top_down_warmup_sec': self.sim_top_down_warmup_sec,
             'sim_top_down_post_warmup_discard_frames': self.sim_top_down_post_warmup_discard_frames,
             'sim_top_down_post_warmup_discarded_frames': 0,
+            'ego_skipped_frames': 0,
+            'ego_noise_skipped_frames': 0,
+            'ego_warmup_sec': self.ego_warmup_sec,
+            'ego_post_warmup_discard_frames': self.ego_post_warmup_discard_frames,
+            'ego_post_warmup_discarded_frames': 0,
+            'ego_noise_sigma_threshold': self.ego_noise_sigma_threshold,
+            'ego_settle_timeout_sec': self.ego_settle_timeout_sec,
+            'ego_settle_timed_out': False,
             'debug_overlay_fallback': False,
             'debug_overlay_source': self._debug_overlay_source_diagnostics(),
             'container': 'mp4',
@@ -1915,7 +2163,13 @@ class EvalVideoRecorder(Node):
             if left < 0 or top < 0 or right > map_image.width or bottom > map_image.height:
                 padded = PILImage.new('RGB', (max(right, map_image.width) - min(left, 0), max(bottom, map_image.height) - min(top, 0)), color=(180, 180, 180))
                 padded.paste(map_image, (-min(left, 0), -min(top, 0)))
-                crop = padded.crop((left + min(left, 0), top + min(top, 0), right + min(left, 0), bottom + min(top, 0)))
+                # The map is pasted at (-min(left, 0), -min(top, 0)), so map pixel m
+                # lives at padded coordinate m - min(..., 0).  The crop box must be
+                # shifted by the same -min(..., 0) to keep the robot centred; adding
+                # it instead displaced the background by 2*min(..., 0) map px while
+                # the overlay layer (_pose_pixel_to_crop) stayed in the intended
+                # frame, so the centre-pinned robot marker read as biased.
+                crop = padded.crop((left - min(left, 0), top - min(top, 0), right - min(left, 0), bottom - min(top, 0)))
             else:
                 crop = map_image.crop((left, top, right, bottom))
             canvas = crop.resize((size, size), _PIL_BILINEAR)
@@ -1977,6 +2231,71 @@ class EvalVideoRecorder(Node):
         draw.text((16, 34), f'pose: x={self.latest_pose["x"]:.2f} y={self.latest_pose["y"]:.2f}', fill=(255, 255, 255))
         return np.asarray(canvas, dtype=np.uint8)
 
+    def _skip_unsettled_ego_frame(self, ego_frame, now):
+        """Hold back leading ego frames whose render has not settled.
+
+        Isaac publishes a genuine camera Image before RTX/DLSS temporal
+        accumulation converges, so the first frames of ego_observation.mp4 could
+        be correct geometry buried in chroma speckle -- and ego_debug_overlay
+        inherits them through its fallback compositor.  sim_top_down already
+        guards against the same class of startup frame (warm-up period, leading
+        discard, content rejector); this is that guard for the ego stream.
+
+        Returns True when the caller must drop the whole tick.  Every drop is
+        counted into video_index.json so the trim is auditable afterwards rather
+        than silent.  The gate is only consulted before the first admitted frame,
+        and the content check carries a fail-open deadline, so it can neither
+        drop a mid-episode frame nor leave the stream empty or truncated.
+        """
+        started_at = float(self.current_episode_info.get('started_at_wall_time') or 0.0)
+        elapsed = max(time.time() - started_at, 0.0)
+
+        if elapsed < self.ego_warmup_sec:
+            reason = 'warmup'
+        elif self.ego_post_warmup_discard_count < self.ego_post_warmup_discard_frames:
+            self.ego_post_warmup_discard_count += 1
+            reason = 'post_warmup_discard'
+        elif self.ego_settle_timeout_sec > 0.0 and _looks_like_unconverged_ego_render(
+            ego_frame, self.ego_noise_sigma_threshold
+        ):
+            # The content check is the only open-ended criterion here, so it is
+            # the one that needs a backstop: past the deadline, admit the frame
+            # and say so.  A permanently noisy renderer must still yield a video.
+            if elapsed >= self.ego_settle_timeout_sec:
+                self.ego_settle_timed_out = True
+                self.current_episode_info['ego_settle_timed_out'] = True
+                self.current_episode_info['ego_skipped_frames'] = int(self.ego_skipped_frame_count)
+                self.current_episode_info['ego_noise_skipped_frames'] = int(self.ego_noise_skip_count)
+                self._record_error(
+                    f'ego render never settled on {self.ego_topic}: still above the noise '
+                    f'threshold {self.ego_noise_sigma_threshold} after {elapsed:.1f}s '
+                    f'({self.ego_skipped_frame_count} frames skipped); recording the frame '
+                    'anyway so the episode still produces a video'
+                )
+                self._write_index()
+                return False
+            self.ego_noise_skip_count += 1
+            reason = 'unconverged_render'
+        else:
+            return False
+
+        self.ego_skipped_frame_count += 1
+        self.current_episode_info['ego_skip_reason'] = reason
+        self.current_episode_info['ego_skipped_frames'] = int(self.ego_skipped_frame_count)
+        self.current_episode_info['ego_noise_skipped_frames'] = int(self.ego_noise_skip_count)
+        self.current_episode_info['ego_post_warmup_discarded_frames'] = int(
+            self.ego_post_warmup_discard_count
+        )
+        self.current_episode_info['last_frame_wall_time'] = time.time()
+        self.last_frame_time = now
+        self._record_error(
+            f'{EGO_RENDER_SETTLING_PREFIX} on {self.ego_topic}: held back '
+            f'{self.ego_skipped_frame_count} leading frame(s) so far (reason={reason}); '
+            'recording starts at the first settled frame'
+        )
+        self._write_index()
+        return True
+
     def _maybe_write_frame(self):
         if self.latest_rgb is None or not self._ensure_episode():
             return
@@ -1987,6 +2306,9 @@ class EvalVideoRecorder(Node):
         if _is_static_fallback_gradient(ego_frame):
             self._record_error(f'skipped synthetic fallback gradient frame from {self.ego_topic}; waiting for real Isaac camera frames')
             return
+        if not self.ego_stream_open and self._skip_unsettled_ego_frame(ego_frame, now):
+            return
+        self.ego_stream_open = True
         top_frame = self._render_top_down()
         self.ego_writer.write(ego_frame)
         self.top_writer.write(top_frame)
@@ -2099,7 +2421,6 @@ class EvalVideoRecorder(Node):
             if int(self.current_episode_info.get('ego_frames', 0) or 0) <= 0:
                 return
         self.finished = True
-        self._close_episode(reason='finished')
 
     def _on_ego_image(self, msg: Image):
         image = image_msg_to_numpy(msg)
@@ -2206,11 +2527,9 @@ node = EvalVideoRecorder(
 
 
 def _shutdown(*_args):
-    try:
-        node._close_episode(reason='shutdown')
-    finally:
-        if rclpy.ok():
-            rclpy.shutdown()
+    node.shutdown_requested = True
+    if rclpy.ok():
+        rclpy.shutdown()
 
 
 signal.signal(signal.SIGINT, _shutdown)
@@ -2241,7 +2560,19 @@ finally:
             f'camera_info_generation={node.camera_info_generation}, latest_pose={node.latest_pose is not None}, '
             f'pose_generation={node.latest_pose_generation}'
         )
-    node._close_episode(reason='process_exit' if exit_code == 0 else 'exception')
+        exit_code = 1
+    close_reason = (
+        'exception' if exit_code != 0
+        else 'finished' if node.finished
+        else 'shutdown' if node.shutdown_requested
+        else 'process_exit'
+    )
+    try:
+        if not node._close_episode(reason=close_reason):
+            exit_code = 1
+    except BaseException:
+        node._record_error(f'video finalization exception:\n{traceback.format_exc()}')
+        exit_code = 1
     node.destroy_node()
     if rclpy.ok():
         rclpy.shutdown()
@@ -2544,6 +2875,114 @@ def _terminate_process_tree(proc: subprocess.Popen, *, grace_period_sec: float =
     except ProcessLookupError:
         pass
     return proc.wait(timeout=5.0)
+
+
+VIDEO_RECORDER_SUBPROCESS_DEADLINE_SEC = 330.0
+VIDEO_RECORDER_FINALIZATION_OVERHEAD_SEC = 30.0
+# 330s recorder deadline + 30s serialization/exit allowance <= the 390s parent wait.
+VIDEO_RECORDER_FINALIZATION_TIMEOUT_SEC = 390.0
+VIDEO_RECORDER_FAILURE_RETURN_CODE = 86
+
+
+def _persist_video_finalization_error(index_path: str, error_path: str, message: str) -> None:
+    existing_error = (_read_text_if_exists(error_path) or '').strip()
+    error_messages = [line for line in existing_error.splitlines() if line]
+    if message not in error_messages:
+        error_messages.append(message)
+    _write_text(error_path, '\n'.join(error_messages) + '\n')
+
+    index = _read_json_if_exists(index_path)
+    if not isinstance(index, dict):
+        index = {'episodes': []}
+    finalization_errors = list(index.get('finalization_errors') or [])
+    if message not in finalization_errors:
+        finalization_errors.append(message)
+    index['finalization_status'] = 'failed'
+    index['finalization_errors'] = finalization_errors
+    temp_path = f'{index_path}.finalizationtmp.{os.getpid()}.{time.time_ns()}'
+    try:
+        with open(temp_path, 'w', encoding='utf-8') as f:
+            json.dump(index, f, ensure_ascii=False, indent=2)
+        os.replace(temp_path, index_path)
+    finally:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+
+
+def _force_video_recorder_exit_after_signal(proc: subprocess.Popen) -> int:
+    if proc.poll() is not None:
+        return proc.returncode
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return proc.wait(timeout=1.0)
+
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            return proc.returncode
+        time.sleep(0.25)
+
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    return proc.wait(timeout=5.0)
+
+
+def _finalize_video_recorder_process(
+    proc: subprocess.Popen,
+    *,
+    index_path: str,
+    error_path: str,
+    timeout_sec: float = VIDEO_RECORDER_FINALIZATION_TIMEOUT_SEC,
+) -> int:
+    returncode = proc.poll()
+    if returncode is None and not getattr(proc, '_arena_shutdown_signal_sent', False):
+        try:
+            proc.send_signal(signal.SIGINT)
+        except ProcessLookupError:
+            returncode = proc.poll()
+            if returncode is None:
+                returncode = proc.wait(timeout=1.0)
+        else:
+            setattr(proc, '_arena_shutdown_signal_sent', True)
+
+    finalization_error = None
+    if returncode is None:
+        try:
+            returncode = proc.wait(timeout=max(float(timeout_sec), 0.0))
+        except subprocess.TimeoutExpired:
+            finalization_error = f'video recorder finalization timed out after {float(timeout_sec):.1f} seconds'
+            returncode = _force_video_recorder_exit_after_signal(proc)
+
+    index = _read_json_if_exists(index_path)
+    existing_error = (_read_text_if_exists(error_path) or '').strip()
+    failure_reported = (
+        isinstance(index, dict)
+        and index.get('finalization_status') == 'failed'
+        and bool(existing_error)
+    )
+    if finalization_error is None and returncode != 0 and not failure_reported:
+        finalization_error = f'video recorder exited with return code {returncode}'
+    if finalization_error is not None:
+        _persist_video_finalization_error(index_path, error_path, finalization_error)
+    return returncode
+
+
+def _select_evaluator_returncode(
+    *,
+    lifecycle_returncode,
+    postprocess_returncode,
+    video_recorder_returncode,
+) -> int:
+    if lifecycle_returncode not in (None, 0):
+        return int(lifecycle_returncode)
+    if postprocess_returncode not in (None, 0):
+        return int(postprocess_returncode)
+    if video_recorder_returncode not in (None, 0):
+        return VIDEO_RECORDER_FAILURE_RETURN_CODE
+    return 0
 
 
 def main() -> int:
@@ -3075,6 +3514,7 @@ def main() -> int:
             'artifact_validation_returncode': None,
             'end_reason': 'running',
             'video_recorder_returncode': None,
+            'evaluator_returncode': None,
             'external_server_preflight': None,
         },
     }
@@ -3214,6 +3654,19 @@ def main() -> int:
         launch_timeout_sec = max(timeout_wall_sec * max(args.episodes, 1) + 600.0, 300.0)
 
     video_proc = None
+    video_returncode = None
+    finished_proc = None
+    outcome_proc = None
+    status_proc = None
+    launch_proc = None
+    launch_returncode = None
+    metrics_returncode = None
+    vln_task_metrics_returncode = None
+    social_metrics_returncode = None
+    artifact_validation_returncode = None
+    finished_observed = False
+    timed_out = False
+
     if args.save_eval_video:
         video_proc = _start_eval_video_recorder(
             env,
@@ -3234,76 +3687,71 @@ def main() -> int:
             top_down_size_px=args.eval_video_top_down_size_px,
             top_down_window_m=args.eval_video_top_down_window_m,
         )
-        if not _wait_for_file(video_index_path, timeout_sec=5.0):
+
+    try:
+        if video_proc is not None and not _wait_for_file(video_index_path, timeout_sec=5.0):
             video_error = f'eval video recorder did not create video_index.json within 5s: {video_index_path}'
             _write_text(video_error_path, video_error)
             manifest['artifacts']['video_recorder_start_error'] = video_error
             _write_yaml(manifest_path, manifest)
-    finished_proc = _start_finished_watcher(
-        env,
-        args.finished_topic,
-        args.task_reset_topic,
-        robot_scenario_reset_topic,
-    )
-    outcome_proc = _start_episode_outcome_watcher(
-        env,
-        episode_outcome_topic,
-        episode_outcome_path,
-        args.task_reset_topic,
-        robot_scenario_reset_topic,
-    )
-    # Direct official-client mode does not require wrapper status for pass/fail,
-    # but the official ROS client publishes a JSON status stream.  Record it per
-    # run so batch sweeps get run-local model/control evidence even when the
-    # long-lived external client was started with a different trace path.
-    status_proc = _start_status_watcher(
-        env,
-        args.dual_vln_status_topic,
-        dual_vln_status_path,
-        internnav_trace_path,
-        task_reset_topic=args.task_reset_topic,
-        scenario_reset_topic=robot_scenario_reset_topic,
-        require_reset_for_history=bool(args.internnav_direct_cmd_vel),
-    )
-    launch_proc = subprocess.Popen(
-        launch_cmd,
-        env=env,
-        start_new_session=True,
-    )
 
-    deadline = time.monotonic() + launch_timeout_sec
-    launch_returncode = None
-    metrics_returncode = None
-    vln_task_metrics_returncode = None
-    social_metrics_returncode = None
-    artifact_validation_returncode = None
-    finished_observed = False
-    timed_out = False
+        finished_proc = _start_finished_watcher(
+            env,
+            args.finished_topic,
+            args.task_reset_topic,
+            robot_scenario_reset_topic,
+        )
+        outcome_proc = _start_episode_outcome_watcher(
+            env,
+            episode_outcome_topic,
+            episode_outcome_path,
+            args.task_reset_topic,
+            robot_scenario_reset_topic,
+        )
+        # Direct official-client mode does not require wrapper status for pass/fail,
+        # but the official ROS client publishes a JSON status stream.  Record it per
+        # run so batch sweeps get run-local model/control evidence even when the
+        # long-lived external client was started with a different trace path.
+        status_proc = _start_status_watcher(
+            env,
+            args.dual_vln_status_topic,
+            dual_vln_status_path,
+            internnav_trace_path,
+            task_reset_topic=args.task_reset_topic,
+            scenario_reset_topic=robot_scenario_reset_topic,
+            require_reset_for_history=bool(args.internnav_direct_cmd_vel),
+        )
+        launch_proc = subprocess.Popen(
+            launch_cmd,
+            env=env,
+            start_new_session=True,
+        )
 
-    def run_social_postprocess() -> int:
-        nonlocal vln_task_metrics_returncode, social_metrics_returncode, artifact_validation_returncode
-        if not args.social_eval:
-            return 0
-        vln_task_metrics_result = subprocess.run(vln_task_metrics_cmd, env=env)
-        vln_task_metrics_returncode = vln_task_metrics_result.returncode
-        social_metrics_result = subprocess.run(social_metrics_cmd, env=env)
-        social_metrics_returncode = social_metrics_result.returncode
-        artifact_validation_result = subprocess.run(artifact_validation_cmd, env=env)
-        artifact_validation_returncode = artifact_validation_result.returncode
-        manifest['result']['vln_task_metrics_returncode'] = vln_task_metrics_returncode
-        manifest['result']['social_metrics_returncode'] = social_metrics_returncode
-        manifest['result']['artifact_validation_returncode'] = artifact_validation_returncode
-        manifest['artifacts']['vln_task_metrics_present'] = os.path.exists(os.path.join(output_dir, 'vln_task_metrics.json'))
-        manifest['artifacts']['social_metrics_present'] = os.path.exists(os.path.join(output_dir, 'social_metrics.json'))
-        manifest['artifacts']['artifact_validation_present'] = os.path.exists(os.path.join(output_dir, 'artifact_validation.json'))
-        _write_yaml(manifest_path, manifest)
-        if vln_task_metrics_returncode != 0:
-            return vln_task_metrics_returncode
-        if social_metrics_returncode != 0:
-            return social_metrics_returncode
-        return artifact_validation_returncode or 0
+        deadline = time.monotonic() + launch_timeout_sec
 
-    try:
+        def run_social_postprocess() -> int:
+            nonlocal vln_task_metrics_returncode, social_metrics_returncode, artifact_validation_returncode
+            if not args.social_eval:
+                return 0
+            vln_task_metrics_result = subprocess.run(vln_task_metrics_cmd, env=env)
+            vln_task_metrics_returncode = vln_task_metrics_result.returncode
+            social_metrics_result = subprocess.run(social_metrics_cmd, env=env)
+            social_metrics_returncode = social_metrics_result.returncode
+            artifact_validation_result = subprocess.run(artifact_validation_cmd, env=env)
+            artifact_validation_returncode = artifact_validation_result.returncode
+            manifest['result']['vln_task_metrics_returncode'] = vln_task_metrics_returncode
+            manifest['result']['social_metrics_returncode'] = social_metrics_returncode
+            manifest['result']['artifact_validation_returncode'] = artifact_validation_returncode
+            manifest['artifacts']['vln_task_metrics_present'] = os.path.exists(os.path.join(output_dir, 'vln_task_metrics.json'))
+            manifest['artifacts']['social_metrics_present'] = os.path.exists(os.path.join(output_dir, 'social_metrics.json'))
+            manifest['artifacts']['artifact_validation_present'] = os.path.exists(os.path.join(output_dir, 'artifact_validation.json'))
+            _write_yaml(manifest_path, manifest)
+            if vln_task_metrics_returncode != 0:
+                return vln_task_metrics_returncode
+            if social_metrics_returncode != 0:
+                return social_metrics_returncode
+            return artifact_validation_returncode or 0
+
         while True:
             launch_returncode = launch_proc.poll()
             if launch_returncode is not None:
@@ -3328,14 +3776,82 @@ def main() -> int:
 
             time.sleep(1.0)
     finally:
-        if finished_proc.poll() is None:
-            _terminate_process_tree(finished_proc, grace_period_sec=2.0)
-        if outcome_proc.poll() is None:
-            _terminate_process_tree(outcome_proc, grace_period_sec=2.0)
-        if status_proc is not None and status_proc.poll() is None:
-            _terminate_process_tree(status_proc, grace_period_sec=2.0)
-        if video_proc is not None and video_proc.poll() is None:
-            _terminate_process_tree(video_proc, grace_period_sec=5.0)
+        active_exception = sys.exc_info()[0] is not None
+        cleanup_errors = []
+        cleanup_error = None
+        try:
+            for owner_name, owned_proc, grace_period_sec in (
+                ('launch', launch_proc, args.shutdown_grace_period_sec),
+                ('finished_watcher', finished_proc, 2.0),
+                ('outcome_watcher', outcome_proc, 2.0),
+                ('status_watcher', status_proc, 2.0),
+            ):
+                if owned_proc is None:
+                    continue
+                try:
+                    if owned_proc.poll() is None:
+                        _terminate_process_tree(owned_proc, grace_period_sec=grace_period_sec)
+                except BaseException as exc:
+                    cleanup_errors.append(f'{owner_name} process cleanup failed: {type(exc).__name__}: {exc}')
+                    if cleanup_error is None:
+                        cleanup_error = exc
+                    try:
+                        owned_proc.kill()
+                        owned_proc.wait(timeout=5.0)
+                    except BaseException as fallback_exc:
+                        cleanup_errors.append(
+                            f'{owner_name} fallback kill failed: '
+                            f'{type(fallback_exc).__name__}: {fallback_exc}'
+                        )
+                        if cleanup_error is None:
+                            cleanup_error = fallback_exc
+                finally:
+                    for stream_name in ('stdin', 'stdout', 'stderr'):
+                        try:
+                            stream = getattr(owned_proc, stream_name, None)
+                            if stream is not None and not getattr(stream, 'closed', False):
+                                stream.close()
+                        except BaseException as exc:
+                            cleanup_errors.append(
+                                f'{owner_name} {stream_name} close failed: {type(exc).__name__}: {exc}'
+                            )
+                            if cleanup_error is None:
+                                cleanup_error = exc
+        finally:
+            if video_proc is not None:
+                try:
+                    video_returncode = _finalize_video_recorder_process(
+                        video_proc,
+                        index_path=video_index_path,
+                        error_path=video_error_path,
+                    )
+                except BaseException as exc:
+                    cleanup_errors.append(f'video recorder cleanup failed: {type(exc).__name__}: {exc}')
+                    if cleanup_error is None:
+                        cleanup_error = exc
+                finally:
+                    for stream_name in ('stdin', 'stdout', 'stderr'):
+                        try:
+                            stream = getattr(video_proc, stream_name, None)
+                            if stream is not None and not getattr(stream, 'closed', False):
+                                stream.close()
+                        except BaseException as exc:
+                            cleanup_errors.append(
+                                f'video recorder {stream_name} close failed: {type(exc).__name__}: {exc}'
+                            )
+                            if cleanup_error is None:
+                                cleanup_error = exc
+
+        if cleanup_errors:
+            try:
+                manifest['artifacts']['process_cleanup_errors'] = cleanup_errors
+                _write_yaml(manifest_path, manifest)
+            except BaseException as exc:
+                cleanup_errors.append(f'cleanup error persistence failed: {type(exc).__name__}: {exc}')
+                if cleanup_error is None:
+                    cleanup_error = exc
+        if cleanup_error is not None and not active_exception:
+            raise cleanup_error
 
     dual_vln_status = _read_json_if_exists(dual_vln_status_path)
     episode_outcome = _read_json_if_exists(episode_outcome_path)
@@ -3345,7 +3861,6 @@ def main() -> int:
     )
     video_index = _read_json_if_exists(video_index_path) if args.save_eval_video else None
     video_error = _read_text_if_exists(video_error_path) if args.save_eval_video else None
-    video_returncode = video_proc.returncode if video_proc is not None else None
     video_artifacts_complete = None
     video_artifact_issues: list[str] = []
     if args.save_eval_video:
@@ -3362,6 +3877,13 @@ def main() -> int:
                     if int(episode.get(field, 0) or 0) <= 0:
                         video_artifacts_complete = False
                         video_artifact_issues.append(f'{field}_empty')
+        finalization_status = video_index.get('finalization_status') if isinstance(video_index, dict) else None
+        if finalization_status != 'complete':
+            video_artifacts_complete = False
+            video_artifact_issues.append(f'video_finalization_{finalization_status or "missing"}')
+        if video_returncode != 0:
+            video_artifacts_complete = False
+            video_artifact_issues.append(f'video_recorder_returncode_{video_returncode}')
     if internnav_diagnostic_summary is not None and video_artifact_issues:
         flags = internnav_diagnostic_summary.setdefault('fault_candidates', {}).setdefault('flags', [])
         if 'missing_or_empty_video_artifacts' not in flags:
@@ -3387,6 +3909,10 @@ def main() -> int:
     manifest['artifacts']['video_recording_error'] = video_error
     manifest['artifacts']['video_artifacts_complete'] = video_artifacts_complete
     manifest['artifacts']['video_artifact_issues'] = video_artifact_issues
+    manifest['artifacts']['video_recorder_failed'] = video_returncode not in (None, 0)
+    manifest['artifacts']['video_recorder_failure_returncode'] = (
+        VIDEO_RECORDER_FAILURE_RETURN_CODE if video_returncode not in (None, 0) else None
+    )
     manifest['result'].update(
         {
             'finished_observed': finished_observed,
@@ -3410,20 +3936,31 @@ def main() -> int:
 
     if timed_out:
         run_social_postprocess()
+        evaluator_returncode = 124 if launch_returncode == 0 else launch_returncode
         manifest['result']['launch_returncode'] = launch_returncode
+        manifest['result']['evaluator_returncode'] = evaluator_returncode
         _write_yaml(manifest_path, manifest)
-        return 124 if launch_returncode == 0 else launch_returncode
+        return evaluator_returncode
 
     if launch_returncode != 0:
         run_social_postprocess()
         manifest['result']['launch_returncode'] = launch_returncode
+        manifest['result']['evaluator_returncode'] = launch_returncode
         _write_yaml(manifest_path, manifest)
         return launch_returncode
 
     if args.skip_metrics:
         social_postprocess_returncode = run_social_postprocess()
+        evaluator_returncode = _select_evaluator_returncode(
+            lifecycle_returncode=launch_returncode,
+            postprocess_returncode=social_postprocess_returncode,
+            video_recorder_returncode=video_returncode,
+        )
+        if evaluator_returncode == VIDEO_RECORDER_FAILURE_RETURN_CODE:
+            manifest['result']['end_reason'] = 'video_recorder_failed'
+        manifest['result']['evaluator_returncode'] = evaluator_returncode
         _write_yaml(manifest_path, manifest)
-        return social_postprocess_returncode
+        return evaluator_returncode
 
     metrics_result = subprocess.run(metrics_cmd, env=env)
     metrics_returncode = metrics_result.returncode
@@ -3431,10 +3968,17 @@ def main() -> int:
     if metrics_returncode != 0 and manifest['result']['end_reason'] == 'finished':
         manifest['result']['end_reason'] = 'metrics_failed'
     social_postprocess_returncode = run_social_postprocess()
+    postprocess_returncode = metrics_returncode or social_postprocess_returncode
+    evaluator_returncode = _select_evaluator_returncode(
+        lifecycle_returncode=launch_returncode,
+        postprocess_returncode=postprocess_returncode,
+        video_recorder_returncode=video_returncode,
+    )
+    if evaluator_returncode == VIDEO_RECORDER_FAILURE_RETURN_CODE:
+        manifest['result']['end_reason'] = 'video_recorder_failed'
+    manifest['result']['evaluator_returncode'] = evaluator_returncode
     _write_yaml(manifest_path, manifest)
-    if metrics_returncode != 0:
-        return metrics_returncode
-    return social_postprocess_returncode
+    return evaluator_returncode
 
 
 if __name__ == '__main__':

@@ -305,20 +305,24 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         if not require_human_states_ready or timeout_s <= 0.0:
             return
 
-        if self.conf.Arena.HUMAN.value != Constants.HumanSimulator.HUNAV:
+        if self.conf.Arena.HUMAN.value not in (
+            Constants.HumanSimulator.HUNAV,
+            Constants.HumanSimulator.GRSCENES_REPLAY,
+        ):
             return
 
         if self._human_states_ready.is_set():
             return
 
+        human_label = self.conf.Arena.HUMAN.value.value
         self.get_logger().info(
-            f"Waiting up to {timeout_s:.1f}s for non-empty HuNav human_states before releasing episode start"
+            f"Waiting up to {timeout_s:.1f}s for non-empty {human_label} human_states before releasing episode start"
         )
         try:
             await asyncio.wait_for(self._human_states_ready.wait(), timeout=timeout_s)
         except asyncio.TimeoutError:
             self.get_logger().warn(
-                "Timed out waiting for non-empty HuNav human_states before episode start; "
+                f"Timed out waiting for non-empty {human_label} human_states before episode start; "
                 "continuing to avoid hanging the eval."
             )
 
