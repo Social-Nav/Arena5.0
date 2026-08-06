@@ -232,7 +232,13 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         self._logger.warn(f'Loading World {world_name}')
         self._world_name = world_name
 
-        world = World.WorldIdentifier(world_name).resolve_sync()
+        # require_exists=True so a world that is not installed fails HERE, naming
+        # the world and every directory searched, instead of resolving to a path
+        # that does not exist and failing four statements later inside
+        # _shift_map's open() -- which names 'map.yaml' and never mentions the
+        # world.  That is what turned a missing world into ten minutes of silence
+        # followed by a timeout blaming world *geometry*.
+        world = World.WorldIdentifier(world_name).resolve_sync(require_exists=True)
         tmp_map = self._shift_map(world.map.path)
         map_yaml = os.path.join(
             tmp_map.name,

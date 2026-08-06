@@ -235,11 +235,53 @@ class _rosparam(typing.Generic[T]):
 
         cls._node.add_param_callback(param_name, callback)
 
-        if value is not None:
-            if cls._node.executor is not None:
-                cls._node.executor.create_task(lambda: callback(value))
-            else:
-                callback(value)
+        if value is None:
+            return
+
+        if cls._node.executor is not None:
+            # An exception raised inside an ``executor.create_task`` coroutine is
+            # NOT reported when it happens.  ``rclpy`` re-raises a failed Task
+            # only on a *later* return from ``wait_for_ready_callbacks``
+            # (rclpy/executors.py), and a node that has no timers and no inbound
+            # traffic at startup never gets one -- ``create_task`` trips the
+            # guard condition exactly once, which is enough to run the task and
+            # no more.  So an initial parameter callback that raised used to be
+            # lost completely, and the first sign of trouble was whatever
+            # downstream deadline expired minutes later, naming the wrong
+            # subsystem.  Report it here instead, at the moment it happens.
+            cls._node.executor.create_task(
+                lambda: cls._node.report_param_callback_failure(
+                    param_name, value, callback,
+                )
+            )
+        else:
+            # Deliberately NOT wrapped: without an executor the call runs on the
+            # caller's stack, so an exception propagates to a caller that can see
+            # it.  Wrapping this branch too would make the diagnostics *worse* by
+            # swallowing an exception that is currently loud.  The asymmetry in
+            # handling is what makes the two branches symmetric in loudness.
+            callback(value)
+
+
+class ParamCallbackFailure(typing.NamedTuple):
+    """One parameter callback that raised, kept so a later waiter can see it.
+
+    A failure that is only logged is invisible to code, and a failure that is
+    only recorded is invisible to a human reading the log.  Both are produced,
+    from one place, so the two can never disagree.
+    """
+
+    param_name: str
+    value: typing.Any
+    exception: BaseException
+    traceback_text: str
+
+    def summary(self) -> str:
+        """One-line cause, suitable for another subsystem's error message."""
+        return (
+            f"parameter {self.param_name!r} callback raised "
+            f"{type(self.exception).__name__}: {self.exception}"
+        )
 
 
 class ROSParamServer(rclpy.node.Node):
@@ -255,6 +297,60 @@ class ROSParamServer(rclpy.node.Node):
         str,
         typing.Set[typing.Callable[[typing.Any], bool]]
     ]
+
+    _param_callback_failures: list[ParamCallbackFailure]
+
+    @property
+    def param_callback_failures(self) -> tuple[ParamCallbackFailure, ...]:
+        """Parameter callbacks that raised, oldest first.
+
+        Populated by :meth:`report_param_callback_failure`, i.e. by the *initial*
+        dispatch in ``_ROSParam.callback``, which is the one path whose exception
+        cannot reach any caller.  Read this instead of waiting for a downstream
+        deadline: a subsystem blocked on something an initial callback was
+        supposed to produce can consult it and fail immediately, naming the real
+        cause.
+        """
+
+        return tuple(getattr(self, '_param_callback_failures', ()))
+
+    def report_param_callback_failure(
+        self,
+        param_name: str,
+        value: typing.Any,
+        callback: typing.Callable[[typing.Any], bool],
+    ) -> bool:
+        """Run ``callback(value)``, reporting rather than losing a raise.
+
+        Used for the initial dispatch only.  Subsequent parameter sets go through
+        :meth:`_callback`, which already wraps the same callback and returns the
+        formatted traceback to the setter in ``SetParametersResult.reason``; this
+        method is that path's sibling for the case where there is no setter to
+        return anything to.
+
+        Returns:
+            bool: the callback's own result, or ``False`` if it raised.
+        """
+
+        try:
+            return bool(callback(value))
+        except BaseException as e:  # noqa: BLE001 -- nothing above can report it
+            traceback_text = ''.join(
+                traceback.TracebackException.from_exception(e).format())
+            failure = ParamCallbackFailure(
+                param_name=param_name,
+                value=value,
+                exception=e,
+                traceback_text=traceback_text,
+            )
+            if not hasattr(self, '_param_callback_failures'):
+                self._param_callback_failures = []
+            self._param_callback_failures.append(failure)
+            self.get_logger().error(
+                f'initial configuration of parameter {param_name} with value '
+                f'{value!r} FAILED: {type(e).__name__}: {e}\n{traceback_text}'
+            )
+            return False
 
     def add_param_callback(
         self,
@@ -292,6 +388,12 @@ class ROSParamServer(rclpy.node.Node):
                 f'initial configuration of parameter {param.name} failed with {result.reason}')
 
     def _callback(self, params: list[rclpy.Parameter]):
+        # Sibling of report_param_callback_failure(): this is the path taken by
+        # every parameter set *after* registration.  It reports a raise by
+        # returning the formatted traceback to the setter in
+        # SetParametersResult.reason.  The initial dispatch has no setter to
+        # return to, which is why it has its own reporter rather than sharing
+        # this one.
         successful = True
         reason: list[str] = []
         for param in params:
@@ -321,6 +423,7 @@ class ROSParamServer(rclpy.node.Node):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._callbacks = {}
+        self._param_callback_failures = []
         self.add_on_set_parameters_callback(self._callback)
         self._setup_rosparam()
 

@@ -73,6 +73,12 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
 
     _initialized: bool
 
+    # How often the world-geometry wait wakes up to re-check its producers, and
+    # how often it says so.  The wait used to be a single opaque asyncio.wait_for
+    # of the whole budget, which is why a startup failure looked like a 600 s hang.
+    _WORLD_GEOMETRY_POLL_INTERVAL_SEC: float = 5.0
+    _WORLD_GEOMETRY_PROGRESS_INTERVAL_SEC: float = 30.0
+
     def __init__(
         self,
         namespace: str = "task_generator_node",
@@ -103,6 +109,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         # Isaac service loop used for static-world spawning.
         self._world_geometry_ready: asyncio.Event = asyncio.Event()
         self._world_geometry_error: str = ''
+        # Distinguishes "the spawn ran and did not finish" from "the spawn never
+        # started", which are different failures with different places to look.
+        self._world_geometry_spawn_started: bool = False
         self._episode_entities_ready: asyncio.Event = asyncio.Event()
         self._human_states_ready: asyncio.Event = asyncio.Event()
         self._last_human_states_count = 0
@@ -635,7 +644,10 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             self.rosparam[float].get('world_geometry_ready_timeout_sec', 600.0)
         )
         if not await self.wait_for_world_geometry_ready(timeout_s=initial_geometry_timeout_s):
-            raise RuntimeError('Initial world geometry did not report ready before robot manager setup.')
+            raise RuntimeError(
+                'Static world geometry never became ready before robot manager '
+                f'setup: {self._world_geometry_wait_diagnosis(initial_geometry_timeout_s)}'
+            )
 
         self._logger.info("Setting up robots manager")
         self._robots_manager = RobotsManagerROS(
@@ -649,6 +661,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         self.get_logger().info("Spawning static world geometry into simulator")
         self._world_geometry_ready.clear()
         self._world_geometry_error = ''
+        self._world_geometry_spawn_started = True
         self._publish_eval_ready('world_geometry', False, reason='spawn_started')
         await self._environment_manager.reset(ObstacleLayer.WORLD)
         success = await self._environment_manager.spawn_world_obstacles(self._world_manager.world)
@@ -663,16 +676,113 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         self._publish_eval_ready('world_geometry', True, reason='spawn_complete')
 
     async def wait_for_world_geometry_ready(self, timeout_s: float) -> bool:
+        """Wait for static world geometry, reporting progress and producer death.
+
+        Waits in slices instead of one opaque ``asyncio.wait_for`` so that it can
+        (a) say something while it waits and (b) notice that the thing it is
+        waiting for can no longer arrive.  The producer runs concurrently on an
+        executor thread, so a one-shot check *before* waiting -- which is all this
+        used to do -- is guaranteed to be too early to see a failure.
+
+        Args:
+            timeout_s: Overall budget in seconds.
+
+        Returns:
+            bool: True if geometry reported ready within the budget.
+        """
         if self._world_geometry_ready.is_set():
             return True
+
+        budget = max(float(timeout_s), 0.0)
+        started = time.monotonic()
+        next_progress_at = self._WORLD_GEOMETRY_PROGRESS_INTERVAL_SEC
+
+        while True:
+            # Checked on EVERY slice, not once up front: either of these can be
+            # populated by another thread after the wait begins, and each of them
+            # means "ready" will never arrive, so waiting out the rest of the
+            # budget only delays the report.
+            failure, detail = self._world_geometry_producer_failure()
+            if failure is not None:
+                message = f'World geometry will never become ready: {failure}'
+                if detail:
+                    message += f'\n{detail}'
+                self.get_logger().error(message)
+                return False
+
+            remaining = budget - (time.monotonic() - started)
+            if remaining <= 0.0:
+                return False
+
+            slice_s = min(self._WORLD_GEOMETRY_POLL_INTERVAL_SEC, remaining)
+            try:
+                await asyncio.wait_for(
+                    self._world_geometry_ready.wait(),
+                    timeout=slice_s,
+                )
+                return True
+            except asyncio.TimeoutError:
+                pass
+
+            elapsed = time.monotonic() - started
+            if elapsed >= next_progress_at:
+                next_progress_at = elapsed + self._WORLD_GEOMETRY_PROGRESS_INTERVAL_SEC
+                self.get_logger().warn(
+                    'Still waiting for static world geometry: '
+                    f'elapsed={elapsed:.1f}s remaining={max(budget - elapsed, 0.0):.1f}s '
+                    f'spawn_started={self._world_geometry_spawn_started} '
+                    f'world={getattr(getattr(self, "_world_manager", None), "world_name", "?")!r}'
+                )
+
+    def _world_geometry_producer_failure(self) -> tuple[str | None, str]:
+        """Why world geometry can no longer become ready.
+
+        A pure query: it logs nothing, so it can be called from both the wait and
+        the raise site without printing the same traceback twice.
+
+        Two independent producers can die without setting the event, and neither
+        used to be visible to the waiter:
+
+        * ``_spawn_current_world_geometry`` records ``_world_geometry_error``;
+        * the ``world`` parameter callback -- which is what *starts* the spawn --
+          runs as an rclpy Task whose exception nothing retrieves, so a failure
+          there used to leave no trace at all until it was reported at its source.
+
+        Returns:
+            tuple: ``(summary, detail)``.  ``summary`` is ``None`` when no producer
+            has reported a failure; ``detail`` is a traceback when one is
+            available and ``''`` otherwise.
+        """
+
         if self._world_geometry_error:
-            self.get_logger().error(f'World geometry readiness failed: {self._world_geometry_error}')
-            return False
-        try:
-            await asyncio.wait_for(self._world_geometry_ready.wait(), timeout=max(float(timeout_s), 0.0))
-            return True
-        except asyncio.TimeoutError:
-            return False
+            return f'geometry spawn reported {self._world_geometry_error!r}', ''
+
+        for failure in getattr(self, 'param_callback_failures', ()):
+            summary = failure.summary()
+            if not self._world_geometry_spawn_started:
+                summary += (
+                    ' -- static world geometry spawn never started, so the '
+                    'geometry timeout is a consequence of this, not a slow load'
+                )
+            return summary, failure.traceback_text
+
+        return None, ''
+
+    def _world_geometry_wait_diagnosis(self, timeout_s: float) -> str:
+        """Human-readable cause for a failed world-geometry wait."""
+
+        failure, _detail = self._world_geometry_producer_failure()
+        if failure is not None:
+            return failure
+        if self._world_geometry_spawn_started:
+            return (
+                f'geometry spawn started but did not complete within {timeout_s:.1f}s'
+            )
+        return (
+            f'the world load never reached geometry spawn within {timeout_s:.1f}s '
+            '(no spawn_started), and no producer reported an error -- the world '
+            'load itself is where to look, not geometry spawn'
+        )
 
     def _publish_eval_ready(self, stage: str, ready: bool, **details) -> None:
         """Publish one readiness sample, routed by the topic's stage contract.

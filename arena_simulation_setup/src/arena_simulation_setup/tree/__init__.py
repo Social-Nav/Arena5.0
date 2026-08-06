@@ -297,6 +297,20 @@ class NetResolver(typing.Generic[IdentifierT], SimplePathResolver[IdentifierT], 
 class FallbackResolver(ResolverBase[IdentifierT], typing.Generic[IdentifierT]):
     """
     Resolver that always yields a fallback path.
+
+    ``resolve`` returns a path **without checking that it exists**, and that is
+    load-bearing rather than an oversight: it is how a not-yet-existing asset
+    gets a location to be written to (``World.save`` does
+    ``os.makedirs(..., exist_ok=True)`` on it), so this resolver cannot be made
+    unconditionally strict without breaking asset generation.
+
+    The cost is that, once this resolver is in an identifier's chain, resolution
+    always succeeds, so :meth:`Identifier.resolve_path`'s "not found among"
+    diagnostic becomes unreachable and a missing asset surfaces much later as an
+    unexplained failure somewhere downstream -- for worlds, as an ``open()`` on a
+    ``map.yaml`` that names the map file and not the missing world.  Readers that
+    want the diagnostic ask for it explicitly with ``require_exists=True``; see
+    :meth:`Identifier.resolve_path`.
     """
 
     def __init__(self, _T: typing.Type[IdentifierT], /, path: Path, **kwargs):
@@ -313,6 +327,18 @@ class FallbackResolver(ResolverBase[IdentifierT], typing.Generic[IdentifierT]):
         return f"{self.__class__.__name__}({repr(self._path)})"
 
 # IDENTIFIERS
+
+
+#: Default for ``require_exists`` on ``Identifier.resolve_path`` / ``resolve`` /
+#: ``resolve_sync``.  ``False`` preserves the behaviour every existing caller
+#: relies on -- notably the asset *generation* callers, which resolve a location
+#: precisely because it does not exist yet.
+#:
+#: Declared once on purpose.  Repeating the literal in each of the three
+#: signatures is how a rule acquires several expressions that can drift apart, and
+#: it also silently costs a mutation test its power: flipping one of three copies
+#: changes nothing observable.
+REQUIRE_EXISTS_DEFAULT: bool = False
 
 
 T = typing.TypeVar('T')
@@ -376,20 +402,56 @@ class Identifier(IdentifierProtocol[T], Parseable, Serializable, Idempotent, typ
     def relpath(self) -> Path:
         return Path(self.name)
 
-    async def resolve_path(self) -> Path:
+    async def resolve_path(
+        self, *, require_exists: bool = REQUIRE_EXISTS_DEFAULT,
+    ) -> Path:
+        """Locate the asset referenced by this identifier.
+
+        Args:
+            require_exists: Treat a resolver result that does not exist on disk as
+                *not* a resolution, so the caller gets this method's
+                "not found among" ``FileNotFoundError`` -- naming the identifier,
+                every resolver searched, and each non-existent candidate path --
+                instead of a path it will fail on later for a reason that does not
+                mention the asset.  Defaults to ``False``, which preserves the
+                behaviour every existing caller relies on, including the asset
+                *generation* callers that resolve a location precisely because it
+                does not exist yet (see :class:`FallbackResolver`).
+
+        Raises:
+            FileNotFoundError: No resolver produced a usable path.
+        """
+
+        candidates: list[tuple[ResolverBase, Optional[Path]]] = []
         for resolver in self._resolvers:
             resolved = await resolver.resolve(self)
-            if resolved is not None:
-                return resolved
+            candidates.append((resolver, resolved))
+            if resolved is None:
+                continue
+            if require_exists and not resolved.exists():
+                continue
+            return resolved
+
         msg = f'{self} not found among'
-        for resolver in self._resolvers:
+        for resolver, resolved in candidates:
             msg += f'\n\t{repr(resolver)}'
+            if resolved is not None:
+                # Reported from the loop above rather than re-resolved: calling a
+                # resolver twice can trigger a second network fetch.
+                msg += f'\n\t\t-> {resolved} (does not exist)'
         raise FileNotFoundError(msg)
 
-    async def resolve(self, **kwargs) -> T:
-        return self.load(await self.resolve_path(), **kwargs)
+    async def resolve(
+        self, *, require_exists: bool = REQUIRE_EXISTS_DEFAULT, **kwargs,
+    ) -> T:
+        return self.load(
+            await self.resolve_path(require_exists=require_exists),
+            **kwargs,
+        )
 
-    def resolve_sync(self, **kwargs) -> T:
+    def resolve_sync(
+        self, *, require_exists: bool = REQUIRE_EXISTS_DEFAULT, **kwargs,
+    ) -> T:
         """Synchronously load the asset referenced by this identifier.
         """
         result: T = None  # type: ignore
@@ -400,13 +462,20 @@ class Identifier(IdentifierProtocol[T], Parseable, Serializable, Idempotent, typ
             asyncio.set_event_loop(loop)
             try:
                 nonlocal result
-                result = loop.run_until_complete(self.resolve(**kwargs))
+                result = loop.run_until_complete(
+                    self.resolve(require_exists=require_exists, **kwargs))
             except Exception as e:
                 nonlocal exc
                 exc = e
             finally:
                 loop.close()
 
+        # NOTE (unfixed, documented): this join has no timeout, so a resolver that
+        # blocks forever hangs the caller with no output at all.  It is reachable
+        # only through NetResolver.resolve -> _network_fetch, whose
+        # `process.communicate()` is also untimed; NetResolver was measured NOT to
+        # be in WorldIdentifier's resolver chain, so this is latent rather than
+        # active and is deliberately left alone here.
         thread = threading.Thread(target=_run_async_load)
         thread.start()
         thread.join()
