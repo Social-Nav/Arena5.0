@@ -960,7 +960,28 @@ class HunavHumanSimulator(
 
         arena_ped.pose.position.x = hunav_obstacle.init_pose.x
         arena_ped.pose.position.y = hunav_obstacle.init_pose.y
-        arena_ped.pose.position.z = 1.25
+        # Ground plane, matching what HuNav returns for the same field.
+        #
+        # This pose is consumed as a *navigation target* by
+        # ``arena_isaac/services/NavigatePedestrians.py:85``, which builds a
+        # THREE-dimensional residual against ``person.state.position`` (z ~ 0)
+        # and compares it against the 0.25 m arrival dead band.  A spawn z of
+        # 1.25 therefore made the residual permanently 1.25 m even when the
+        # horizontal residual was ~1 mm, so a walk was commanded with zero
+        # required horizontal displacement and the pedestrian animation health
+        # monitor logged a spurious ``[Error] ... NOT ADVANCING`` (measured
+        # ratio 0.028-0.030) in 4/4 validation runs.  Every value HuNav
+        # subsequently publishes for this field is 0.0 (measured: 8 distinct
+        # targets at z=0.000 versus 2 at z=1.250, the latter only while the
+        # episode-start barrier held the spawn container), so 1.25 was a spawn
+        # transient inconsistent with its own steady state.
+        #
+        # Cosmetic in effect: it removes two false error reports per run and
+        # recovers no pedestrian motion -- the pre-t=0 drift was measured at
+        # ~0.11 m and shown to be ordinary idle creep, not this mechanism.
+        # Nothing else reads this z: the RViz marker publisher derives its own
+        # from ``body_height``.
+        arena_ped.pose.position.z = 0.0
 
         arena_ped.pose.orientation = Orientation.from_yaw(hunav_obstacle.yaw).to_msg()
 

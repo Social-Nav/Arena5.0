@@ -412,7 +412,11 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         deadline = time.monotonic() + grace_s
         while True:
             if self._video_recorder_attached():
-                self.get_logger().info(
+                # warn, not info: production evals run --log-level warn, and this
+                # line is Stage-0 evidence that the barrier's decisive condition
+                # was actually required rather than silently skipped.  It had to
+                # be reconstructed from artifacts in all four validation runs.
+                self.get_logger().warn(
                     f'Video recorder detected on {self._video_streams_ready_topic}; '
                     'stream readiness is a required episode-start condition.'
                 )
@@ -453,7 +457,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             },
             timeout_sec=timeout_s,
         )
-        self.get_logger().info(
+        # warn, not info: this is the Stage-0 record of WHICH conditions the
+        # barrier required for this episode.  See the note above on --log-level.
+        self.get_logger().warn(
             'Waiting for the episode-start barrier before releasing pedestrian motion, the '
             'timeout origin and the model: required='
             f'{[condition.name for condition in conditions if condition.required]} '
@@ -485,7 +491,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             raise
 
         self._last_barrier_report = report
-        self.get_logger().info(
+        self.get_logger().warn(
             f'Episode-start barrier passed after {report.waited_sec:.1f}s; '
             f'satisfied={report.satisfied}'
         )

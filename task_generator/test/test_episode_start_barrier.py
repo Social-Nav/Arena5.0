@@ -852,3 +852,73 @@ def test_model_reachability_can_be_declared_not_required_explicitly():
     )
     assert model.required is False
     assert model.skip_reason == 'episode_start_require_model_ready=false'
+
+
+# --------------------------------------------------------------------------- #
+# Post-validation fixes (applied after all four cases ran on identical code)
+# --------------------------------------------------------------------------- #
+
+
+def test_arena_pedestrian_spawn_z_matches_hunav_and_the_ground_plane():
+    """The spawn target's z must equal what HuNav publishes for the same field.
+
+    ``arena_isaac/services/NavigatePedestrians.py:85`` builds a THREE-dimensional
+    residual from this pose against ``person.state.position`` (z ~ 0) and compares
+    it against the 0.25 m arrival dead band.  A spawn z of 1.25 made the residual
+    permanently 1.25 m while the horizontal residual was ~1 mm, so a walk was
+    commanded with zero required horizontal displacement and the animation health
+    monitor logged a spurious ``NOT ADVANCING`` error in 4/4 validation runs.
+    Every value HuNav subsequently publishes for this field is 0.0.
+    """
+    source = (
+        Path(__file__).parents[1] / 'task_generator' / 'simulators' / 'human' / 'hunav' / 'hunav.py'
+    ).read_text(encoding='utf-8')
+    creator = _function_def(
+        _SRC_ROOT / 'simulators' / 'human' / 'hunav' / 'hunav.py',
+        'HunavHumanSimulator',
+        '_create_arena_pedestrian',
+    )
+    def _chain(node):
+        parts = []
+        while isinstance(node, ast.Attribute):
+            parts.append(node.attr)
+            node = node.value
+        return '.'.join(reversed(parts))
+
+    # Match only pose.position.z; twist.angular.z is a different field.
+    zs = [
+        node.value.value
+        for node in ast.walk(creator)
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Constant)
+        and any(_chain(t).endswith('pose.position.z') for t in node.targets)
+    ]
+    assert zs == [0.0], (
+        'the arena pedestrian spawn pose z must be 0.0 (ground plane), matching HuNav; '
+        f'found {zs}. A non-zero value re-introduces a permanent 3-D residual above the '
+        'dead band and a spurious NOT ADVANCING error.'
+    )
+    assert 'NavigatePedestrians.py:85' in source, (
+        'keep the pointer to the 3-D residual that makes this value load-bearing'
+    )
+
+
+def test_barrier_arming_lines_are_logged_at_warn_not_info():
+    """Production evals run ``--log-level warn``; Stage-0 evidence must survive that.
+
+    In all four validation runs the "video recorder detected" and "required=[...]"
+    lines were suppressed and had to be reconstructed from artifacts.
+    """
+    node_source = (_SRC_ROOT / 'node.py').read_text(encoding='utf-8')
+    for marker in (
+        'Video recorder detected on ',
+        'Waiting for the episode-start barrier before releasing pedestrian motion',
+        'Episode-start barrier passed after ',
+    ):
+        idx = node_source.index(marker)
+        preceding = node_source[max(0, idx - 400):idx]
+        call = preceding.rsplit('self.get_logger().', 1)[-1]
+        assert call.startswith('warn('), (
+            f'{marker!r} must be logged at warn so it is observable under '
+            f'--log-level warn; found get_logger().{call[:12]}'
+        )
