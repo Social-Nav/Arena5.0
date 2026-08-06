@@ -45,6 +45,37 @@ def _twist_from_dict(data: dict[str, float]) -> Twist:
     return msg
 
 
+def relay_enabled_for_timing_mode(timing_mode: str | None) -> bool:
+    """Is this node the robot's command source for ``timing_mode``?
+
+    THIS IS THE SINGLE PYTHON-SIDE EXPRESSION OF A PREDICATE THAT IS ALSO WRITTEN IN BASH.
+    Its peer lives in ``_meta/docker/features/internnav/main`` (the ``cmd_vel_topic_explicit``
+    / ``timing_mode != wall`` test that redirects the InternNav client onto the raw topic).
+    Both sides answer the same question -- *who publishes the robot's ``cmd_vel``?* -- and
+    they must agree:
+
+    * ``timing_mode == 'wall'``: the client is **not** redirected, so it publishes straight
+      onto the robot's ``cmd_vel``.  This node's input topic then has no publisher at all, it
+      can never forward anything, and any output it produces contends with the client on the
+      robot's own command topic.  It is **not** a command source; return ``False``.
+    * anything else (``sim_time_realworld``): the client **is** redirected onto the raw topic,
+      so relaying it -- delayed, with ``hold_last`` republication -- is this node's whole job
+      and the robot has no other command source.  Return ``True``.
+
+    Only the *relay* responsibility is governed by this predicate.  Clock observation and every
+    timing artifact (``rtf.csv``, ``internnav_timing_summary.json``,
+    ``internnav_timing_trace.jsonl``) are produced in **every** mode and are deliberately not
+    gated -- this node is their sole producer, so gating the node itself (for instance with a
+    launch-level ``condition=``) would silently destroy the RTF record and the wall->sim
+    conversion bridge that the timing analysis depends on.
+
+    Because the two expressions can still drift, the node does not merely trust this predicate:
+    it also *observes* whether its input topic actually has a publisher and reports any
+    disagreement loudly.  See :meth:`InternNavTimingManager._check_relay_topology`.
+    """
+    return str(timing_mode or '').strip().lower() != 'wall'
+
+
 @dataclass
 class PendingCommand:
     seq: int
@@ -62,7 +93,21 @@ class InternNavTimingManager(Node):
     latency.  This node prevents low-RTF simulation from applying that command
     too early in simulated time by queueing raw cmd_vel messages until
     ``raw_obs_sim_time + latency_sec``.
+
+    The node has **two independent responsibilities** and they are gated differently:
+
+    1. **Observe** ``/clock`` and write the timing artifacts (``rtf.csv``,
+       ``internnav_timing_summary.json``, ``internnav_timing_trace.jsonl``).  Wanted in every
+       mode, and this node is their **sole producer**.  Never gated.
+    2. **Relay** the raw cmd_vel topic onto the robot's ``cmd_vel``.  Wanted only when the
+       InternNav client has been redirected onto the raw topic, i.e. only when
+       ``timing_mode != 'wall'``.  Gated by :func:`relay_enabled_for_timing_mode`.
     """
+
+    #: Wall-clock grace period before an input-topology mismatch is reported.  The InternNav
+    #: client's publisher appears only once its model server is up, which took 12-58 WALL s in
+    #: the runs on record, so a shorter grace period would manufacture false reports.
+    INPUT_TOPOLOGY_GRACE_SEC = 30.0
 
     def __init__(self, *, parameter_overrides: list[Parameter] | None = None) -> None:
         super().__init__('internnav_timing_manager', parameter_overrides=parameter_overrides or [])
@@ -108,6 +153,17 @@ class InternNavTimingManager(Node):
         self.released_count = 0
         self.raw_count = 0
 
+        # Is this node the robot's command source in this mode?  See
+        # relay_enabled_for_timing_mode() -- the single Python-side expression of the predicate.
+        self.relay_enabled = relay_enabled_for_timing_mode(self.timing_mode)
+        self.emitted_cmd_count = 0
+        self.suppressed_cmd_count = 0
+        self.input_publisher_count: int | None = None
+        self.input_publisher_seen = False
+        self.topology_mismatch: str | None = None
+        self._reported_topology_mismatch: str | None = None
+        self._start_monotonic = self._monotonic()
+
         if self.record_dir:
             self.record_dir.mkdir(parents=True, exist_ok=True)
             if self.rtf_path and not self.rtf_path.exists():
@@ -124,7 +180,17 @@ class InternNavTimingManager(Node):
         task_reset_topic = str(self.get_parameter('task_reset_topic').value or '/task_generator_node/task_reset')
         eval_ready_topic = str(self.get_parameter('eval_ready_topic').value or '/task_generator_node/eval_ready')
 
-        self.cmd_pub = self.create_publisher(Twist, output_topic, 10)
+        self.input_cmd_vel_topic = input_topic
+        self.output_cmd_vel_topic = output_topic
+
+        # Create the output publisher ONLY when this node is a command source.  Not creating it
+        # is deliberate and stronger than guarding each publish: a registered publisher is itself
+        # observable (`ros2 topic info -v` counts it), so leaving one behind would keep telling a
+        # live publisher census that this node can drive the robot when it must not.
+        if self.relay_enabled:
+            self.cmd_pub = self.create_publisher(Twist, output_topic, 10)
+        else:
+            self.cmd_pub = None
         self.create_subscription(Twist, input_topic, self._on_raw_cmd, 50)
 
         clock_qos = QoSProfile(depth=50)
@@ -143,7 +209,7 @@ class InternNavTimingManager(Node):
         self.create_subscription(String, eval_ready_topic, self._on_eval_ready, ready_qos)
 
         self.timer = self.create_timer(1.0 / publish_rate_hz, self._on_timer)
-        self.summary_timer = self.create_timer(2.0, self._write_summary)
+        self.summary_timer = self.create_timer(2.0, self._on_periodic)
 
         self._record_event(
             'timing_manager_started',
@@ -154,7 +220,19 @@ class InternNavTimingManager(Node):
             input_cmd_vel_topic=input_topic,
             output_cmd_vel_topic=output_topic,
             status_topic=status_topic,
+            relay_enabled=self.relay_enabled,
         )
+        if self.relay_enabled:
+            self.get_logger().info(
+                f'timing_mode={self.timing_mode!r}: relaying {input_topic!r} -> {output_topic!r} '
+                f'(this node is the robot command source)'
+            )
+        else:
+            self.get_logger().info(
+                f'timing_mode={self.timing_mode!r}: command relay DISABLED, no publisher created on '
+                f'{output_topic!r} (the InternNav client publishes there directly in this mode). '
+                f'Clock observation and timing artifacts remain active.'
+            )
 
     def _wall_time(self) -> float:
         return time.time()
@@ -294,8 +372,23 @@ class InternNavTimingManager(Node):
         if dropped:
             self._record_event('pending_cmd_pruned', dropped=dropped, queue_len=len(self.pending))
 
+    def _emit_cmd(self, msg: Twist) -> None:
+        """The single choke point for every emission on the output cmd_vel topic.
+
+        Both counters are always maintained, whichever branch is taken, so the node's own
+        telemetry states positively how many commands it put on the robot's command topic and
+        how many it withheld.  ``suppressed_cmd_count`` is what makes "emitted nothing" provable
+        rather than merely unobserved -- a test or a run that shows 0 emitted and 0 suppressed
+        did not exercise the path at all.
+        """
+        if not self.relay_enabled or self.cmd_pub is None:
+            self.suppressed_cmd_count += 1
+            return
+        self.emitted_cmd_count += 1
+        self.cmd_pub.publish(msg)
+
     def _publish_zero(self) -> None:
-        self.cmd_pub.publish(Twist())
+        self._emit_cmd(Twist())
 
     def _on_timer(self) -> None:
         sim_now = self.current_sim_time
@@ -311,7 +404,7 @@ class InternNavTimingManager(Node):
             self.pending = [item for item in self.pending if item.eligible_sim_time > sim_now]
             self.last_released_command = cmd.command
             self.released_count += 1
-            self.cmd_pub.publish(_twist_from_dict(cmd.command))
+            self._emit_cmd(_twist_from_dict(cmd.command))
             self._record_event(
                 'cmd_released',
                 seq=cmd.seq,
@@ -327,7 +420,75 @@ class InternNavTimingManager(Node):
         if self.action_hold_policy == 'zero' or self.last_released_command is None:
             self._publish_zero()
         else:
-            self.cmd_pub.publish(_twist_from_dict(self.last_released_command))
+            self._emit_cmd(_twist_from_dict(self.last_released_command))
+
+    def _check_relay_topology(self) -> None:
+        """Observe whether the input topic really has a publisher, and report disagreement.
+
+        This is a **reporter, never a gate.**  ``relay_enabled`` alone decides whether anything is
+        emitted; this method only compares the declared role against the observed topology and
+        makes a mismatch loud.  Three properties are deliberate:
+
+        * **Never latched.**  The count is re-read every time.  A once-only check taken at startup
+          would see the client's publisher missing (it appears only after the model server is up)
+          and would permanently record a mismatch that does not exist.
+        * **Never used to suppress an emission.**  If this were allowed to gate, a transient
+          discovery gap in ``sim_time_realworld`` would silently drop a real command.
+        * **Loud in both directions.**  Declaring a relay role with no input publisher, and *not*
+          declaring one while something publishes on the raw topic, are both misconfigurations:
+          the first floods the robot's command topic with hold/zero output that nobody asked for,
+          the second leaves the robot with no command source at all.
+
+        It exists because the predicate is split across two languages (see
+        :func:`relay_enabled_for_timing_mode`), so it can drift.  Rather than re-deriving the
+        other side's decision, this observes its consequence.
+        """
+        try:
+            count = int(self.count_publishers(self.input_cmd_vel_topic))
+        except Exception as exc:  # pragma: no cover - depends on live graph state
+            # Reported, not swallowed: a probe that fails silently is indistinguishable from a
+            # probe that ran and found nothing.
+            self.get_logger().warn(
+                f'could not count publishers on {self.input_cmd_vel_topic!r}: {exc!r}'
+            )
+            return
+        self.input_publisher_count = count
+        if count > 0:
+            self.input_publisher_seen = True
+
+        elapsed = self._monotonic() - self._start_monotonic
+        mismatch: str | None = None
+        if self.relay_enabled and not self.input_publisher_seen and elapsed >= self.INPUT_TOPOLOGY_GRACE_SEC:
+            mismatch = 'relay_enabled_but_input_topic_has_no_publisher'
+        elif not self.relay_enabled and count > 0:
+            mismatch = 'relay_disabled_but_input_topic_has_a_publisher'
+
+        self.topology_mismatch = mismatch
+        if mismatch != self._reported_topology_mismatch:
+            self._reported_topology_mismatch = mismatch
+            if mismatch:
+                self.get_logger().error(
+                    f'timing topology mismatch: {mismatch} '
+                    f'(timing_mode={self.timing_mode!r}, relay_enabled={self.relay_enabled}, '
+                    f'input={self.input_cmd_vel_topic!r} publishers={count}, '
+                    f'output={self.output_cmd_vel_topic!r}). The InternNav client redirect in '
+                    f'_meta/docker/features/internnav/main and this node disagree about who '
+                    f'publishes the robot cmd_vel.'
+                )
+                self._record_event(
+                    'timing_topology_mismatch',
+                    mismatch=mismatch,
+                    relay_enabled=self.relay_enabled,
+                    input_cmd_vel_topic=self.input_cmd_vel_topic,
+                    input_publisher_count=count,
+                    output_cmd_vel_topic=self.output_cmd_vel_topic,
+                )
+            else:
+                self.get_logger().info(
+                    f'timing topology mismatch resolved '
+                    f'(input={self.input_cmd_vel_topic!r} publishers={count})'
+                )
+                self._record_event('timing_topology_mismatch_resolved', input_publisher_count=count)
 
     def _summary(self) -> dict[str, Any]:
         samples = list(self.rtf_samples)
@@ -342,6 +503,18 @@ class InternNavTimingManager(Node):
             'pending_cmd_count': len(self.pending),
             'rtf_sample_count': len(samples),
             'timing_valid_for_realworld': self.timing_mode == 'sim_time_realworld',
+            # Relay state, so a run's own artifact records whether this node was a command
+            # source and what it actually put on the robot's command topic.  Additive: no
+            # pre-existing key changes meaning.
+            'relay_enabled': self.relay_enabled,
+            'input_cmd_vel_topic': self.input_cmd_vel_topic,
+            'output_cmd_vel_topic': self.output_cmd_vel_topic,
+            'output_publisher_created': self.cmd_pub is not None,
+            'emitted_cmd_count': self.emitted_cmd_count,
+            'suppressed_cmd_count': self.suppressed_cmd_count,
+            'input_publisher_count': self.input_publisher_count,
+            'input_publisher_seen': self.input_publisher_seen,
+            'topology_mismatch': self.topology_mismatch,
         }
         if samples:
             sorted_samples = sorted(samples)
@@ -357,6 +530,16 @@ class InternNavTimingManager(Node):
                 }
             )
         return summary
+
+    def _on_periodic(self) -> None:
+        """2 s housekeeping: observe the relay topology, then persist the summary.
+
+        The topology observation runs first and **unconditionally**, because ``_write_summary``
+        returns early when no ``record_data_dir`` is configured; folding the check into the
+        writer would silently disable it for any run without an output directory.
+        """
+        self._check_relay_topology()
+        self._write_summary()
 
     def _write_summary(self) -> None:
         if not self.summary_path:

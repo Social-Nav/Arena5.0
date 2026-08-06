@@ -315,6 +315,17 @@ launch(){
     planning_rate_hz="$(ros_double "$planning_rate_hz")"
     inference_rate_hz="$planning_rate_hz"
     inference_timeout_sec="$(ros_double "$inference_timeout_sec")"
+    # Who publishes the robot's cmd_vel?  This is one half of a predicate that is also written in
+    # Python, as relay_enabled_for_timing_mode() in
+    # arena_bringup/arena_bringup/internnav_timing_manager.py.  Keep the two in agreement:
+    #   timing_mode == wall -> the client is NOT redirected and publishes the robot's cmd_vel
+    #                          directly, so internnav_timing_manager must NOT relay, or it would
+    #                          contend on that same topic.  It still observes /clock and writes
+    #                          rtf.csv and the timing artifacts, of which it is the sole producer.
+    #   otherwise           -> the client IS redirected onto the raw topic just below, and the
+    #                          relay is then the robot's only command source.
+    # The node does not trust this agreement blindly: it counts publishers on its input topic and
+    # logs a topology mismatch if the two sides have drifted.
     if [ "$cmd_vel_topic_explicit" != "true" ] && [ "$(printf '%s' "$timing_mode" | tr '[:upper:]' '[:lower:]')" != "wall" ]; then
         cmd_vel_topic="$raw_cmd_vel_topic"
     fi
