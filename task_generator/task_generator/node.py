@@ -28,6 +28,11 @@ from task_generator.episode_barrier import (
     PedestrianEpisodeClock,
     await_episode_start_barrier,
 )
+from task_generator.latched_stage_topic import (
+    EVAL_READY_STATUS_TOPIC,
+    EVAL_READY_TOPIC,
+    LatchedStageTopicContract,
+)
 from task_generator.manager.environment_manager import EnvironmentManager
 from task_generator.manager.robot_manager import RobotsManagerROS
 from task_generator.manager.robot_manager.robots_manager_ros import RobotsManager
@@ -159,9 +164,33 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             ),
         )
 
+        # Which stages may ride ``eval_ready`` at all.  See
+        # ``latched_stage_topic.py`` for the measured delivery semantics this
+        # encodes; it must be set before the first ``_publish_eval_ready`` call.
+        self._eval_ready_contract = LatchedStageTopicContract.eval_ready()
+
         self._pub_eval_ready = self.create_publisher(
             String,
-            self.service_namespace('eval_ready'),
+            self.service_namespace(EVAL_READY_TOPIC),
+            QoSProfile(
+                depth=1,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            ),
+        )
+
+        # The full readiness lifecycle, including the stages the two external
+        # eval_ready consumers discard.  It exists so that adding a publication
+        # can never again starve them: this topic is depth-1 latched and both
+        # consumers subscribe at depth 1, and *only the final sample on such a
+        # topic is reliably obtainable* (measured: 0/20 deliveries of an earlier
+        # sample once anything follows it, and raising the publisher's depth to
+        # 10 or 50 does not change that, because the binding constraint is the
+        # subscriber's own KEEP_LAST(1) cache).  So eval_ready carries only
+        # stages every consumer accepts, and everything else is published here.
+        self._pub_eval_ready_status = self.create_publisher(
+            String,
+            self.service_namespace(EVAL_READY_STATUS_TOPIC),
             QoSProfile(
                 depth=1,
                 reliability=ReliabilityPolicy.RELIABLE,
@@ -516,6 +545,13 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             episode_origin_wall_time=time.time(),
             pedestrian_clock_sec=self._pedestrian_clock.value,
         )
+        # The external model client and the timing manager are released here, at
+        # t=0, and not at task_reset.  Before the barrier existed those were the
+        # same instant, so this is the faithful translation rather than a change
+        # of contract: the client must not be able to command the robot during
+        # the recorders' warm-up, which on a second episode it otherwise could
+        # (its instruction is latched from the previous one).
+        self._publish_eval_ready('episode', True, reason='episode_start_published')
         self.get_logger().warn(
             '============= EPISODE START (t=0) ============= '
             f'episode={self._number_of_resets} '
@@ -639,6 +675,27 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             return False
 
     def _publish_eval_ready(self, stage: str, ready: bool, **details) -> None:
+        """Publish one readiness sample, routed by the topic's stage contract.
+
+        Both external consumers of ``eval_ready`` filter on ``stage`` and both
+        subscribe ``depth=1``, so only the *final* sample on that topic is
+        reliably obtainable and any later sample their filter discards starves
+        them.  That is what broke robot control in 4/4 runs when the episode-start
+        barrier began publishing ``stage='episode_start'`` immediately after the
+        ``stage='episode', ready=True`` sample the consumers wait for.
+
+        The routing rule removes the ordering hazard rather than working around
+        it: a stage rides ``eval_ready`` only if *every* registered consumer
+        filter accepts it, so every sample on that topic is one they accept,
+        whatever order callers publish in.  Every sample -- contracted or not --
+        is also published on ``eval_ready_status``, so nothing is lost and the
+        full lifecycle stays observable with ``ros2 topic echo``.
+
+        Args:
+            stage: Lifecycle stage of this sample.
+            ready: Whether the stage is satisfied.
+            **details: Stage-specific payload, recorded under ``details``.
+        """
         try:
             msg = String()
             msg.data = json.dumps(
@@ -652,7 +709,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
                 },
                 ensure_ascii=False,
             )
-            self._pub_eval_ready.publish(msg)
+            self._pub_eval_ready_status.publish(msg)
+            if self._eval_ready_contract.carries(stage):
+                self._pub_eval_ready.publish(msg)
         except Exception as exc:
             self.get_logger().warn(f'Failed to publish eval_ready status: {exc}')
 
@@ -772,8 +831,15 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         # task_reset is the *stream-open* edge, not the episode origin.  The
         # recorders need it before they can open their writers and start running
         # their warm-up gates, and the barrier below waits for the result.
+        #
+        # No ``eval_ready(stage='episode', ready=True)`` here: that sample is the
+        # release signal for the external model client and the timing manager, and
+        # it belongs at t=0, which is the barrier below.  Publishing it here made
+        # it the *second-to-last* sample on a depth-1 latched topic and both
+        # consumers were starved by the barrier's own status message -- 4/4 runs
+        # with zero control ticks.  It is now published in
+        # ``_release_episode_start``.
         self._pub_task_reset.publish(Int16(data=self._number_of_resets))
-        self._publish_eval_ready('episode', True, reason='task_reset_published')
 
         # The episode origin.  Everything that constitutes the episode -- the
         # timeout clock, HuNav commanding pedestrian motion, the recorded video

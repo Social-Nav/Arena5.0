@@ -41,6 +41,7 @@ from task_generator.episode_barrier import (  # noqa: E402
     PedestrianEpisodeClock,
     await_episode_start_barrier,
 )
+from task_generator.latched_stage_topic import LatchedStageTopicContract  # noqa: E402
 
 
 # --------------------------------------------------------------------------- #
@@ -471,7 +472,20 @@ def _task_generator_stub(events, *, streams_ready_publishers=1):
     node._pub_task_reset = _RecordingPublisher(events, 'task_reset')
     node._pub_episode_start = _RecordingPublisher(events, 'episode_start')
     node._pub_vln_instruction = _RecordingPublisher(events, 'vln_instruction')
-    node._pub_eval_ready = _RecordingPublisher([], 'eval_ready')
+    # These two used to be one publisher wired to a throwaway ``[]``, which is how
+    # D7 shipped past a green suite: every eval_ready publication was discarded by
+    # the harness, so no assertion here could see that the barrier's own status
+    # message had displaced the sample the external model client filters for.  Keep
+    # them out of ``events`` so the ordering assertions below stay about the
+    # episode edges, but record them, and see
+    # ``test_eval_ready_stage_contract.py`` for the assertions that use them.
+    node.eval_ready_contract_log = []
+    node.eval_ready_status_log = []
+    node._pub_eval_ready = _RecordingPublisher(node.eval_ready_contract_log, 'eval_ready')
+    node._pub_eval_ready_status = _RecordingPublisher(
+        node.eval_ready_status_log, 'eval_ready_status'
+    )
+    node._eval_ready_contract = LatchedStageTopicContract.eval_ready()
     node.get_logger = lambda: _logger_stub([])
     node.count_publishers = lambda _topic: streams_ready_publishers
     node.get_service_names_and_types = lambda: []
