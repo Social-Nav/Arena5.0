@@ -278,6 +278,19 @@ def _make_recorder(gate, tmp_path, **overrides):
     recorder.ego_settle_timeout_sec = 10.0
     recorder.ego_stream_open = False
     recorder.ego_settle_timed_out = False
+
+    # Episode-start barrier state.  These tests are about the ego gate, so the
+    # barrier is configured absent (no publisher of the episode origin), which is
+    # the documented "record exactly as before" path -- see
+    # test_internnav_eval_episode_start_barrier.py for the barrier's own tests.
+    recorder.episode_start_topic = ''
+    recorder.video_streams_ready_topic = ''
+    recorder.episode_start_wait_timeout_sec = 180.0
+    recorder.episode_start_seen_episode = None
+    recorder.streams_ready_episode = None
+    recorder.streams_ready_wall_time = 0.0
+    recorder.pre_episode_start_held_frames = 0
+    recorder.count_publishers = lambda _topic: 0
     for key, value in overrides.items():
         setattr(recorder, key, value)
 

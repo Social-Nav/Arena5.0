@@ -21,6 +21,13 @@ from std_srvs.srv import Empty as EmptySrv
 
 from task_generator.constants import Constants
 from task_generator.constants.runtime import Configuration
+from task_generator.episode_barrier import (
+    BarrierCondition,
+    BarrierReport,
+    EpisodeStartBarrierTimeout,
+    PedestrianEpisodeClock,
+    await_episode_start_barrier,
+)
 from task_generator.manager.environment_manager import EnvironmentManager
 from task_generator.manager.robot_manager import RobotsManagerROS
 from task_generator.manager.robot_manager.robots_manager_ros import RobotsManager
@@ -35,6 +42,16 @@ from task_generator.tasks import identifier_to_available
 from task_generator.tasks.task import Task
 
 from . import SafeCallbackNode
+
+
+#: Relative topic on which the task generator publishes the episode time origin.
+#: The eval video recorder and any other consumer that needs a single, shared
+#: ``t = 0`` subscribes to ``<task_generator_namespace>/<EPISODE_START_TOPIC>``.
+EPISODE_START_TOPIC = 'episode_start'
+
+#: Relative topic on which the eval video recorder reports that every enabled
+#: video stream is past its warm-up gate and would be writing frames.
+VIDEO_STREAMS_READY_TOPIC = 'video_streams_ready'
 
 
 class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
@@ -84,6 +101,17 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         self._episode_entities_ready: asyncio.Event = asyncio.Event()
         self._human_states_ready: asyncio.Event = asyncio.Event()
         self._last_human_states_count = 0
+        # Episode-start barrier state.  ``_episode_started`` is the public t=0
+        # edge: the timeout origin, pedestrian motion, the recorded episode and
+        # the model client all key off it, so nothing that constitutes the
+        # episode may happen before it.  ``_pedestrian_clock`` is what actually
+        # holds HuNav: it is handed to HuNav as the request header stamp, and
+        # HuNav derives its integration step from consecutive stamps.
+        self._episode_started: asyncio.Event = asyncio.Event()
+        self._pedestrian_clock = PedestrianEpisodeClock()
+        self._last_barrier_report: BarrierReport | None = None
+        self._robot_navigation_ready = False
+        self._video_streams_ready_episode: int | None = None
         self._task: Task
 
         # VLN instruction interface (published per-episode)
@@ -140,6 +168,23 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
                 durability=DurabilityPolicy.TRANSIENT_LOCAL,
             ),
         )
+
+        # The explicit episode time origin.  Published exactly once per episode,
+        # at the barrier, after task_reset let the recorders open their writers
+        # and after every stream reported that it is past its warm-up gate.
+        # Consumers treat the frame that carries this edge as their t=0, so all
+        # four video streams and the timeout share one origin.  Latched, because
+        # a recorder must be able to learn about it even if DDS discovery of the
+        # topic completes a moment late.
+        self._pub_episode_start = self.create_publisher(
+            Int16,
+            self.service_namespace(EPISODE_START_TOPIC),
+            QoSProfile(
+                depth=1,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            ),
+        )
         self._publish_eval_ready('startup', False, reason='task_generator_constructed')
 
         self.create_subscription(
@@ -149,6 +194,24 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             10,
         )
 
+        # Video-stream readiness, reported by the eval video recorder once every
+        # enabled stream is past its warm-up/discard/content gates.  The
+        # recorder creates its publisher at construction, so
+        # ``count_publishers`` on this topic is an observable-state answer to
+        # "is a recorder attached at all", rather than a flag someone has to
+        # remember to set.
+        self._video_streams_ready_topic = str(self.service_namespace(VIDEO_STREAMS_READY_TOPIC))
+        self.create_subscription(
+            Int16,
+            self._video_streams_ready_topic,
+            self._video_streams_ready_callback,
+            QoSProfile(
+                depth=1,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            ),
+        )
+
         self._check_status_task: asyncio.Task
 
     def _human_states_callback(self, msg: Agents) -> None:
@@ -156,6 +219,303 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         self._last_human_states_count = agent_count
         if agent_count > 0:
             self._human_states_ready.set()
+
+    def _video_streams_ready_callback(self, msg: Int16) -> None:
+        self._video_streams_ready_episode = int(getattr(msg, 'data', -1))
+
+    # EPISODE-START BARRIER
+
+    @property
+    def episode_motion_released(self) -> bool:
+        """Whether the episode has started, i.e. whether agents may move.
+
+        Read by :class:`~task_generator.simulators.human.hunav.hunav.HunavHumanSimulator`
+        to decide whether HuNav may advance its behaviour trees.  Kept as a
+        public property so a rename shows up as a test failure rather than as a
+        gate that silently stops gating.
+        """
+        return self._episode_started.is_set()
+
+    @property
+    def pedestrian_episode_clock(self) -> PedestrianEpisodeClock:
+        """The gated clock handed to HuNav as its request header stamp."""
+        return self._pedestrian_clock
+
+    def _video_recorder_attached(self) -> bool:
+        """Whether an eval video recorder exists, from observable ROS state.
+
+        Uses ``count_publishers`` rather than a configuration flag so that a run
+        launched without a recorder is not blocked, and a run launched *with* one
+        cannot accidentally skip the stream-readiness condition because somebody
+        forgot to set an environment variable.
+        """
+        try:
+            return int(self.count_publishers(self._video_streams_ready_topic)) > 0
+        except Exception:
+            return False
+
+    def _dual_vln_command_services(self) -> list[str]:
+        """Model command services this run expects, from the robot managers."""
+        services: list[str] = []
+        for robot_manager in getattr(self._robots_manager, 'robots', {}).values():
+            resolver = getattr(robot_manager, '_dual_vln_command_service_name', None)
+            if not callable(resolver):
+                continue
+            try:
+                if not bool(robot_manager._is_dual_vln_robot()):
+                    continue
+                name = str(resolver() or '')
+            except Exception:
+                continue
+            if name:
+                services.append(name)
+        return services
+
+    def _model_channels(self) -> dict[str, list[str]]:
+        """The observable channels through which a model can report itself live.
+
+        Two exist and which one is populated depends on the eval mode, so the
+        barrier accepts either rather than hard-coding one:
+
+        * ``command_services`` -- the Arena/external ``get_command`` service.
+          Present in the wrapper mode, where ``robot_manager`` also waits for it
+          before publishing the goal.
+        * ``status_topics`` -- the InternNav ``.../internnav/status`` topic.  This
+          is the channel the official-client (direct ``cmd_vel``) mode uses, and
+          the one ``robot_manager`` already subscribes to.
+        """
+        channels: dict[str, list[str]] = {'command_services': [], 'status_topics': []}
+        channels['command_services'] = self._dual_vln_command_services()
+        for robot_manager in getattr(self._robots_manager, 'robots', {}).values():
+            try:
+                if not bool(robot_manager._is_dual_vln_robot()):
+                    continue
+            except Exception:
+                continue
+            topic = str(getattr(robot_manager, '_dual_vln_status_topic', '') or '')
+            if topic:
+                channels['status_topics'].append(topic)
+        return channels
+
+    def _model_ready_state(self, channels: dict[str, list[str]]) -> dict[str, object]:
+        """Observable state of every model channel, never a call that can return None.
+
+        A service call that fails yields nothing distinguishable from a model that
+        is merely slow, so readiness is derived from the ROS graph (is the service
+        advertised?) and from received status samples (did the model speak?).
+        """
+        try:
+            advertised = {name for name, _types in self.get_service_names_and_types()}
+        except Exception:
+            advertised = set()
+        services_seen = [name for name in channels['command_services'] if name in advertised]
+        status_seen = []
+        for robot_manager in getattr(self._robots_manager, 'robots', {}).values():
+            topic = str(getattr(robot_manager, '_dual_vln_status_topic', '') or '')
+            if not topic:
+                continue
+            if float(getattr(robot_manager, '_dual_vln_status_wall_time', 0.0) or 0.0) > 0.0:
+                status_seen.append(topic)
+        return {
+            'command_services_advertised': services_seen,
+            'status_topics_with_sample': status_seen,
+            'ready': bool(services_seen or status_seen),
+        }
+
+    def _episode_start_barrier_conditions(self) -> list[BarrierCondition]:
+        """The conditions that define "the episode may now begin".
+
+        Every element is here because something that constitutes the episode
+        depends on it:
+
+        * ``world_geometry_loaded`` -- the scene USD is composed and spawned.
+          Without it the first observation is of an empty or partial stage.
+        * ``robot_spawned_and_reset`` -- the robot reached its start pose and its
+          navigation goal is accepted, so the recorded trajectory starts at the
+          episode's start pose rather than mid-teleport.
+        * ``pedestrians_spawned`` -- HuNav reported at least one agent on
+          ``human_states``.  Releasing motion before the agents exist would let
+          the barrier pass an episode with no pedestrians in it.
+        * ``video_streams_ready`` -- every enabled video stream is past its
+          warm-up/discard/content gate.  This is the condition whose absence
+          caused the measured defect: ``sim_top_down.mp4`` discards ~20 s of
+          unsettled frames, so with pedestrians walking from ``task_reset`` the
+          review video's frame 0 began after the walk had already finished.
+        * ``model_reachable`` -- the policy that is being graded has announced
+          itself on at least one of its two observable channels, so episode time
+          does not start during the model's cold start (measured: the first HTTP
+          request left 0.06 s after ego frame 0, median completion 1.23 s).
+        """
+        human_simulator = self.conf.Arena.HUMAN.value
+        pedestrians_expected = human_simulator in (
+            Constants.HumanSimulator.HUNAV,
+            Constants.HumanSimulator.GRSCENES_REPLAY,
+        )
+        recorder_attached = self._video_recorder_attached()
+        channels = self._model_channels()
+        model_configured = bool(channels['command_services'] or channels['status_topics'])
+        require_model = model_configured and bool(
+            self.rosparam[bool].get('episode_start_require_model_ready', True)
+        )
+
+        return [
+            BarrierCondition(
+                name='world_geometry_loaded',
+                check=self._world_geometry_ready.is_set,
+                detail=lambda: f'ready={self._world_geometry_ready.is_set()} error={self._world_geometry_error!r}',
+            ),
+            BarrierCondition(
+                name='robot_spawned_and_reset',
+                check=lambda: bool(self._robot_navigation_ready),
+                detail=lambda: f'navigation_ready={bool(self._robot_navigation_ready)}',
+            ),
+            BarrierCondition(
+                name='pedestrians_spawned',
+                check=self._human_states_ready.is_set,
+                required=pedestrians_expected,
+                skip_reason=f'human_simulator={getattr(human_simulator, "value", human_simulator)}',
+                detail=lambda: f'human_states_agents={self._last_human_states_count}',
+            ),
+            BarrierCondition(
+                name='video_streams_ready',
+                check=lambda: self._video_streams_ready_episode == self._number_of_resets,
+                required=recorder_attached,
+                skip_reason=f'no_publisher_on={self._video_streams_ready_topic}',
+                detail=lambda: (
+                    f'ready_episode={self._video_streams_ready_episode} '
+                    f'expected_episode={self._number_of_resets} '
+                    f'publishers={self._video_recorder_attached()}'
+                ),
+            ),
+            BarrierCondition(
+                name='model_reachable',
+                check=lambda: bool(self._model_ready_state(channels)['ready']),
+                required=require_model,
+                skip_reason=(
+                    'no_dual_vln_robot' if not model_configured
+                    else 'episode_start_require_model_ready=false'
+                ),
+                detail=lambda: f'channels={channels} observed={self._model_ready_state(channels)}',
+            ),
+        ]
+
+    async def _await_video_recorder_discovery(self) -> bool:
+        """Give DDS a bounded moment to expose an attached video recorder.
+
+        Whether the stream-readiness condition is *required* is decided once, from
+        ``count_publishers``.  Deciding that while discovery is still in flight
+        would silently drop the condition -- the precise failure mode this project
+        keeps re-encountering -- so poll briefly and log the answer either way.
+        The wait is only paid by runs that genuinely have no recorder.
+        """
+        grace_s = max(0.0, self.rosparam[float].get('episode_start_recorder_discovery_sec', 5.0))
+        deadline = time.monotonic() + grace_s
+        while True:
+            if self._video_recorder_attached():
+                self.get_logger().info(
+                    f'Video recorder detected on {self._video_streams_ready_topic}; '
+                    'stream readiness is a required episode-start condition.'
+                )
+                return True
+            if time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(0.25)
+        self.get_logger().warn(
+            f'No video recorder publisher on {self._video_streams_ready_topic} after {grace_s:.1f}s; '
+            'the episode-start barrier will NOT require video-stream readiness for this run. '
+            'Every video stream then starts at task_reset, as it did before the barrier existed.'
+        )
+        return False
+
+    async def _await_episode_start_barrier(self) -> BarrierReport:
+        """Block until the episode may begin, or fail loudly.
+
+        Returns:
+            The passing barrier report.
+
+        Raises:
+            EpisodeStartBarrierTimeout: If a required condition never held.  The
+                episode origin is never declared in that case; proceeding would
+                stamp every artifact with a ``t = 0`` that was never reached.
+        """
+        timeout_s = max(0.0, self.rosparam[float].get('episode_start_barrier_timeout_sec', 300.0))
+        await self._await_video_recorder_discovery()
+        conditions = self._episode_start_barrier_conditions()
+        self._publish_eval_ready(
+            'episode_start',
+            False,
+            reason='barrier_waiting',
+            required=[condition.name for condition in conditions if condition.required],
+            skipped={
+                condition.name: condition.skip_reason
+                for condition in conditions
+                if not condition.required
+            },
+            timeout_sec=timeout_s,
+        )
+        self.get_logger().info(
+            'Waiting for the episode-start barrier before releasing pedestrian motion, the '
+            'timeout origin and the model: required='
+            f'{[condition.name for condition in conditions if condition.required]} '
+            f'not_required={{{", ".join(f"{c.name}:{c.skip_reason}" for c in conditions if not c.required)}}} '
+            f'timeout={timeout_s:.1f}s'
+        )
+
+        def _log_progress(report: BarrierReport) -> None:
+            self.get_logger().info(
+                f'Episode-start barrier progress after {report.waited_sec:.1f}s: '
+                f'satisfied={report.satisfied} still_waiting_on={report.unsatisfied}'
+            )
+
+        try:
+            report = await await_episode_start_barrier(
+                conditions,
+                timeout_sec=timeout_s,
+                on_progress=_log_progress,
+            )
+        except EpisodeStartBarrierTimeout as exc:
+            self._last_barrier_report = exc.report
+            self.get_logger().error(exc.report.failure_message())
+            self._publish_eval_ready(
+                'episode_start',
+                False,
+                reason='barrier_timeout',
+                barrier=exc.report.to_dict(),
+            )
+            raise
+
+        self._last_barrier_report = report
+        self.get_logger().info(
+            f'Episode-start barrier passed after {report.waited_sec:.1f}s; '
+            f'satisfied={report.satisfied}'
+        )
+        return report
+
+    def _release_episode_start(self, report: BarrierReport) -> None:
+        """Declare the episode time origin and release everything that keys off it."""
+        self._episode_started.set()
+        self._pedestrian_clock.release()
+
+        mark_episode_started = getattr(self._task, 'mark_episode_started', None)
+        if callable(mark_episode_started):
+            mark_episode_started()
+
+        self._pub_episode_start.publish(Int16(data=self._number_of_resets))
+        self._publish_eval_ready(
+            'episode_start',
+            True,
+            reason='episode_start_published',
+            barrier=report.to_dict(),
+            episode_origin_sim_time_sec=self._time_to_seconds(getattr(self, 'sim_time', None)),
+            episode_origin_wall_time=time.time(),
+            pedestrian_clock_sec=self._pedestrian_clock.value,
+        )
+        self.get_logger().warn(
+            '============= EPISODE START (t=0) ============= '
+            f'episode={self._number_of_resets} '
+            f'barrier_wait_sec={report.waited_sec:.1f} '
+            f'sim_time_sec={self._time_to_seconds(getattr(self, "sim_time", None))}'
+        )
 
     async def setup(self):
         self._logger.info("Setting up Task Generator Node")
@@ -343,8 +703,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         launch graph.  Publishing the instruction once at episode release is
         not sufficient if DDS discovery completes just after that edge or if a
         consumer uses volatile QoS.  Keep re-publishing the same per-episode
-        instruction for a short bounded window after task_reset, without moving
-        the public episode boundary away from task_reset.
+        instruction for a short bounded window after the episode-start barrier,
+        without moving the public episode boundary away from that barrier.
         """
         for _ in range(8):
             await asyncio.sleep(0.25)
@@ -367,6 +727,15 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         self._episode_entities_ready.clear()
         self._human_states_ready.clear()
         self._last_human_states_count = 0
+        # Re-arm the barrier for this episode.  Pedestrians are held from here
+        # until the barrier passes, so no part of their route can be consumed
+        # while the scene loads, the robot is teleported and the video streams
+        # converge.
+        self._episode_started.clear()
+        self._pedestrian_clock.hold()
+        self._robot_navigation_ready = False
+        self._video_streams_ready_episode = None
+        self._last_barrier_report = None
         self._publish_eval_ready('episode', False, reason='reset_started')
 
         await self._simulator.before_reset_task()
@@ -384,6 +753,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             await wait_navigation_ready(
                 timeout_s=max(0.0, self.rosparam[float].get('episode_navigation_ready_timeout_sec', 600.0))
             )
+        self._robot_navigation_ready = True
 
         episode_start_delay_sec = max(0.0, self.rosparam[float].get('episode_start_delay_sec', 0.0))
         if episode_start_delay_sec > 0.0:
@@ -392,19 +762,26 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             )
             await asyncio.sleep(episode_start_delay_sec)
 
-        mark_episode_started = getattr(self._task, 'mark_episode_started', None)
-        if callable(mark_episode_started):
-            mark_episode_started()
-
         self._episode_entities_ready.set()
+        # task_reset is the *stream-open* edge, not the episode origin.  The
+        # recorders need it before they can open their writers and start running
+        # their warm-up gates, and the barrier below waits for the result.
         self._pub_task_reset.publish(Int16(data=self._number_of_resets))
         self._publish_eval_ready('episode', True, reason='task_reset_published')
 
-        # Publish instruction only after the simulator reports post-reset ready so
-        # eval/video/model consumers treat task_reset as the first moment the new
-        # episode is actually ready to observe and control.  Re-publish for a
-        # short bounded window to let external InternNav clients that discover
-        # the topic slightly late still synchronize before first inference.
+        # The episode origin.  Everything that constitutes the episode -- the
+        # timeout clock, HuNav commanding pedestrian motion, the recorded video
+        # frames and the model client -- is released here and not before, so the
+        # pedestrians' dynamic window falls inside the observed episode instead
+        # of inside the recorders' warm-up.
+        report = await self._await_episode_start_barrier()
+        self._release_episode_start(report)
+
+        # Publish instruction only after the episode-start barrier so the model's
+        # cold start is charged to startup rather than to the episode's first
+        # seconds.  Re-publish for a short bounded window to let external
+        # InternNav clients that discover the topic slightly late still
+        # synchronize before first inference.
         self._publish_vln_instruction_for_episode(self._number_of_resets)
 
         self._number_of_resets += 1

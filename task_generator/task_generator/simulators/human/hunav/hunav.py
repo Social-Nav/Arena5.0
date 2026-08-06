@@ -7,6 +7,7 @@ import typing
 from pathlib import Path
 
 import attrs
+import builtin_interfaces.msg
 import geometry_msgs.msg
 import numpy as np
 import rclpy.client
@@ -26,6 +27,7 @@ from std_srvs.srv import Trigger
 from visualization_msgs.msg import Marker, MarkerArray
 
 from task_generator.constants import Constants
+from task_generator.episode_barrier import PedestrianEpisodeClock
 from task_generator.shared import (
     Model,
     ModelType,
@@ -301,6 +303,15 @@ class HunavHumanSimulator(
         self._agent_previous_orientations = {}
         self._orientation_smoothing_factor = 0.15  # 0.05-0.3 range
 
+        # Episode-start gating.  HuNav integrates pedestrian motion from the
+        # difference between consecutive ``compute_agents`` request stamps, so
+        # the episode clock IS the pedestrian gate: while it is held the stamp
+        # does not advance, HuNav's dt is zero and no route progress is possible.
+        # Without this, each agent consumed its whole one-way route in the first
+        # 4-18 s after ``task_reset`` -- inside the video recorders' warm-up
+        # window, so the review video never contained a walking pedestrian.
+        self._pedestrian_clock, self._pedestrian_gate_source = self._resolve_pedestrian_clock()
+
         self._logger.debug("Collections initialized")
 
         self._obstacle_subscriber = self.node.create_subscription(
@@ -330,6 +341,49 @@ class HunavHumanSimulator(
     def _simulator_type(self) -> Constants.SimSimulator:
         """Detect which simulator is being used"""
         return self.node.conf.Arena.SIM.value
+
+    def _resolve_pedestrian_clock(self) -> tuple[PedestrianEpisodeClock, str]:
+        """Bind to the node's episode clock, or fall back to an ungated one.
+
+        Returns:
+            ``(clock, source)`` where ``source`` is ``'task_generator_node'`` when
+            the node owns the barrier, or ``'local_ungated'`` when it does not.
+
+        A missing barrier API is reported loudly rather than absorbed: this
+        project has repeatedly shipped capability probes that silently never
+        armed, so the fallback names the attribute it looked for.
+        """
+        clock = getattr(self.node, 'pedestrian_episode_clock', None)
+        if isinstance(clock, PedestrianEpisodeClock):
+            return clock, 'task_generator_node'
+        self._logger.warn(
+            'Node does not expose pedestrian_episode_clock/episode_motion_released; '
+            'HuNav will run UNGATED and pedestrians may consume their route before the '
+            'episode-start barrier. This is the pre-barrier behaviour, not a fix.'
+        )
+        local = PedestrianEpisodeClock()
+        local.release()
+        return local, 'local_ungated'
+
+    def _pedestrian_motion_released(self) -> bool:
+        """Whether HuNav may advance its behaviour trees for this episode."""
+        if self._pedestrian_gate_source == 'local_ungated':
+            return True
+        return bool(getattr(self.node, 'episode_motion_released', False))
+
+    def _pedestrian_clock_stamp(self):
+        """Tick the episode clock from ``/clock`` and return it as a ROS stamp.
+
+        Held before episode start, so consecutive ``compute_agents`` requests
+        carry an identical stamp and HuNav's ``time_step_secs`` is exactly zero.
+        """
+        sim_time = self.node.sim_time
+        sim_ns = int(sim_time.sec) * 1_000_000_000 + int(sim_time.nanosec)
+        if self._pedestrian_motion_released():
+            self._pedestrian_clock.release()
+        self._pedestrian_clock.tick_ns(sim_ns)
+        sec, nanosec = self._pedestrian_clock.stamp_sec_nanosec()
+        return builtin_interfaces.msg.Time(sec=int(sec), nanosec=int(nanosec))
 
     async def setup(self):
 
@@ -714,8 +768,12 @@ class HunavHumanSimulator(
                     f"All spawns complete. Registering {len(self._agents_container.agents)} agents with HuNav"
                 )
 
-                # Update timestamp
-                self._agents_container.header.stamp = self.node.sim_time.to_msg()
+                # Update timestamp.  This registration call is the one that sets
+                # HuNav's ``prev_time_`` baseline, so it must use the same
+                # (held) episode clock as the update loop; otherwise the first
+                # gated update would present a large dt and HuNav would consume
+                # the route in a single step.
+                self._agents_container.header.stamp = self._pedestrian_clock_stamp()
 
                 # Create request
                 request = ComputeAgents.Request()
@@ -954,9 +1012,13 @@ class HunavHumanSimulator(
                         else:
                             current_agents = self._agents_container
 
-                        # Ensure frame_id is set
+                        # Ensure frame_id is set.  The stamp is the *episode*
+                        # clock, not raw /clock: HuNav derives its integration
+                        # step from consecutive request stamps, so a held clock
+                        # is what actually freezes the pedestrians before the
+                        # episode-start barrier passes.
                         current_agents.header.frame_id = "map"
-                        current_agents.header.stamp = self.node.sim_time.to_msg()
+                        current_agents.header.stamp = self._pedestrian_clock_stamp()
 
                         # Update obstacles BEFORE sending to HuNav
                         current_agents = self._update_agent_obstacles(current_agents)
@@ -965,6 +1027,18 @@ class HunavHumanSimulator(
                         current_agents = self._smooth_agents_before_hunav(
                             current_agents
                         )
+
+                        if not self._pedestrian_motion_released():
+                            # Episode has not started.  Do not tick HuNav at all:
+                            # the behaviour trees only advance inside the
+                            # compute_agents service, so skipping the call is a
+                            # hard guarantee that no waypoint can be consumed.
+                            # Keep publishing the spawn state so the barrier's
+                            # own "pedestrians spawned" condition can be
+                            # satisfied and Isaac keeps the characters parked.
+                            self._publish_pedestrian_state_snapshot()
+                            self._publish_wall_markers()
+                            continue
 
                         # Create request
                         request = ComputeAgents.Request()
@@ -1063,17 +1137,7 @@ class HunavHumanSimulator(
                                 f"Publishing pedestrian {ped.name} at ({ped.pose.position.x}, {ped.pose.position.y}) with velocity ({ped.twist.linear.x}, {ped.twist.linear.y})"
                             )
 
-                        self._arena_peds_publisher.publish(self._arena_pedestrians_container)
-                        if hasattr(self, '_human_states_publisher'):
-                            latest_agents = (
-                                self._last_updated_agents
-                                if self._last_updated_agents and getattr(self._last_updated_agents, 'agents', None)
-                                else self._agents_container
-                            )
-                            latest_agents.header.frame_id = "map"
-                            latest_agents.header.stamp = self.node.sim_time.to_msg()
-                            latest_agents = self._filter_hunav_robot_agent(latest_agents)
-                            self._human_states_publisher.publish(latest_agents)
+                        self._publish_pedestrian_state_snapshot()
                         self._publish_wall_markers()
 
         except asyncio.CancelledError:
@@ -1083,6 +1147,27 @@ class HunavHumanSimulator(
             self._logger.error(
                 f"Error in arena_peds loop: {e}\n{traceback.format_exc()}"
             )
+
+    def _publish_pedestrian_state_snapshot(self):
+        """Publish the current pedestrian state on ``arena_peds``/``human_states``.
+
+        Called on every loop iteration, including while the episode-start barrier
+        is closed.  ``human_states`` deliberately keeps the raw ``/clock`` stamp
+        rather than the episode clock: it is what the metric recorder samples, so
+        changing its time base would silently move the evaluation standard, while
+        HuNav's own integration step is governed by the *request* stamp only.
+        """
+        self._arena_peds_publisher.publish(self._arena_pedestrians_container)
+        if hasattr(self, '_human_states_publisher'):
+            latest_agents = (
+                self._last_updated_agents
+                if self._last_updated_agents and getattr(self._last_updated_agents, 'agents', None)
+                else self._agents_container
+            )
+            latest_agents.header.frame_id = "map"
+            latest_agents.header.stamp = self.node.sim_time.to_msg()
+            latest_agents = self._filter_hunav_robot_agent(latest_agents)
+            self._human_states_publisher.publish(latest_agents)
 
     def _publish_wall_markers(self):
         """Publish wall segments as visualization markers"""

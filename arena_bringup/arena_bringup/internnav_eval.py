@@ -1239,6 +1239,20 @@ def _world_map_yaml_path(sim_setup_share: str, world: str) -> str:
     return os.path.join(sim_setup_share, 'worlds', world, 'map', 'map.yaml')
 
 
+def _episode_barrier_topics(task_reset_topic: str) -> dict[str, str]:
+    """Resolve the episode-start barrier topic pair from the task_reset topic.
+
+    Kept in one function so the recorder subprocess and any diagnostic tooling
+    derive the same names as ``task_generator.node``'s
+    ``service_namespace(EPISODE_START_TOPIC)`` / ``VIDEO_STREAMS_READY_TOPIC``.
+    """
+    root = _task_root_from_topic(task_reset_topic)
+    return {
+        'ARENA_EVAL_EPISODE_START_TOPIC': f'{root}/episode_start',
+        'ARENA_EVAL_VIDEO_STREAMS_READY_TOPIC': f'{root}/video_streams_ready',
+    }
+
+
 def _start_eval_video_recorder(
     env: dict[str, str],
     *,
@@ -1260,6 +1274,13 @@ def _start_eval_video_recorder(
     top_down_window_m: float,
 ) -> subprocess.Popen:
     python_bin = _eval_python_executable(env)
+    # The barrier topic names travel by environment rather than argv so the
+    # positional argv contract of the recorder subprocess stays unchanged.  An
+    # explicitly exported value wins, which is how a run can point the recorder
+    # at a non-default task generator namespace.
+    recorder_env = dict(env)
+    for name, value in _episode_barrier_topics(task_reset_topic).items():
+        recorder_env.setdefault(name, value)
     recorder_code = r'''
 import json
 import math
@@ -1637,6 +1658,13 @@ def _looks_like_corrupt_sim_top_down(image: np.ndarray) -> bool:
 # with no stated reason.
 EGO_RENDER_SETTLING_PREFIX = 'waiting for the ego render to settle'
 
+# Persistent (NOT transient) error prefix.  Recorded when the task generator
+# publishes an episode-start topic but never reaches its barrier: the recorder
+# then records video anyway, but the artifact must permanently state that its
+# t=0 is not the barrier, otherwise a later comparison would silently mix two
+# different episode origins.
+EPISODE_START_TIMEOUT_PREFIX = 'episode start origin never arrived'
+
 
 def _ego_chroma_noise_sigma(image) -> float:
     """Estimate per-pixel sampling noise on the red-green opponent plane.
@@ -1806,6 +1834,24 @@ class EvalVideoRecorder(Node):
         # mid-episode frame can ever be dropped by the content check.
         self.ego_stream_open = False
         self.ego_settle_timed_out = False
+        # Episode-start barrier, recorder half.  task_reset opens the writers and
+        # starts the warm-up gates; the frames themselves are held until the task
+        # generator publishes the episode time origin, so all four streams share
+        # one t=0.  Measured motivation: with sim_top_down discarding ~20 s of
+        # unsettled frames and pedestrians walking from task_reset, that video's
+        # frame 0 began 19-130 frames AFTER the walk ended in 8/8 agent-runs.
+        self.episode_start_topic = str(os.environ.get('ARENA_EVAL_EPISODE_START_TOPIC', '') or '')
+        self.video_streams_ready_topic = str(
+            os.environ.get('ARENA_EVAL_VIDEO_STREAMS_READY_TOPIC', '') or ''
+        )
+        self.episode_start_wait_timeout_sec = max(
+            float(os.environ.get('ARENA_EVAL_VIDEO_EPISODE_START_TIMEOUT_SEC', '180.0') or 180.0),
+            0.0,
+        )
+        self.episode_start_seen_episode = None
+        self.streams_ready_episode = None
+        self.streams_ready_wall_time = 0.0
+        self.pre_episode_start_held_frames = 0
         self.latest_pose = None
         self.latest_pose_generation = -1
         self.latest_goal = None
@@ -1819,6 +1865,9 @@ class EvalVideoRecorder(Node):
                 'map_yaml_path': self.map_yaml_path,
                 'task_reset_topic': task_reset_topic,
                 'scenario_reset_topic': scenario_reset_topic,
+                'episode_start_topic': self.episode_start_topic,
+                'video_streams_ready_topic': self.video_streams_ready_topic,
+                'episode_start_wait_timeout_sec': self.episode_start_wait_timeout_sec,
                 'ego_topic': ego_topic,
                 'depth_topic': depth_topic,
                 'camera_info_topic': camera_info_topic,
@@ -1874,6 +1923,26 @@ class EvalVideoRecorder(Node):
         self.create_subscription(Odometry, odom_topic, self._on_odom, sensor_qos)
         self.create_subscription(PoseStamped, goal_topic, self._on_goal, event_qos)
         self.create_subscription(LaserScan, scan_topic, self._on_scan, sensor_qos)
+
+        # Episode-start barrier wiring.  Unlike task_reset these two use
+        # TRANSIENT_LOCAL deliberately: the readiness report must reach a task
+        # generator that discovers the topic slightly late, and the origin must
+        # reach this recorder even if it is published in the same instant that
+        # DDS completes matching.  A stale latched origin from a previous run
+        # cannot be mistaken for this one because _on_episode_start compares the
+        # episode index against the reset this recorder actually observed.
+        latched_event_qos = QoSProfile(depth=1)
+        latched_event_qos.reliability = ReliabilityPolicy.RELIABLE
+        latched_event_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
+        self._streams_ready_pub = self.create_publisher(
+            Int16,
+            self.video_streams_ready_topic or f'{task_reset_topic}_video_streams_ready',
+            latched_event_qos,
+        )
+        if self.episode_start_topic:
+            self.create_subscription(
+                Int16, self.episode_start_topic, self._on_episode_start, latched_event_qos
+            )
 
     def _load_map(self, map_yaml_path):
         try:
@@ -2009,6 +2078,12 @@ class EvalVideoRecorder(Node):
         self.ego_post_warmup_discard_count = 0
         self.ego_stream_open = False
         self.ego_settle_timed_out = False
+        # Re-arm the episode-start hold for the next episode.  Each episode gets
+        # its own origin, so a previous episode's origin must not release this one.
+        self.episode_start_seen_episode = None
+        self.streams_ready_episode = None
+        self.streams_ready_wall_time = 0.0
+        self.pre_episode_start_held_frames = 0
         self.latest_pose = None
         self.latest_pose_generation = -1
         self.latest_goal = None
@@ -2088,6 +2163,15 @@ class EvalVideoRecorder(Node):
             'debug_overlay_source': self._debug_overlay_source_diagnostics(),
             'container': 'mp4',
             'started_at_wall_time': time.time(),
+            # Episode-start barrier bookkeeping.  'pending' means the recorder is
+            # holding frames; 'barrier' means the origin arrived and every stream
+            # starts at it; 'timeout_fail_open' means it never arrived and this
+            # episode's t=0 is NOT comparable with a barrier-aligned run;
+            # 'not_expected' means no task generator publishes an origin at all.
+            'episode_start_origin': 'pending' if self._episode_start_expected() else 'not_expected',
+            'episode_start_topic': self.episode_start_topic,
+            'pre_episode_start_held_frames': 0,
+            'video_streams_ready': False,
         }
         self.index['episodes'].append(self.current_episode_info)
         self._write_index()
@@ -2296,6 +2380,122 @@ class EvalVideoRecorder(Node):
         self._write_index()
         return True
 
+    def _episode_start_expected(self):
+        """Whether a task generator is publishing the episode time origin.
+
+        Derived from ``count_publishers`` on the episode-start topic rather than
+        from a configuration flag: a run whose task generator predates the
+        barrier must keep its old behaviour instead of holding frames forever,
+        and a run whose task generator does publish the origin must not be able
+        to skip the hold because an environment variable was forgotten.
+        """
+        if not self.episode_start_topic:
+            return False
+        try:
+            return int(self.count_publishers(self.episode_start_topic)) > 0
+        except Exception:
+            return False
+
+    def _announce_video_streams_ready(self):
+        """Tell the task generator that every enabled stream is past its warm-up.
+
+        This is the recorder's half of the episode-start barrier: without it the
+        task generator would have to guess how long the streams need, which is
+        exactly the blunt wall-clock guess that made ``sim_top_down.mp4`` start
+        after the pedestrians had finished walking.
+        """
+        if self.streams_ready_episode == self.current_episode:
+            return
+        self.streams_ready_episode = self.current_episode
+        self.streams_ready_wall_time = time.time()
+        self.current_episode_info['video_streams_ready_wall_time'] = self.streams_ready_wall_time
+        self.current_episode_info['video_streams_ready_after_sec'] = round(
+            self.streams_ready_wall_time - float(self.current_episode_info.get('started_at_wall_time') or 0.0), 3
+        )
+        self._streams_ready_pub.publish(Int16(data=int(self.current_episode)))
+
+    def _hold_frame_for_episode_start(self, now):
+        """Hold every stream's frame 0 until the episode time origin arrives.
+
+        All four streams share ``t = 0`` only if none of them writes before the
+        barrier passes.  Returning ``True`` means "this frame was consumed by the
+        hold"; the per-stream warm-up gates still run so their budgets drain and
+        the readiness announcement is honest.
+
+        The hold applies only *before* the origin.  Once the origin is seen this
+        returns ``False`` for the rest of the episode, so mid-episode behaviour --
+        including a corrupt sim_top_down frame not costing an ego frame -- is
+        exactly as it was before the barrier existed.
+        """
+        if self.episode_start_seen_episode == self.current_episode:
+            return False
+        if not self._episode_start_expected():
+            return False
+
+        # Drain the per-stream gates so readiness reflects the real state.
+        sim_top_down_state = 'disabled'
+        if self.sim_top_down_writer is not None:
+            if self.latest_sim_top_down is None or self.latest_sim_top_down_generation != self.reset_generation:
+                sim_top_down_state = 'no_post_reset_frame'
+            else:
+                sim_top_down_state, _frame = self._sim_top_down_gate()
+        # Recorded on every held frame so a barrier timeout is diagnosable from
+        # the artifact alone: it names the stream that never reached its gate.
+        self.current_episode_info['episode_start_hold_state'] = {
+            'ego': 'write' if self.ego_stream_open else 'unsettled',
+            'sim_top_down': sim_top_down_state,
+        }
+        if sim_top_down_state in ('write', 'disabled'):
+            self._announce_video_streams_ready()
+
+        held_deadline_exceeded = False
+        if self.streams_ready_wall_time > 0.0 and self.episode_start_wait_timeout_sec > 0.0:
+            held_deadline_exceeded = (
+                time.time() - self.streams_ready_wall_time
+            ) >= self.episode_start_wait_timeout_sec
+        if held_deadline_exceeded:
+            # Fail loud, not silent, and never hang: a missing episode origin
+            # must not cost the run its video.  The error is recorded in
+            # video_index.json so the artifact says the origin is unverified.
+            self.episode_start_seen_episode = self.current_episode
+            self.current_episode_info['episode_start_origin'] = 'timeout_fail_open'
+            self.current_episode_info['episode_start_wait_timeout_sec'] = self.episode_start_wait_timeout_sec
+            self._record_error(
+                f'{EPISODE_START_TIMEOUT_PREFIX} on {self.episode_start_topic}: streams were ready '
+                f'{time.time() - self.streams_ready_wall_time:.1f}s ago but no episode origin was published; '
+                f'recording anyway from this frame. t=0 of every stream in episode {self.current_episode} '
+                'is NOT the barrier and must not be compared against a barrier-aligned run.'
+            )
+            self._write_index()
+            return False
+
+        self.pre_episode_start_held_frames += 1
+        self.current_episode_info['pre_episode_start_held_frames'] = int(self.pre_episode_start_held_frames)
+        self.current_episode_info['video_streams_ready'] = self.streams_ready_episode == self.current_episode
+        self.current_episode_info['last_frame_wall_time'] = time.time()
+        self.last_frame_time = now
+        self._write_index()
+        return True
+
+    def _on_episode_start(self, msg: Int16):
+        """Adopt the task generator's episode time origin as this episode's t=0."""
+        episode = int(getattr(msg, 'data', -1))
+        if episode != self.current_episode:
+            return
+        if self.episode_start_seen_episode == episode:
+            return
+        self.episode_start_seen_episode = episode
+        # The drawn trajectory shares the origin too: poses collected while the
+        # streams were converging belong to startup, not to the episode.  Keep
+        # the current pose so the first drawn frame still has a marker.
+        if self.trajectory_world:
+            self.trajectory_world = self.trajectory_world[-1:]
+        if self.current_episode_info is not None:
+            self.current_episode_info['episode_start_origin'] = 'barrier'
+            self.current_episode_info['episode_start_wall_time'] = time.time()
+            self.current_episode_info['pre_episode_start_held_frames'] = int(self.pre_episode_start_held_frames)
+            self._write_index()
+
     def _maybe_write_frame(self):
         if self.latest_rgb is None or not self._ensure_episode():
             return
@@ -2309,6 +2509,8 @@ class EvalVideoRecorder(Node):
         if not self.ego_stream_open and self._skip_unsettled_ego_frame(ego_frame, now):
             return
         self.ego_stream_open = True
+        if self._hold_frame_for_episode_start(now):
+            return
         top_frame = self._render_top_down()
         self.ego_writer.write(ego_frame)
         self.top_writer.write(top_frame)
@@ -2346,41 +2548,8 @@ class EvalVideoRecorder(Node):
             and self.latest_sim_top_down is not None
             and self.latest_sim_top_down_generation == self.reset_generation
         ):
-            # Isaac's top-down Replicator stream can emit pre-settled or
-            # texture-cache frames right after task_reset while the camera/render
-            # product is being positioned.  Do not let those frames become t=0
-            # of sim_top_down.mp4; the visual validator samples t=0 as the
-            # episode baseline and expects an actual top-down camera view.
-            sim_started_at = float(self.current_episode_info.get('started_at_wall_time') or 0.0)
-            if time.time() - sim_started_at < self.sim_top_down_warmup_sec:
-                self.sim_top_down_skipped_frame_count += 1
-                self.current_episode_info['sim_top_down_warmup_skipped'] = True
-                self.current_episode_info['sim_top_down_warmup_sec'] = self.sim_top_down_warmup_sec
-                self.current_episode_info['sim_top_down_skipped_frames'] = int(self.sim_top_down_skipped_frame_count)
-                self.current_episode_info['last_frame_wall_time'] = time.time()
-                self.last_frame_time = now
-                self._write_index()
-                return
-            sim_top_down_frame = np.asarray(self.latest_sim_top_down, dtype=np.uint8)
-            if self.sim_top_down_post_warmup_discard_count < self.sim_top_down_post_warmup_discard_frames:
-                self.sim_top_down_skipped_frame_count += 1
-                self.sim_top_down_post_warmup_discard_count += 1
-                self.current_episode_info['sim_top_down_post_warmup_discard_frames'] = int(
-                    self.sim_top_down_post_warmup_discard_frames
-                )
-                self.current_episode_info['sim_top_down_post_warmup_discarded_frames'] = int(
-                    self.sim_top_down_post_warmup_discard_count
-                )
-                self.current_episode_info['sim_top_down_skipped_frames'] = int(self.sim_top_down_skipped_frame_count)
-                self.current_episode_info['last_frame_wall_time'] = time.time()
-                self.last_frame_time = now
-                self._write_index()
-                return
-            if _looks_like_corrupt_sim_top_down(sim_top_down_frame):
-                self.sim_top_down_skipped_frame_count += 1
-                self.sim_top_down_corrupt_skip_count += 1
-                self.current_episode_info['sim_top_down_corrupt_skipped_frames'] = int(self.sim_top_down_corrupt_skip_count)
-                self.current_episode_info['sim_top_down_skipped_frames'] = int(self.sim_top_down_skipped_frame_count)
+            verdict, sim_top_down_frame = self._sim_top_down_gate()
+            if verdict != 'write':
                 self.current_episode_info['last_frame_wall_time'] = time.time()
                 self.last_frame_time = now
                 self._write_index()
@@ -2390,6 +2559,51 @@ class EvalVideoRecorder(Node):
         self.current_episode_info['last_frame_wall_time'] = time.time()
         self.last_frame_time = now
         self._write_index()
+
+    def _sim_top_down_gate(self):
+        """Run the sim_top_down warm-up/discard/content gates for one frame.
+
+        Isaac's top-down Replicator stream can emit pre-settled or texture-cache
+        frames right after task_reset while the camera/render product is being
+        positioned.  Do not let those frames become t=0 of sim_top_down.mp4; the
+        visual validator samples t=0 as the episode baseline and expects an
+        actual top-down camera view.
+
+        Extracted verbatim from the write path so the pre-episode-start hold can
+        run exactly the same gates -- the barrier must know when this stream would
+        start writing, and there must be only one implementation of that answer.
+
+        Returns:
+            ``(verdict, frame)`` where ``verdict`` is ``'write'``, ``'warmup'``,
+            ``'discard'`` or ``'corrupt'``.  Counters are updated as a side
+            effect, exactly as before; the caller owns the index write.
+        """
+        sim_started_at = float(self.current_episode_info.get('started_at_wall_time') or 0.0)
+        if time.time() - sim_started_at < self.sim_top_down_warmup_sec:
+            self.sim_top_down_skipped_frame_count += 1
+            self.current_episode_info['sim_top_down_warmup_skipped'] = True
+            self.current_episode_info['sim_top_down_warmup_sec'] = self.sim_top_down_warmup_sec
+            self.current_episode_info['sim_top_down_skipped_frames'] = int(self.sim_top_down_skipped_frame_count)
+            return 'warmup', None
+        sim_top_down_frame = np.asarray(self.latest_sim_top_down, dtype=np.uint8)
+        if self.sim_top_down_post_warmup_discard_count < self.sim_top_down_post_warmup_discard_frames:
+            self.sim_top_down_skipped_frame_count += 1
+            self.sim_top_down_post_warmup_discard_count += 1
+            self.current_episode_info['sim_top_down_post_warmup_discard_frames'] = int(
+                self.sim_top_down_post_warmup_discard_frames
+            )
+            self.current_episode_info['sim_top_down_post_warmup_discarded_frames'] = int(
+                self.sim_top_down_post_warmup_discard_count
+            )
+            self.current_episode_info['sim_top_down_skipped_frames'] = int(self.sim_top_down_skipped_frame_count)
+            return 'discard', None
+        if _looks_like_corrupt_sim_top_down(sim_top_down_frame):
+            self.sim_top_down_skipped_frame_count += 1
+            self.sim_top_down_corrupt_skip_count += 1
+            self.current_episode_info['sim_top_down_corrupt_skipped_frames'] = int(self.sim_top_down_corrupt_skip_count)
+            self.current_episode_info['sim_top_down_skipped_frames'] = int(self.sim_top_down_skipped_frame_count)
+            return 'corrupt', None
+        return 'write', sim_top_down_frame
 
     def _on_task_reset(self, msg: Int16):
         episode = int(msg.data)
@@ -2602,7 +2816,7 @@ raise SystemExit(exit_code)
             str(top_down_size_px),
             str(top_down_window_m),
         ],
-        env=env,
+        env=recorder_env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
