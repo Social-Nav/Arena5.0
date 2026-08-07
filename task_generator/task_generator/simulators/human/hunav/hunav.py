@@ -43,6 +43,7 @@ from task_generator.simulators.human.dummy import DummyHumanSimulator
 from task_generator.simulators.sim import BaseSim
 
 from . import HunavDynamicObstacle
+from .goal_traversal import GoalTraversal, effective_traversal, parse_goal_traversal
 
 
 def _create_robot_message():
@@ -312,6 +313,13 @@ class HunavHumanSimulator(
         # window, so the review video never contained a walking pedestrian.
         self._pedestrian_clock, self._pedestrian_gate_source = self._resolve_pedestrian_clock()
 
+        # Run-level pedestrian traversal default.  Empty/absent means "use the
+        # value in configs/hunav/default.yaml"; a per-pedestrian scenario key
+        # still wins over this.  Resolved once, up front, so an invalid value
+        # fails at start-up rather than silently reverting to the old behaviour
+        # after the GPU slot has been spent.
+        self._goal_traversal_default = self._resolve_goal_traversal_default()
+
         self._logger.debug("Collections initialized")
 
         self._obstacle_subscriber = self.node.create_subscription(
@@ -364,6 +372,95 @@ class HunavHumanSimulator(
         local = PedestrianEpisodeClock()
         local.release()
         return local, 'local_ungated'
+
+    def _resolve_goal_traversal_default(self) -> "GoalTraversal | None":
+        """Read the run-level ``pedestrian_goal_traversal`` launch parameter.
+
+        Returns ``None`` when the run does not express an opinion, which leaves
+        ``configs/hunav/default.yaml`` in charge.  An unrecognised value raises: a
+        mis-spelled opt-in that quietly produced a run with the old pedestrian
+        behaviour would be indistinguishable from one never switched on.
+
+        DELIVERY CROSS-CHECK, and it is the load-bearing part.  An absent ROS
+        parameter and a deliberately empty one are indistinguishable here, so this
+        method alone cannot tell "no mode requested" from "a mode was requested
+        and did not arrive".  That gap cost an entire evaluation slot: the
+        evaluator passed ``pedestrian_goal_traversal:=reciprocate``,
+        ``arena.launch.py`` declared and forwarded it, and an in-process
+        capability probe confirmed the build supports the behaviour -- yet the
+        value never reached this node, because the *included* launch description
+        neither declared it nor listed it in the node's parameter allowlist.
+        Every check that ran sat on the producer's side of a boundary the value
+        never crossed, so the run completed looking healthy while reproducing
+        present-day pedestrian behaviour.
+
+        The evaluator therefore ALSO exports the requested mode as
+        ``ARENA_EVAL_PEDESTRIAN_GOAL_TRAVERSAL``.  An environment variable crosses
+        process boundaries without launch-argument plumbing, so the two channels
+        are independent and can be required to agree.  If the environment says a
+        mode was requested and the ROS parameter did not arrive, that is a
+        delivery failure and this raises instead of silently falling back.
+        """
+        requested_env = str(
+            os.environ.get('ARENA_EVAL_PEDESTRIAN_GOAL_TRAVERSAL', '')).strip()
+
+        raw = ''
+        param_error = None
+        try:
+            raw = self.node.rosparam[str].get('pedestrian_goal_traversal', '')
+        except Exception as e:  # parameter server unavailable in some harnesses
+            param_error = e
+        raw = str(raw).strip()
+
+        if requested_env and not raw:
+            raise RuntimeError(
+                'pedestrian traversal mode was NOT DELIVERED to the task generator. '
+                f'The evaluator requested {requested_env!r} via '
+                'ARENA_EVAL_PEDESTRIAN_GOAL_TRAVERSAL, but the ROS parameter '
+                "'pedestrian_goal_traversal' did not arrive"
+                + (f' ({param_error!r})' if param_error is not None else ' (empty or absent)')
+                + '. Refusing to run: pedestrians would silently behave as they do '
+                'today and every artifact would look healthy. Check that '
+                'task_generator/launch/task_generator.launch.py BOTH declares '
+                'pedestrian_goal_traversal AND lists it in the task generator '
+                "node's `parameters` allowlist -- forwarding it from "
+                'arena.launch.py alone crosses no boundary.'
+            )
+
+        if requested_env and raw and raw.lower() != requested_env.lower():
+            raise RuntimeError(
+                'pedestrian traversal mode was ALTERED in transit: the evaluator '
+                f'requested {requested_env!r} but this node received {raw!r}.'
+            )
+
+        if param_error is not None:
+            self._logger.warn(
+                f'Could not read pedestrian_goal_traversal parameter ({param_error!r}); '
+                'falling back to configs/hunav/default.yaml.'
+            )
+            return None
+
+        if not raw:
+            self._logger.warn(
+                '[PedestrianTraversal] run-level pedestrian_goal_traversal not set; '
+                'using configs/hunav/default.yaml '
+                f'({HunavDynamicObstacle._default.goal_traversal.value})'
+            )
+            return None
+
+        mode = parse_goal_traversal(raw)
+        self._logger.warn(
+            f'[PedestrianTraversal] run-level default = {mode.value} '
+            f'(cyclic_goals wire bit {mode.wire_cyclic_goals}); delivery cross-check '
+            f'OK (env={requested_env or "unset"}, param={raw}). '
+            + (
+                'Pedestrians reciprocate 0->N->0 for the whole episode; social '
+                'metrics are NOT comparable with once-mode runs.'
+                if mode is GoalTraversal.RECIPROCATE
+                else 'Per-pedestrian scenario keys still take precedence.'
+            )
+        )
+        return mode
 
     def _pedestrian_motion_released(self) -> bool:
         """Whether HuNav may advance its behaviour trees for this episode."""
@@ -676,11 +773,36 @@ class HunavHumanSimulator(
                         f"Preparing to spawn dynamic obstacle '{obstacle.name}' with ID {unique_id}"
                     )
                     hunav_obstacle = HunavDynamicObstacle.from_dynamic_obstacle(
-                        obstacle
+                        obstacle,
+                        default_goal_traversal=self._goal_traversal_default,
                     )
                     hunav_obstacle = attrs.evolve(hunav_obstacle, id=unique_id)
 
                     agent_msg = hunav_obstacle.to_msg()
+
+                    # Per-pedestrian Stage-0 evidence: the mode resolved for THIS
+                    # agent, the goal-list length actually transmitted, and --
+                    # crucially -- what the agent will ACTUALLY do, which is not
+                    # always what was asked for. A single-waypoint agent accepts
+                    # and reports `reciprocate` yet walks once and stands still,
+                    # so stating the effective behaviour is the difference
+                    # between a technically discoverable fact and a practically
+                    # silent one.
+                    effective, why = effective_traversal(
+                        hunav_obstacle.goal_traversal, len(hunav_obstacle.goals)
+                    )
+                    degraded = effective is not hunav_obstacle.goal_traversal
+                    line = (
+                        f'[PedestrianTraversal] agent {hunav_obstacle.name!r} '
+                        f'id={unique_id} '
+                        f'requested={hunav_obstacle.goal_traversal.value} '
+                        f'effective={effective.value} '
+                        f'authored_waypoints={len(hunav_obstacle.goals)} '
+                        f'transmitted_goals={len(agent_msg.goals)} '
+                        f'cyclic_goals={agent_msg.cyclic_goals} :: {why}'
+                    )
+                    # Louder when the request could not be honoured.
+                    (self._logger.error if degraded else self._logger.warn)(line)
 
                     # Add to container - NO ComputeAgents call here!
                     self._get_agents_container.agents.append(agent_msg)  # type: ignore

@@ -300,6 +300,17 @@ def generate_launch_description():
         name="episode_start_delay_sec",
         default_value="0.0",
     )
+    # Must be declared HERE, not only in arena.launch.py.  A launch argument
+    # forwarded into this included description is inert unless this file BOTH
+    # declares it AND lists it in the task generator node's `parameters`
+    # allowlist below.  Forwarding alone crosses no boundary, and the omission is
+    # silent: the node's `rosparam[str].get(...)` simply returns its default, the
+    # run completes, and pedestrians behave exactly as they did before.  That is
+    # how one case03 slot was spent on a void run.
+    pedestrian_goal_traversal = LaunchArgument(
+        name="pedestrian_goal_traversal",
+        default_value="",
+    )
 
     map_server_node = launch.actions.IncludeLaunchDescription(
         launch.launch_description_sources.PythonLaunchDescriptionSource(
@@ -446,6 +457,7 @@ def generate_launch_description():
                 **require_human_states_ready.param(bool),
                 **human_states_ready_timeout_sec.param(float),
                 **episode_start_delay_sec.param(float),
+                **pedestrian_goal_traversal.str_param,
             },
             {"use_sim_time": False},
             parameter_file.substitution,

@@ -404,6 +404,18 @@ def generate_launch_description():
         default_value='0.0',
         description='Additional post-reset delay before publishing task_reset and releasing navigation goals.'
     )
+    pedestrian_goal_traversal = LaunchArgument(
+        name='pedestrian_goal_traversal',
+        default_value='',
+        description=(
+            'Run-level pedestrian waypoint traversal mode: once (walk 0->N then stop, '
+            'the default), cyclic (return to waypoint 0 and repeat forward), or '
+            'reciprocate (ping-pong 0->N->0->N for the whole episode). Empty means use '
+            'configs/hunav/default.yaml. Per-pedestrian scenario keys take precedence. '
+            'reciprocate changes scene dynamics, so its social metrics are NOT '
+            'comparable with once-mode runs.'
+        )
+    )
 
     def create_task_generators(
         context: launch.LaunchContext,
@@ -571,6 +583,7 @@ def generate_launch_description():
                     **require_human_states_ready.dict,
                     **human_states_ready_timeout_sec.dict,
                     **episode_start_delay_sec.dict,
+                    **pedestrian_goal_traversal.dict,
                 }.items(),
             )
         ])

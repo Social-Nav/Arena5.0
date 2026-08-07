@@ -724,6 +724,152 @@ def _topic_publisher_count(command_result: dict) -> int | None:
     return None
 
 
+_PEDESTRIAN_TRAVERSAL_PROBE = r'''
+import json, sys
+from ament_index_python.packages import get_package_share_directory
+requested = sys.argv[1]
+out = {"requested": requested}
+try:
+    from task_generator.simulators.human.hunav.goal_traversal import (
+        expand_goal_sequence, parse_goal_traversal,
+    )
+    from task_generator.simulators.human.hunav import goal_traversal as _gt
+    out["goal_traversal_module"] = _gt.__file__
+    mode = parse_goal_traversal(requested)
+    out["resolved"] = mode.value
+
+    # Prove the BEHAVIOUR, not just that the name parses. A build that knows the
+    # word "reciprocate" but does not mirror would otherwise pass this gate.
+    class _P:
+        def __init__(s, x, y): s.x, s.y = float(x), float(y)
+    route = [_P(0, 0), _P(6, 0), _P(6, 6)]
+    goals, wire = expand_goal_sequence(route, mode)
+    out["transmitted_len"] = len(goals)
+    out["wire_cyclic_goals"] = bool(wire)
+    expected_len = {"once": 3, "cyclic": 3, "reciprocate": 4}[mode.value]
+    expected_wire = mode.value != "once"
+    out["behaviour_ok"] = (len(goals) == expected_len and bool(wire) is expected_wire)
+    out["expected_transmitted_len"] = expected_len
+except Exception as e:
+    out["error"] = f"{type(e).__name__}: {e}"
+    out["behaviour_ok"] = False
+
+# THE WHOLE LAUNCH CHAIN, not just its first link.  The original version of this
+# probe checked only that arena.launch.py declared and forwarded the argument.
+# Both were true, and the value still never arrived, because forwarding into an
+# INCLUDED launch description does nothing unless that description also declares
+# the argument AND lists it in the node's `parameters` allowlist.  Checking one
+# end of a boundary is what cost an evaluation slot, so all three sites are
+# checked here by name.
+try:
+    launch_file = get_package_share_directory("arena_bringup") + "/launch/arena.launch.py"
+    src = open(launch_file).read()
+    out["launch_file"] = launch_file
+    out["launch_declares_arg"] = "name='pedestrian_goal_traversal'" in src
+    out["launch_forwards_arg"] = "**pedestrian_goal_traversal.dict" in src.replace(" ", "")
+except Exception as e:
+    out["launch_error"] = f"{type(e).__name__}: {e}"
+    out["launch_declares_arg"] = False
+    out["launch_forwards_arg"] = False
+
+try:
+    tg_launch = (get_package_share_directory("task_generator")
+                 + "/launch/task_generator.launch.py")
+    tg = open(tg_launch).read()
+    tgc = tg.replace(" ", "")
+    out["task_generator_launch_file"] = tg_launch
+    out["included_declares_arg"] = ('name="pedestrian_goal_traversal"' in tgc
+                                    or "name='pedestrian_goal_traversal'" in tgc)
+    out["included_parameterises_arg"] = "**pedestrian_goal_traversal.str_param" in tgc
+except Exception as e:
+    out["included_error"] = f"{type(e).__name__}: {e}"
+    out["included_declares_arg"] = False
+    out["included_parameterises_arg"] = False
+
+print(json.dumps(out))
+'''
+
+
+def _run_pedestrian_traversal_preflight(
+    env: dict[str, str],
+    *,
+    requested: str,
+    python_bin: str = sys.executable,
+) -> dict:
+    """Prove the build about to run actually honours the requested pedestrian mode.
+
+    Why this is a hard gate and not a checklist item: `HunavDynamicObstacle._default`
+    is built from the *installed* `share/arena_bringup/configs/hunav/default.yaml`,
+    and the task generator runs the *installed* `task_generator`. If either is stale,
+    the requested mode is silently ignored and resolves to `once` -- so the run
+    completes, pedestrians behave exactly as they always have, every artifact looks
+    clean, and the natural conclusion is that the feature does not work. A silent
+    no-op with a confident-looking outcome is the most expensive failure shape in
+    this project's history, so the requester proves the capability is present
+    *before* Isaac starts rather than inferring it afterwards.
+
+    The probe checks behaviour rather than vocabulary: it expands a 3-waypoint route
+    and requires 4 transmitted goals for `reciprocate`. A build that merely knows the
+    word would fail.
+    """
+    if not str(requested).strip():
+        return {
+            'pass': None,
+            'skipped': True,
+            'reason': 'no run-level pedestrian_goal_traversal requested; '
+                      'configs/hunav/default.yaml is in charge',
+        }
+
+    try:
+        result = subprocess.run(
+            [python_bin, '-c', _PEDESTRIAN_TRAVERSAL_PROBE, str(requested)],
+            env=env, capture_output=True, text=True, timeout=120,
+        )
+    except Exception as e:
+        return {'pass': False, 'reason': f'probe failed to run: {type(e).__name__}: {e}'}
+
+    payload: dict = {}
+    for line in (result.stdout or '').splitlines():
+        line = line.strip()
+        if line.startswith('{'):
+            try:
+                payload = json.loads(line)
+            except Exception:
+                continue
+
+    report = {
+        'command': [python_bin, '-c', '<pedestrian_traversal_probe>', str(requested)],
+        'returncode': result.returncode,
+        'stdout': _truncate_preflight_output(result.stdout),
+        'stderr': _truncate_preflight_output(result.stderr),
+        **payload,
+    }
+
+    resolved = str(payload.get('resolved') or '')
+    checks = {
+        'module_importable': 'error' not in payload,
+        'resolved_matches_requested': resolved == str(requested).strip(),
+        'behaviour_ok': bool(payload.get('behaviour_ok')),
+        'launch_declares_arg': bool(payload.get('launch_declares_arg')),
+        'launch_forwards_arg': bool(payload.get('launch_forwards_arg')),
+        # The two that the void run would have failed:
+        'included_declares_arg': bool(payload.get('included_declares_arg')),
+        'included_parameterises_arg': bool(payload.get('included_parameterises_arg')),
+    }
+    report['checks'] = checks
+    report['pass'] = result.returncode == 0 and all(checks.values())
+    if not report['pass']:
+        failed = [k for k, v in checks.items() if not v]
+        report['reason'] = (
+            f'requested pedestrian traversal mode {requested!r} is NOT supported by '
+            f'the build that would run (failed: {failed}). The mode would be '
+            'silently ignored and the run would reproduce present-day pedestrian '
+            'behaviour while appearing to succeed. Rebuild and re-install '
+            'arena_bringup and task_generator, then retry.'
+        )
+    return report
+
+
 def _run_external_internnav_preflight(
     env: dict[str, str],
     *,
@@ -3208,6 +3354,21 @@ def main() -> int:
     )
     parser.add_argument('--sim', default='isaac_eval')
     parser.add_argument('--human', default='hunav')
+    parser.add_argument(
+        '--pedestrian-goal-traversal',
+        default='',
+        choices=['', 'once', 'cyclic', 'reciprocate'],
+        help=(
+            'Run-level pedestrian waypoint traversal mode. "" (default) uses '
+            'configs/hunav/default.yaml, which ships "once": each pedestrian walks '
+            'waypoint 0->N and then stands still for the rest of the episode. '
+            '"cyclic" returns to waypoint 0 and repeats in the same direction. '
+            '"reciprocate" ping-pongs 0->N->0->N indefinitely. Pedestrians that move '
+            'throughout the episode change scene dynamics, so social metrics from a '
+            '"reciprocate" run are NOT comparable with "once"-mode runs; the effective '
+            'value is recorded in run_manifest.yaml.'
+        ),
+    )
     parser.add_argument('--world', default='map_empty')
     parser.add_argument('--robot', default='jackal')
     parser.add_argument('--local-planner', default='dual_vln')
@@ -3513,6 +3674,10 @@ def main() -> int:
         f'require_human_states_ready:={str(args.human == "hunav").lower()}',
         'human_states_ready_timeout_sec:=20.0',
         'episode_start_delay_sec:=1.0',
+        # Empty means "leave configs/hunav/default.yaml in charge".  A non-empty
+        # value changes how long pedestrians keep walking, which changes scene
+        # dynamics, so it is also recorded under `parameters` below.
+        f'pedestrian_goal_traversal:={args.pedestrian_goal_traversal}',
         f'vln_instruction:={args.vln_instruction}',
         f'dual_vln_mode:={args.dual_vln_mode}',
         f'dual_vln_device:={args.dual_vln_device}',
@@ -3599,6 +3764,18 @@ def main() -> int:
         'parameters': {
             'sim': args.sim,
             'human': args.human,
+            # Which pedestrian traversal regime produced the numbers in this run
+            # directory.  Recorded so a future reader never has to do archaeology
+            # to find out: 'once' pedestrians walk 0.9-6% of the episode, whereas
+            # 'cyclic'/'reciprocate' pedestrians move throughout, and social
+            # metrics are NOT comparable across those regimes.  '' means the run
+            # did not override configs/hunav/default.yaml, so the effective mode
+            # is that file's `goal_traversal` -- the per-agent value that was
+            # actually applied is logged by HuNav as '[PedestrianTraversal]'.
+            'pedestrian_goal_traversal': args.pedestrian_goal_traversal,
+            'pedestrian_goal_traversal_source': (
+                'run_argument' if args.pedestrian_goal_traversal else 'hunav_default_yaml'
+            ),
             'world': args.world,
             'robot': args.robot,
             'local_planner': args.local_planner,
@@ -3798,6 +3975,16 @@ def main() -> int:
     env['ARENA_EVAL_INTERNNAV_TRACE_PATH'] = internnav_trace_path
     env['ARENA_INTERNNAV_EXTERNAL_SERVER'] = '1' if args.internnav_external_server else '0'
     env['ARENA_INTERNNAV_DIRECT_CMD_VEL'] = '1' if args.internnav_direct_cmd_vel else '0'
+    # SECOND, INDEPENDENT DELIVERY CHANNEL for the pedestrian traversal mode.
+    # The launch argument alone was not enough: it reached arena.launch.py and was
+    # forwarded, but the included task_generator launch description neither declared
+    # nor parameterised it, so the value silently never reached the node and one
+    # evaluation slot produced a healthy-looking run of present-day behaviour. An
+    # environment variable crosses process boundaries without launch-argument
+    # plumbing, so HuNav can compare the two and REFUSE TO RUN when the request did
+    # not arrive. Exported unconditionally (empty when nothing is requested) so that
+    # 'not requested' and 'requested but undelivered' are distinguishable there.
+    env['ARENA_EVAL_PEDESTRIAN_GOAL_TRAVERSAL'] = str(args.pedestrian_goal_traversal or '')
     if args.dual_vln_python_executable:
         # The InternNav adapter itself looks for these variables when deciding
         # whether to launch the heavy model in a separate Python environment.
@@ -3807,6 +3994,37 @@ def main() -> int:
         env['ARENA_VLN_MODEL_PYTHON'] = str(args.dual_vln_python_executable)
         env['ARENA_INTERNNAV_PYTHON'] = str(args.dual_vln_python_executable)
         env['ARENA_PYTHON'] = str(args.dual_vln_python_executable)
+
+    # Hard precondition, checked before Isaac starts: if this run asked for a
+    # pedestrian traversal mode, the build that is about to run must actually
+    # honour it. A stale install would ignore the request, resolve to `once`, and
+    # produce a clean-looking run that reproduces present-day pedestrian
+    # behaviour -- indistinguishable from "the feature does not work".
+    pedestrian_traversal_preflight = _run_pedestrian_traversal_preflight(
+        env, requested=args.pedestrian_goal_traversal
+    )
+    manifest['result']['pedestrian_traversal_preflight'] = pedestrian_traversal_preflight
+    _write_yaml(manifest_path, manifest)
+    if pedestrian_traversal_preflight.get('pass') is False:
+        print(
+            '[internnav_eval] ABORT: '
+            + str(pedestrian_traversal_preflight.get('reason') or
+                  'pedestrian traversal preflight failed'),
+            file=sys.stderr,
+        )
+        manifest['result'].update(
+            {
+                'launch_returncode': None,
+                'metrics_returncode': None,
+                'social_metrics_returncode': None,
+                'vln_task_metrics_returncode': None,
+                'artifact_validation_returncode': None,
+                'timed_out': False,
+                'end_reason': 'pedestrian_traversal_preflight_failed',
+            }
+        )
+        _write_yaml(manifest_path, manifest)
+        return 2
 
     if args.internnav_external_server and not args.skip_external_server_preflight:
         command_service_candidates = _external_command_service_candidates(robot_command_service, args.dual_vln_status_topic)

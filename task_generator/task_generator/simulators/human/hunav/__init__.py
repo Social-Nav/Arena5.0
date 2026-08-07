@@ -13,6 +13,13 @@ from arena_simulation_setup.tree.assets.Pedestrian import PedestrianIdentifier
 
 from task_generator.shared import DynamicObstacle, Pose, Position
 
+from .goal_traversal import (
+    GoalTraversal,
+    expand_goal_sequence,
+    parse_goal_traversal,
+    resolve_goal_traversal,
+)
+
 
 @attrs.define
 class PositionH(Position):
@@ -149,10 +156,33 @@ class HunavDynamicObstacle:
     goal_radius: float
     closest_obs: list
 
+    #: How the waypoint list is consumed.  ``cyclic_goals`` above is retained
+    #: because it is the wire field name and the legacy config spelling; this
+    #: field is the semantic one and is what ``to_msg`` acts on.  See
+    #: ``goal_traversal.py`` for why a third state needed a named mode rather
+    #: than a second boolean.
+    goal_traversal: GoalTraversal = attrs.field(
+        default=GoalTraversal.ONCE,
+        converter=parse_goal_traversal,
+    )
+
     _default: typing.ClassVar["HunavDynamicObstacle"]
 
     @classmethod
-    def from_dynamic_obstacle(cls, obj: DynamicObstacle, extra: dict | None = None) -> "HunavDynamicObstacle":
+    def from_dynamic_obstacle(
+        cls,
+        obj: DynamicObstacle,
+        extra: dict | None = None,
+        default_goal_traversal: "GoalTraversal | str | None" = None,
+    ) -> "HunavDynamicObstacle":
+        """Build a HuNav agent from a scenario entity.
+
+        ``default_goal_traversal`` is the *run-level* traversal default (from a
+        launch parameter).  It is a fallback, not an override: a scenario that
+        names ``goal_traversal`` or ``cyclic_goals`` for a specific pedestrian
+        still wins, because the more specific layer should not be silently
+        overruled by a run-wide switch.
+        """
         if extra is None:
             extra = {}
         extra = {**obj.extra, **extra}
@@ -188,6 +218,20 @@ class HunavDynamicObstacle:
         if abs(yaw) > math.tau:
             yaw = math.radians(yaw)
 
+        # Per-pedestrian `goal_traversal` > per-pedestrian legacy `cyclic_goals`
+        # > run-level default > config default.  `.get(k)` returning None means
+        # the layer said nothing; `cyclic_goals: false` is an opinion, not
+        # silence, so it still pins ONCE.
+        goal_traversal = resolve_goal_traversal(
+            explicit=extra.get('goal_traversal'),
+            legacy_cyclic_goals=extra.get('cyclic_goals'),
+            fallback=(
+                default_goal_traversal
+                if default_goal_traversal is not None
+                else cls._default.goal_traversal
+            ),
+        )
+
         return cls(
             name=obj.name,
             init_pose=PositionH(
@@ -206,7 +250,8 @@ class HunavDynamicObstacle:
             angular_vel=extra.get('angular_vel', cls._default.angular_vel),
             behavior=behavior,
             behavior_tree=behavior_tree,
-            cyclic_goals=extra.get('cyclic_goals', cls._default.cyclic_goals),
+            cyclic_goals=goal_traversal.wire_cyclic_goals,
+            goal_traversal=goal_traversal,
             goal_radius=extra.get('goal_radius', cls._default.goal_radius),
             closest_obs=[],
             extra=extra,
@@ -240,25 +285,44 @@ class HunavDynamicObstacle:
 
         # Set goals
         agent_msg.goal_radius = self.goal_radius
-        agent_msg.cyclic_goals = self.cyclic_goals
+
+        # `cyclic_goals` is the wire field and `goal_traversal` is the semantic
+        # one; they must agree or somebody has evolved one without the other and
+        # their request would be silently dropped here.  Fail loudly instead.
+        if bool(self.cyclic_goals) != self.goal_traversal.wire_cyclic_goals:
+            raise ValueError(
+                f'agent {self.name!r}: cyclic_goals={self.cyclic_goals!r} contradicts '
+                f'goal_traversal={self.goal_traversal.value!r} (which implies '
+                f'cyclic_goals={self.goal_traversal.wire_cyclic_goals!r}). '
+                'Set goal_traversal; cyclic_goals is derived from it.'
+            )
+
         if self.goals:
-            agent_msg.goals = self.goals.as_poses()
+            # Reciprocation mirrors the AUTHORED route.
+            transmitted, wire_cyclic_goals = expand_goal_sequence(
+                list(self.goals), self.goal_traversal
+            )
         else:
-            # Default goals if none exist
-            goals = [
-                (-3.133759, -4.166653, 1.250000),
-                (0.997901, -4.131655, 1.250000),
-                (-0.227549, -20.187146, 1.250000)
+            # Pre-existing fallback for an agent with no authored waypoints.
+            # These Positions serialise to exactly the Poses the previous literal
+            # built (z defaults to 0.0), so `once` and `cyclic` are unchanged here.
+            #
+            # The mirror is deliberately NOT applied to this list.  There is no
+            # authored route to reciprocate over -- these three coordinates are a
+            # hardcoded leftover, not something any scenario asked for -- and
+            # ping-ponging a route nobody wrote would be a surprising thing to
+            # infer from `reciprocate`.  So on this path `reciprocate` behaves as
+            # `cyclic`.  It stays visible because the per-agent log line reports
+            # authored_waypoints=0 alongside transmitted_goals=3.
+            transmitted = [
+                Position(x=-3.133759, y=-4.166653),
+                Position(x=0.997901, y=-4.131655),
+                Position(x=-0.227549, y=-20.187146),
             ]
-            agent_msg.goals = [
-                geometry_msgs.msg.Pose(
-                    position=geometry_msgs.msg.Point(
-                        x=x,
-                        y=y
-                    )
-                )
-                for x, y, _ in goals
-            ]
+            wire_cyclic_goals = self.goal_traversal.wire_cyclic_goals
+
+        agent_msg.cyclic_goals = wire_cyclic_goals
+        agent_msg.goals = [Pose(p).to_msg() for p in transmitted]
 
         return agent_msg
 
@@ -269,6 +333,15 @@ class HunavDynamicObstacle:
             waypoints = Goals.parse(obj)
         else:
             waypoints = cls._default.goals
+
+        # Global default layer.  `goal_traversal` wins over the legacy
+        # `cyclic_goals` boolean when both are present, so an operator can leave
+        # the old key in place while switching modes.
+        goal_traversal = resolve_goal_traversal(
+            explicit=obj.get('goal_traversal'),
+            legacy_cyclic_goals=obj.get('cyclic_goals'),
+            fallback=cls._default.goal_traversal,
+        )
 
         return cls(
             name=obj.get('name', cls._default.name),
@@ -293,7 +366,8 @@ class HunavDynamicObstacle:
             radius=obj.get('radius', cls._default.radius),
             linear_vel=cls._default.linear_vel,
             angular_vel=cls._default.angular_vel,
-            cyclic_goals=obj.get('cyclic_goals', cls._default.cyclic_goals),
+            cyclic_goals=goal_traversal.wire_cyclic_goals,
+            goal_traversal=goal_traversal,
             goal_radius=obj.get('goal_radius', cls._default.goal_radius),
             closest_obs=[],
         )
@@ -357,6 +431,7 @@ HunavDynamicObstacle._default = HunavDynamicObstacle(
     behavior=HunavDynamicObstacle.Behavior._default,
     behavior_tree='default.xml',
     cyclic_goals=False,
+    goal_traversal=GoalTraversal.ONCE,
     goal_radius=0.,
     closest_obs=[],
 )
