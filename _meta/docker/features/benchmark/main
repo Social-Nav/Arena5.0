@@ -1,0 +1,655 @@
+#!/usr/bin/env bash
+#
+# Arena benchmark entry point.
+#
+# One command that takes a clean checkout to a running evaluation.  It does not
+# reimplement anything: every step below delegates to the machinery that already
+# produces the benchmark artifacts.  This file exists so that a newcomer does
+# not have to know which of the three containers a given command belongs in.
+#
+# Convention: this is an Arena *feature*, dispatched by upstream's own
+# `arena feature <name> <verb>` mechanism (_meta/tools/source resolves
+# $ARENA_FEATURES_DIR/<name>/main).  The file shape - verb functions, then a
+# help() and a case dispatcher - is copied from _meta/docker/features/docker/main,
+# which is byte-identical in origin/jazzy and upstream/jazzy.  It can also be run
+# directly by path from the host, like _meta/docker/features/internnav/main.
+#
+# Deliberately NOT `#!/bin/bash -i`: an interactive shebang takes SIGTTIN when
+# backgrounded, which is exactly what `run` does to the model server.
+
+name="benchmark"
+
+# ---------------------------------------------------------------------------
+# Declared topology.  This is tracked, on purpose.
+#
+# `_meta/docker/source` derives the compose file list from `src/Arena/.installed`,
+# which is NOT tracked by git - so on a fresh checkout the set of containers is
+# undefined, and on an existing machine it is whatever someone last wrote there.
+# A "clear entry point" cannot depend on invisible local state, so this script
+# names the features it requires and verifies `.installed` agrees, rather than
+# inheriting from it.  `doctor` fails loudly on a mismatch.
+# ---------------------------------------------------------------------------
+BENCHMARK_FEATURES="isaac internnav"
+BENCHMARK_SERVICES="arena isaac internnav"
+
+# ---------------------------------------------------------------------------
+# ROS 2 / DDS contract.
+#
+# All three containers share the host network namespace but each keeps a private
+# IPC namespace (no `ipc:` or `shm_size` key anywhere in the compose files).
+# FastDDS defaults to [SHM, UDPv4] and would advertise a shared-memory locator
+# that a peer in another container cannot open.  Forcing UDPv4 removes it.
+#
+# Today this variable is exported in exactly one place
+# (_meta/docker/features/internnav/main) plus the Isaac launch file.  Nothing
+# sets it in either compose file or in .env, so a path that forgets it fails as
+# "no messages arriving", which is indistinguishable from several other faults.
+# A top-level entry point is the right place to assert it.
+# ---------------------------------------------------------------------------
+: "${ROS_DOMAIN_ID:=1}"
+: "${RMW_IMPLEMENTATION:=rmw_fastrtps_cpp}"
+: "${FASTDDS_BUILTIN_TRANSPORTS:=UDPv4}"
+: "${ROS_LOCALHOST_ONLY:=0}"
+: "${ROS_AUTOMATIC_DISCOVERY_RANGE:=SUBNET}"
+export ROS_DOMAIN_ID RMW_IMPLEMENTATION FASTDDS_BUILTIN_TRANSPORTS
+export ROS_LOCALHOST_ONLY ROS_AUTOMATIC_DISCOVERY_RANGE
+
+# ---------------------------------------------------------------------------
+# Paths and identity
+# ---------------------------------------------------------------------------
+# NOTE: six levels up, not five.  This file sits at
+#   <ws>/src/Arena/_meta/docker/features/benchmark/main
+# so ../../../../.. from its directory reaches <ws>/src, not <ws>.
+# features/internnav/main uses a five-level walk at the same nesting depth and
+# therefore resolves to <ws>/src; that is masked because every documented
+# invocation exports HOST_ARENA_WS_DIR.  Reported, not changed, by this lane.
+benchmark_ws_dir(){
+    echo "${HOST_ARENA_WS_DIR:-${ARENA_WS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../../../../../.." && pwd)}}"
+}
+benchmark_arena_dir(){ echo "${ARENA_DIR:-$(benchmark_ws_dir)/src/Arena}"; }
+benchmark_project(){ echo "${ARENA_PROJECT_NAME:-arena-$(basename "$(benchmark_ws_dir)")}"; }
+benchmark_container(){ echo "$(benchmark_project)-$1-1"; }
+
+# Same guarded-definition idiom as features/internnav/main: reuse the caller's
+# wrapper when sourced through `arena`, otherwise stand alone from the host.
+# The -f list is built from BENCHMARK_FEATURES, never from .installed.
+if ! declare -F arena_docker_compose >/dev/null 2>&1; then
+    arena_docker_compose(){
+        local ws_dir arena_dir project compose_args feature
+        ws_dir="$(benchmark_ws_dir)"
+        arena_dir="$(benchmark_arena_dir)"
+        project="$(benchmark_project)"
+        compose_args=(-f "$arena_dir/_meta/docker/docker-compose.yaml")
+        for feature in $BENCHMARK_FEATURES; do
+            if [ -f "$arena_dir/_meta/docker/features/$feature/docker-compose.yaml" ]; then
+                compose_args+=(-f "$arena_dir/_meta/docker/features/$feature/docker-compose.yaml")
+            fi
+        done
+        env \
+            ARENA_PROJECT_NAME="$project" \
+            ARENA_IMAGE="${ARENA_IMAGE:-arena:dev}" \
+            ARENA_WS_DIR="$ws_dir" \
+            HOST_ARENA_WS_DIR="$ws_dir" \
+            HOST_UID="${HOST_UID:-$(id -u)}" \
+            HOST_GID="${HOST_GID:-$(id -g)}" \
+            HOST_DOCKER_GID="${HOST_DOCKER_GID:-$(stat -c '%g' /var/run/docker.sock 2>/dev/null || id -g)}" \
+            ARENA_ROS_DISTRO="${ARENA_ROS_DISTRO:-jazzy}" \
+            docker compose "${compose_args[@]}" \
+            --project-directory "$ws_dir" \
+            --project-name "$project" \
+            "$@"
+    }
+fi
+
+# ---------------------------------------------------------------------------
+# Output. Every failure is named and fatal; nothing continues degraded.
+# ---------------------------------------------------------------------------
+DRY_RUN=0
+ASSUME_YES=0
+STEP_NO=0
+
+log(){ printf '[%s] %s\n' "$name" "$*"; }
+warn(){ printf '[%s] WARNING: %s\n' "$name" "$*" >&2; }
+die(){ printf '[%s] FATAL: %s\n' "$name" "$1" >&2; shift; for l in "$@"; do printf '[%s]        %s\n' "$name" "$l" >&2; done; exit 1; }
+
+# run_step "description" cmd...
+# In plan mode prints the command instead of running it.  In real mode a
+# non-zero exit is fatal and names the step that failed.
+run_step(){
+    local desc="$1"; shift
+    STEP_NO=$((STEP_NO + 1))
+    if [ "$DRY_RUN" = "1" ]; then
+        printf '  %2d. %s\n' "$STEP_NO" "$desc"
+        printf '      $ %s\n' "$*"
+        return 0
+    fi
+    log "step $STEP_NO: $desc"
+    "$@" || die "step $STEP_NO failed: $desc" "command: $*"
+}
+
+# Same, for a command that must be given to a shell verbatim.
+run_step_sh(){
+    local desc="$1" cmd="$2"
+    STEP_NO=$((STEP_NO + 1))
+    if [ "$DRY_RUN" = "1" ]; then
+        printf '  %2d. %s\n' "$STEP_NO" "$desc"
+        printf '      $ %s\n' "$cmd"
+        return 0
+    fi
+    log "step $STEP_NO: $desc"
+    bash -c "$cmd" || die "step $STEP_NO failed: $desc" "command: $cmd"
+}
+
+# ---------------------------------------------------------------------------
+# Preconditions
+# ---------------------------------------------------------------------------
+CHECK_FAILURES=0
+check_report(){
+    local status="$1" label="$2"; shift 2
+    printf '  [%-4s] %s\n' "$status" "$label"
+    for l in "$@"; do printf '         %s\n' "$l"; done
+    [ "$status" = "FAIL" ] && CHECK_FAILURES=$((CHECK_FAILURES + 1))
+    return 0
+}
+
+check_docker_cli(){
+    command -v docker >/dev/null 2>&1 \
+        && check_report PASS "docker CLI on PATH ($(command -v docker))" \
+        || check_report FAIL "docker CLI not found on PATH" \
+            "install Docker, or run this from a shell that has it"
+}
+
+check_docker_daemon(){
+    if docker info >/dev/null 2>&1; then
+        check_report PASS "docker daemon reachable"
+    else
+        check_report FAIL "docker daemon not reachable" \
+            "'docker info' failed; is the daemon running and are you in the docker group?"
+    fi
+}
+
+check_compose_available(){
+    if docker compose version >/dev/null 2>&1; then
+        check_report PASS "docker compose v2 plugin present"
+    else
+        check_report FAIL "docker compose v2 plugin missing" \
+            "this project uses 'docker compose', not 'docker-compose'"
+    fi
+}
+
+check_workspace(){
+    local ws arena_dir
+    ws="$(benchmark_ws_dir)"; arena_dir="$(benchmark_arena_dir)"
+    if [ -d "$arena_dir/_meta/docker" ]; then
+        check_report PASS "workspace root resolved: $ws"
+    else
+        check_report FAIL "workspace root does not look like an Arena checkout: $ws" \
+            "expected $arena_dir/_meta/docker to exist" \
+            "set HOST_ARENA_WS_DIR explicitly if the layout differs"
+    fi
+}
+
+check_compose_files(){
+    local arena_dir f feature missing=0
+    arena_dir="$(benchmark_arena_dir)"
+    f="$arena_dir/_meta/docker/docker-compose.yaml"
+    [ -f "$f" ] || { missing=1; }
+    for feature in $BENCHMARK_FEATURES; do
+        if [ ! -d "$arena_dir/_meta/docker/features/$feature" ]; then missing=1; fi
+    done
+    if [ "$missing" = "0" ]; then
+        check_report PASS "compose files present for declared features: $BENCHMARK_FEATURES"
+    else
+        check_report FAIL "a declared feature or the base compose file is missing" \
+            "declared features: $BENCHMARK_FEATURES" \
+            "base: $f"
+    fi
+}
+
+# Requirement: do not silently inherit untracked state.
+check_feature_set(){
+    local installed_file declared actual
+    installed_file="$(benchmark_arena_dir)/.installed"
+    declared="$(printf '%s\n' $BENCHMARK_FEATURES | sort | paste -sd' ' -)"
+    if [ ! -f "$installed_file" ]; then
+        check_report FAIL "src/Arena/.installed is missing" \
+            "that file tells 'arena' which features - and therefore which containers - exist" \
+            "it is not tracked by git, so a fresh checkout does not have it" \
+            "fix: printf '%s\\n' $BENCHMARK_FEATURES > $installed_file"
+        return 0
+    fi
+    actual="$(grep -v '^[[:space:]]*$' "$installed_file" | sort | paste -sd' ' -)"
+    if [ "$declared" = "$actual" ]; then
+        check_report PASS ".installed matches the declared feature set ($actual)"
+    else
+        check_report FAIL ".installed does not match the feature set this benchmark needs" \
+            "declared by this script : $declared" \
+            "found in .installed     : ${actual:-<empty>}" \
+            "fix: printf '%s\\n' $BENCHMARK_FEATURES > $installed_file"
+    fi
+}
+
+check_docker_socket(){
+    # arena-1 drives the Isaac container through the mounted socket
+    # (arena_bringup/launch/simulator/sim/isaac/isaac.launch.py runs `docker exec`).
+    if [ -S /var/run/docker.sock ]; then
+        check_report PASS "/var/run/docker.sock present on this host"
+    else
+        check_report FAIL "/var/run/docker.sock not found" \
+            "the arena container mounts this socket to start Isaac; without it the run cannot proceed"
+    fi
+}
+
+check_dds_contract(){
+    if [ "$FASTDDS_BUILTIN_TRANSPORTS" = "UDPv4" ]; then
+        check_report PASS "FASTDDS_BUILTIN_TRANSPORTS=UDPv4 (asserted by this script)"
+    else
+        check_report FAIL "FASTDDS_BUILTIN_TRANSPORTS=$FASTDDS_BUILTIN_TRANSPORTS" \
+            "must be UDPv4: each container has a private /dev/shm, so the default" \
+            "shared-memory transport advertises a locator peers cannot open"
+    fi
+    if [ "$RMW_IMPLEMENTATION" = "rmw_fastrtps_cpp" ]; then
+        check_report PASS "RMW_IMPLEMENTATION=rmw_fastrtps_cpp"
+    else
+        check_report FAIL "RMW_IMPLEMENTATION=$RMW_IMPLEMENTATION" \
+            "the DDS transport assertion above only applies to FastDDS"
+    fi
+    check_report PASS "ROS_DOMAIN_ID=$ROS_DOMAIN_ID (compose pins 1 for arena, isaac and internnav)"
+}
+
+check_images(){
+    local svc img missing=""
+    for svc in $BENCHMARK_SERVICES; do
+        img="$(arena_docker_compose config --format json 2>/dev/null \
+              | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['services']['$svc'].get('image',''))" 2>/dev/null)"
+        [ -n "$img" ] || continue
+        docker image inspect "$img" >/dev/null 2>&1 || missing="$missing $svc($img)"
+    done
+    if [ -z "$missing" ]; then
+        check_report PASS "images present for: $BENCHMARK_SERVICES"
+    else
+        check_report FAIL "images missing for:$missing" \
+            "run '$name build --yes' to build them (SLOW - see 'build' in help)"
+    fi
+}
+
+check_containers(){
+    local svc cname down=""
+    for svc in $BENCHMARK_SERVICES; do
+        cname="$(benchmark_container "$svc")"
+        [ "$(docker inspect -f '{{.State.Running}}' "$cname" 2>/dev/null)" = "true" ] || down="$down $svc"
+    done
+    if [ -z "$down" ]; then
+        check_report PASS "containers running: $BENCHMARK_SERVICES"
+    else
+        check_report FAIL "containers not running:$down" \
+            "run '$name up' to start them"
+    fi
+}
+
+check_arena_built(){
+    local cname
+    cname="$(benchmark_container arena)"
+    if docker exec "$cname" test -f /.built >/dev/null 2>&1; then
+        check_report PASS "arena container reports /.built"
+    else
+        check_report FAIL "arena container has not finished building its workspace" \
+            "the /.built marker is absent inside $cname" \
+            "this is the same marker _meta/docker/source waits for"
+    fi
+}
+
+check_gpu(){
+    if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
+        check_report PASS "nvidia-smi works on the host (isaac and internnav request 'gpus: all')"
+    else
+        check_report FAIL "nvidia-smi not usable on this host" \
+            "isaac and internnav both request GPUs; arena-1 deliberately has none"
+    fi
+}
+
+check_model_runtime(){
+    local cname
+    cname="$(benchmark_container internnav)"
+    if docker exec "$cname" test -x /opt/internnav_venv/bin/python >/dev/null 2>&1; then
+        check_report PASS "internnav model venv provisioned"
+    else
+        check_report FAIL "internnav model venv missing" \
+            "run '$name runtime' to provision it (SLOW - installs torch)"
+    fi
+}
+
+doctor(){
+    log "checking preconditions"
+    CHECK_FAILURES=0
+    echo "host and tooling"
+    check_docker_cli
+    check_docker_daemon
+    check_compose_available
+    check_docker_socket
+    check_gpu
+    echo "workspace and declared topology"
+    check_workspace
+    check_compose_files
+    check_feature_set
+    echo "ROS 2 / DDS contract"
+    check_dds_contract
+    echo "images and containers"
+    check_images
+    check_containers
+    check_arena_built
+    check_model_runtime
+    echo
+    if [ "$CHECK_FAILURES" -gt 0 ]; then
+        die "$CHECK_FAILURES precondition(s) failed" \
+            "each FAIL above names what to do; nothing was started"
+    fi
+    log "all preconditions passed"
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# Lifecycle verbs
+# ---------------------------------------------------------------------------
+do_build(){
+    if [ "$ASSUME_YES" != "1" ] && [ "$DRY_RUN" != "1" ]; then
+        die "'build' rebuilds container images and is not reversible in place" \
+            "on this project a cold build of the Isaac image has taken hours" \
+            "re-run as '$name build --yes' if that is really what you want" \
+            "if you only want to start what is already built, use '$name up'"
+    fi
+    log "rebuilding images for: $BENCHMARK_SERVICES (this is the slow path)"
+    run_step "build the arena and isaac images" \
+        arena_docker_compose build arena isaac
+    run_step "build the internnav image and create its container" \
+        bash "$(benchmark_arena_dir)/_meta/docker/features/internnav/main" install
+    log "build complete; run '$name runtime' next if the model venv is not provisioned"
+}
+
+do_runtime(){
+    log "provisioning the internnav model runtime (installs torch; several minutes)"
+    run_step "populate the internnav venv volume" \
+        bash "$(benchmark_arena_dir)/_meta/docker/features/internnav/main" install-runtime
+}
+
+do_up(){
+    run_step "start containers ($BENCHMARK_SERVICES) without building" \
+        arena_docker_compose up -d --remove-orphans --no-build $BENCHMARK_SERVICES
+    run_step_sh "wait for the arena workspace build marker /.built" \
+        "for i in \$(seq 1 300); do docker exec $(benchmark_container arena) test -f /.built >/dev/null 2>&1 && exit 0; sleep 2; done; echo 'arena container never reported /.built' >&2; exit 1"
+}
+
+do_stop(){
+    run_step "stop containers, leaving images and volumes intact" \
+        arena_docker_compose stop --timeout 0
+}
+
+do_down(){
+    if [ "$ASSUME_YES" != "1" ] && [ "$DRY_RUN" != "1" ]; then
+        die "'down' removes the containers" \
+            "named volumes (model venv, HF cache) are kept, but anything written" \
+            "inside a container filesystem is lost" \
+            "re-run as '$name down --yes' to confirm, or use '$name stop' instead"
+    fi
+    run_step "stop and remove containers" \
+        arena_docker_compose down --timeout 0
+}
+
+do_status(){
+    local svc cname state
+    log "project $(benchmark_project)"
+    printf '  %-12s %-40s %s\n' SERVICE CONTAINER STATE
+    for svc in $BENCHMARK_SERVICES; do
+        cname="$(benchmark_container "$svc")"
+        state="$(docker inspect -f '{{.State.Status}}' "$cname" 2>/dev/null || echo absent)"
+        printf '  %-12s %-40s %s\n' "$svc" "$cname" "$state"
+    done
+}
+
+# ---------------------------------------------------------------------------
+# Node/process verbs
+# ---------------------------------------------------------------------------
+ROBOT="${ARENA_BENCHMARK_ROBOT:-Ai2_Bot2}"
+WORLD="${ARENA_BENCHMARK_WORLD:-hospital_1}"
+DEVICE="${ARENA_BENCHMARK_DEVICE:-cuda:0}"
+EPISODES="${ARENA_BENCHMARK_EPISODES:-1}"
+TIMEOUT="${ARENA_BENCHMARK_TIMEOUT:-60}"
+HTTP_PORT="${ARENA_INTERNNAV_HTTP_PORT:-5801}"
+EVAL_EXTRA=()
+
+# Starts the model server and the official InternNav ROS client inside
+# internnav-1.  Delegates entirely to the internnav feature script, which owns
+# the /health readiness gate and the container lifetime trap.
+do_serve(){
+    run_step "start the InternNav model server and ROS client in internnav-1" \
+        bash "$(benchmark_arena_dir)/_meta/docker/features/internnav/main" launch \
+            --robot "$ROBOT" --mode internnav --device "$DEVICE"
+}
+
+# Runs the evaluation inside arena-1.  This is the command documented in
+# docs/benchmark/running-benchmarks.md; --internnav-direct-cmd-vel is what
+# selects internnav_async_eval.launch.py for the robot launch.
+#
+# Built as an argv array rather than a shell string so there is no nested
+# quoting to get wrong, and so the plan output is readable.
+eval_inner_command(){
+    local cmd
+    cmd="source /opt/ros/jazzy/setup.bash && source install/setup.bash"
+    cmd="$cmd && ARENA_INTERNNAV_EXTERNAL_SERVER=1 ros2 run arena_bringup internnav_eval"
+    cmd="$cmd --sim isaac --human hunav --world $WORLD --robot $ROBOT"
+    cmd="$cmd --local-planner dual_vln --episodes $EPISODES --timeout $TIMEOUT"
+    cmd="$cmd --headless 2 --log-level warn --internnav-mode internnav"
+    cmd="$cmd --internnav-device $DEVICE --internnav-direct-cmd-vel --save-eval-video"
+    local extra
+    for extra in ${EVAL_EXTRA[@]+"${EVAL_EXTRA[@]}"}; do cmd="$cmd $extra"; done
+    printf '%s' "$cmd"
+}
+
+do_eval(){
+    run_step "run the evaluation in arena-1" \
+        docker exec \
+            -e "ROS_DOMAIN_ID=$ROS_DOMAIN_ID" \
+            -e "RMW_IMPLEMENTATION=$RMW_IMPLEMENTATION" \
+            -e "FASTDDS_BUILTIN_TRANSPORTS=$FASTDDS_BUILTIN_TRANSPORTS" \
+            -e "ROS_LOCALHOST_ONLY=$ROS_LOCALHOST_ONLY" \
+            -e "ROS_AUTOMATIC_DISCOVERY_RANGE=$ROS_AUTOMATIC_DISCOVERY_RANGE" \
+            -w /opt/arena_ws \
+            "$(benchmark_container arena)" \
+            bash -lc "$(eval_inner_command)"
+}
+
+wait_for_model(){
+    run_step_sh "wait for the model server to report ready on :$HTTP_PORT/health" \
+        "for i in \$(seq 1 300); do python3 -c \"import json,urllib.request;d=json.loads(urllib.request.urlopen('http://127.0.0.1:$HTTP_PORT/health',timeout=2).read().decode());raise SystemExit(0 if d.get('status')=='ready' else 1)\" >/dev/null 2>&1 && exit 0; sleep 2; done; echo 'model server did not become ready at http://127.0.0.1:$HTTP_PORT/health' >&2; exit 1"
+}
+
+# The one-click path.  Order and readiness dependency come from
+# docs/benchmark/running-benchmarks.md: the evaluation's own preflight requires
+# the model service to be answering before it will start.
+do_run(){
+    local serve_log
+    serve_log="$(benchmark_ws_dir)/outputs/.benchmark_serve.log"
+    if [ "$DRY_RUN" = "1" ]; then
+        echo "plan for '$name run' (robot=$ROBOT world=$WORLD episodes=$EPISODES device=$DEVICE):"
+        echo "   0. verify every precondition ('$name doctor'); abort on any failure"
+        run_step "start containers ($BENCHMARK_SERVICES) without building" \
+            arena_docker_compose up -d --remove-orphans --no-build $BENCHMARK_SERVICES
+        run_step_sh "wait for the arena workspace build marker /.built" "<poll docker exec ... test -f /.built>"
+        run_step_sh "start the model server in the background, logging to $serve_log" \
+            "setsid bash .../features/internnav/main launch --robot $ROBOT --mode internnav --device $DEVICE </dev/null >>$serve_log 2>&1 &"
+        wait_for_model
+        do_eval
+        run_step_sh "stop the model server (registered as an EXIT/INT/TERM trap, so it also runs if the evaluation fails)" \
+            "bash .../features/internnav/main stop"
+        return 0
+    fi
+
+    doctor || exit 1
+    do_up
+    mkdir -p "$(dirname "$serve_log")"
+    # Cleanup must be a trap, not a trailing statement: run_step calls die() on
+    # failure, which exits, so a failed evaluation would otherwise leave the GPU
+    # model server running in internnav-1. AGENTS.md documents how expensive
+    # that residue is.
+    benchmark_stop_server(){
+        log "stopping the model server"
+        bash "$(benchmark_arena_dir)/_meta/docker/features/internnav/main" stop >/dev/null 2>&1 || true
+        if [ -f "$serve_log.pid" ]; then
+            kill "$(cat "$serve_log.pid")" >/dev/null 2>&1 || true
+            rm -f "$serve_log.pid"
+        fi
+    }
+    trap benchmark_stop_server EXIT INT TERM
+    # setsid + </dev/null because the internnav feature script is an interactive
+    # shell and would otherwise stop on SIGTTIN when backgrounded.
+    run_step_sh "start the model server in the background, logging to $serve_log" \
+        "setsid bash '$(benchmark_arena_dir)/_meta/docker/features/internnav/main' launch --robot '$ROBOT' --mode internnav --device '$DEVICE' </dev/null >>'$serve_log' 2>&1 & echo \$! > '$serve_log.pid'"
+    wait_for_model
+    do_eval
+    log "evaluation finished; artifacts are under $(benchmark_ws_dir)/outputs"
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# plan: print what a verb would do, without doing any of it.
+# Pure - touches no container and no image - so it is reviewable and testable
+# on any machine, with or without a GPU.
+# ---------------------------------------------------------------------------
+do_plan(){
+    local target="${1:-run}"
+    DRY_RUN=1
+    STEP_NO=0
+    case "$target" in
+        run)     do_run ;;
+        build)   echo "plan for '$name build':"; do_build ;;
+        runtime) echo "plan for '$name runtime':"; do_runtime ;;
+        up)      echo "plan for '$name up':"; do_up ;;
+        serve)   echo "plan for '$name serve':"; do_serve ;;
+        eval)    echo "plan for '$name eval':"; do_eval ;;
+        stop)    echo "plan for '$name stop':"; do_stop ;;
+        down)    echo "plan for '$name down':"; do_down ;;
+        *) die "cannot plan unknown verb '$target'" "try: run build runtime up serve eval stop down" ;;
+    esac
+    echo
+    echo "nothing above was executed."
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+help(){
+    cat <<EOF
+Usage: $name <verb> [options] [-- extra args for internnav_eval]
+
+One entry point for the Arena social-navigation benchmark.  It starts three
+Docker containers and the processes that belong inside each of them:
+
+  arena      the ROS 2 graph, the evaluation driver, metrics
+  isaac      Isaac Sim rendering and physics
+  internnav  the GPU model server the robot asks for actions
+
+You do not need to know which container a command belongs in; the verbs below
+put it in the right one.
+
+Getting from a clean checkout to a finished evaluation:
+
+  $name doctor          check everything first, change nothing
+  $name build --yes     build the container images        [SLOW: hours, cold]
+  $name runtime         install the model runtime         [SLOW: minutes]
+  $name run             start everything and evaluate     [minutes per episode]
+
+After the first time, only the last step is needed.
+
+Verbs
+  doctor      Check every precondition and report PASS/FAIL for each, then stop.
+              Changes nothing. Exits non-zero if any check fails.   [seconds]
+  plan VERB   Print the exact commands VERB would run, in order, and exit
+              without running any of them. Needs no containers and no GPU.
+              Default VERB is 'run'.                               [instant]
+  status      Show whether each container is running.              [instant]
+
+  build       Rebuild the container images. DESTRUCTIVE: replaces working
+              images, and a cold Isaac build has taken hours on this project.
+              Requires --yes. Never runs as part of any other verb.   [hours]
+  runtime     Provision the model virtualenv inside internnav (installs torch)
+              into a named volume. Needed once per fresh volume.    [minutes]
+  up          Start the containers. Does NOT build anything.        [seconds]
+  stop        Stop the containers. Images and volumes are kept.     [seconds]
+  down        Stop AND remove the containers. Requires --yes.       [seconds]
+
+  serve       Start the model server and its ROS client in internnav. Blocks.
+  eval        Run one evaluation in arena. Assumes 'serve' is already up.
+  run         The one-click path: doctor, up, serve in the background, wait for
+              the model to report ready, evaluate, then stop the server.
+
+Options
+  --dry-run           Print what would happen and exit. Same as 'plan'.
+  --yes               Confirm a destructive verb (build, down).
+  --robot NAME        Default: $ROBOT
+  --world NAME        Default: $WORLD
+  --episodes N        Default: $EPISODES
+  --timeout SEC       Per-episode simulated timeout. Default: $TIMEOUT
+  --device DEVICE     Model device. Default: $DEVICE
+  --                  Everything after this is appended to internnav_eval.
+
+Where the results go
+  outputs/<run-name>/ per run: four videos under videos/episode_0000/, metrics
+  JSON, run_manifest.yaml, and the CSV recordings.
+
+Notes
+  Artifacts are produced by 'ros2 run arena_bringup internnav_eval', which this
+  script calls; it is not reimplemented here.
+  The feature set this benchmark needs ($BENCHMARK_FEATURES) is declared in this
+  script and verified against src/Arena/.installed, which git does not track.
+  'doctor' fails loudly and tells you the one command that fixes a mismatch.
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
+if [ $# -lt 1 ]; then
+    help
+    exit 1
+fi
+
+VERB="$1"; shift
+PLAN_TARGET=""
+if [ "$VERB" = "plan" ] && [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then
+    PLAN_TARGET="$1"; shift
+fi
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --dry-run)  DRY_RUN=1; shift ;;
+        --yes|-y)   ASSUME_YES=1; shift ;;
+        --robot)    ROBOT="$2"; shift 2 ;;
+        --world)    WORLD="$2"; shift 2 ;;
+        --episodes) EPISODES="$2"; shift 2 ;;
+        --timeout)  TIMEOUT="$2"; shift 2 ;;
+        --device)   DEVICE="$2"; shift 2 ;;
+        --help|-h)  help; exit 0 ;;
+        --)         shift; EVAL_EXTRA=("$@"); break ;;
+        *)          die "unknown option '$1'" "run '$name --help' for the option list" ;;
+    esac
+done
+
+if [ "$DRY_RUN" = "1" ] && [ "$VERB" != "plan" ]; then
+    do_plan "$VERB"
+    exit $?
+fi
+
+case "$VERB" in
+    help|--help|-h) help; exit 0 ;;
+    doctor)  doctor; exit $? ;;
+    plan)    do_plan "${PLAN_TARGET:-run}"; exit $? ;;
+    status)  do_status; exit $? ;;
+    build)   do_build; exit $? ;;
+    runtime) do_runtime; exit $? ;;
+    up)      do_up; exit $? ;;
+    stop)    do_stop; exit $? ;;
+    down)    do_down; exit $? ;;
+    serve)   do_serve; exit $? ;;
+    eval)    do_eval; exit $? ;;
+    run)     do_run; exit $? ;;
+    *)       printf '[%s] FATAL: unknown verb %s\n\n' "$name" "$VERB" >&2; help >&2; exit 1 ;;
+esac
