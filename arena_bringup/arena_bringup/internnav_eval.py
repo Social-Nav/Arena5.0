@@ -725,10 +725,45 @@ def _topic_publisher_count(command_result: dict) -> int | None:
 
 
 _PEDESTRIAN_TRAVERSAL_PROBE = r'''
-import json, sys
+import json, os, sys
 from ament_index_python.packages import get_package_share_directory
 requested = sys.argv[1]
 out = {"requested": requested}
+
+# REPORT-ONLY MODE.  An empty `requested` means there is no run-level override,
+# so configs/hunav/default.yaml decides.  We still want the EFFECTIVE mode in
+# the manifest: a manifest that records only the run argument cannot tell a
+# `once`-default run from a `reciprocate`-default run, because both write '',
+# and a reader a year from now has no route back to the regime that produced a
+# number.  A run has already been lost to exactly this blind spot.
+#
+# This branch REPORTS and never gates.  `parse_goal_traversal('')` raises by
+# design -- an unrecognised mode must never degrade to a default -- so the
+# behaviour assertions below cannot run here and are skipped, not failed.
+#
+# The truthful expression is the consumer's OWN resolved default, not a re-read
+# of the `goal_traversal:` YAML key.  Re-reading the key would be a second
+# source of truth that mis-reports whenever the key is absent: with
+# `cyclic_goals: true` still present the real answer is `cyclic`, while a
+# key-reader would say `once`.
+if not requested.strip():
+    out["report_only"] = True
+    try:
+        from task_generator.simulators.human.hunav import HunavDynamicObstacle
+        _d = HunavDynamicObstacle._default
+        out["effective_default"] = _d.goal_traversal.value
+        out["effective_default_cyclic_goals"] = bool(_d.cyclic_goals)
+        out["effective_default_repeats"] = bool(_d.goal_traversal.repeats)
+        out["default_yaml_path"] = os.path.join(
+            get_package_share_directory("arena_bringup"),
+            "configs", "hunav", "default.yaml",
+        )
+    except Exception as e:
+        out["error"] = f"{type(e).__name__}: {e}"
+        out["effective_default"] = "unknown"
+    print(json.dumps(out))
+    sys.exit(0)
+
 try:
     from task_generator.simulators.human.hunav.goal_traversal import (
         expand_goal_sequence, parse_goal_traversal,
@@ -906,12 +941,35 @@ def _run_pedestrian_traversal_preflight(
     word would fail.
     """
     if not str(requested).strip():
-        return {
+        report = {
             'pass': None,
             'skipped': True,
             'reason': 'no run-level pedestrian_goal_traversal requested; '
                       'configs/hunav/default.yaml is in charge',
         }
+        # Still ask the probe what the DEFAULT resolves to, so the manifest can
+        # name the regime.  `pass` stays None on purpose: the abort downstream is
+        # `if ... get('pass') is False`, so None keeps it structurally
+        # unreachable and a probe that cannot answer degrades to 'unknown'
+        # instead of costing an evaluation slot.
+        try:
+            probe = subprocess.run(
+                [python_bin, '-c', _PEDESTRIAN_TRAVERSAL_PROBE, ''],
+                capture_output=True, text=True, timeout=120,
+            )
+            payload = json.loads((probe.stdout or '').strip().splitlines()[-1])
+            report['effective_default'] = payload.get('effective_default') or 'unknown'
+            report['effective_default_cyclic_goals'] = payload.get(
+                'effective_default_cyclic_goals'
+            )
+            report['effective_default_repeats'] = payload.get('effective_default_repeats')
+            report['default_yaml_path'] = payload.get('default_yaml_path')
+            if payload.get('error'):
+                report['effective_default_error'] = payload['error']
+        except Exception as exc:  # never fatal: this field is archaeology, not a gate
+            report['effective_default'] = 'unknown'
+            report['effective_default_error'] = f'{type(exc).__name__}: {exc}'
+        return report
 
     try:
         result = subprocess.run(
@@ -4139,6 +4197,20 @@ def main() -> int:
         env, requested=args.pedestrian_goal_traversal
     )
     manifest['result']['pedestrian_traversal_preflight'] = pedestrian_traversal_preflight
+    # Name the REGIME under `parameters`, where a reader looks for run settings.
+    # `pedestrian_goal_traversal` alone is '' whenever the shipped default is in
+    # charge, which is indistinguishable between regimes -- and a run has already
+    # been lost to that ambiguity.  Called a *default* because per-pedestrian
+    # scenario keys still take precedence over it.
+    #
+    # This is provenance, not validity: it records what the build WOULD do.  Only
+    # observed pedestrian motion proves what it DID, so run validity is gated on
+    # the recorded motion, never on this field.
+    manifest['parameters']['pedestrian_goal_traversal_effective_default'] = (
+        pedestrian_traversal_preflight.get('effective_default')
+        or args.pedestrian_goal_traversal
+        or 'unknown'
+    )
     _write_yaml(manifest_path, manifest)
     if pedestrian_traversal_preflight.get('pass') is False:
         print(

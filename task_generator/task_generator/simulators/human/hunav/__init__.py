@@ -430,8 +430,15 @@ HunavDynamicObstacle._default = HunavDynamicObstacle(
     angular_vel=0.,
     behavior=HunavDynamicObstacle.Behavior._default,
     behavior_tree='default.xml',
-    cyclic_goals=False,
-    goal_traversal=GoalTraversal.ONCE,
+    # Bootstrap default, replaced immediately below by `_load_config()`.  It is
+    # reached only if the shipped configs/hunav/default.yaml expresses NEITHER
+    # `goal_traversal` NOR `cyclic_goals`, but it is deliberately kept in step
+    # with that file: a hardcoded second source of truth that disagrees with the
+    # shipped config is exactly the shape that has bitten this project before.
+    # These two fields must move together -- `to_msg()` raises when
+    # `cyclic_goals` contradicts `goal_traversal.wire_cyclic_goals`.
+    cyclic_goals=True,
+    goal_traversal=GoalTraversal.RECIPROCATE,
     goal_radius=0.,
     closest_obs=[],
 )

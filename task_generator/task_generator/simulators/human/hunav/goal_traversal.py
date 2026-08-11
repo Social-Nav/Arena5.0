@@ -142,6 +142,13 @@ def parse_goal_traversal(value: typing.Any) -> GoalTraversal:
 def resolve_goal_traversal(
     explicit: typing.Any = None,
     legacy_cyclic_goals: typing.Any = None,
+    # NOTE: this signature default is NOT the product default, and is left at
+    # ``ONCE`` on purpose.  It encodes only this resolver's historical semantic
+    # ("no layer expressed an opinion at all" -> walk once), and both production
+    # call sites pass ``fallback=`` explicitly, so it is inert in the running
+    # system.  The shipped default lives in arena_bringup/configs/hunav/
+    # default.yaml, which is ``reciprocate``.  A NEW call site that omits
+    # ``fallback=`` would therefore silently get ``ONCE`` -- pass it explicitly.
     fallback: typing.Any = GoalTraversal.ONCE,
 ) -> GoalTraversal:
     """Resolve the effective traversal mode from the layers that can set it.

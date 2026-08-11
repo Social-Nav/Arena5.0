@@ -450,6 +450,90 @@ def test_agent_manager_does_not_refresh_goals_every_tick():
     )
 
 
+def test_held_clock_is_ticked_on_held_iterations_not_only_released_ones():
+    """Pin WHY the episode clock must be ticked even while pedestrians are held.
+
+    ``PedestrianEpisodeClock.tick_ns`` updates ``_last_sim_ns`` on EVERY call but
+    advances ``_value_ns`` only once released.  So the held iterations are what
+    keep the clock's baseline tracking ``/clock``.  Skip them and the first
+    released tick differences against a pre-hold baseline, handing HuNav the
+    entire hold as one integration step.
+
+    HuNav derives ``time_step_secs`` from consecutive ``compute_agents`` request
+    stamps, so that single step teleports pedestrians by roughly the hold
+    duration times their walking speed -- previously measured at ~25 m against a
+    longest authored route of 18.14 m.  Reciprocating pedestrians make this worse,
+    not better: they are moving for the whole episode, so there is no early
+    stationary phase to absorb a jump.
+
+    Both directions are asserted, because the counterfactual is the whole point:
+    a test that only checked the good path could not tell a fresh baseline from a
+    stale one.
+    """
+    from task_generator.episode_barrier import PedestrianEpisodeClock
+
+    hold_seconds = 25.0
+    step = 0.1
+
+    # GOOD: ticked on every iteration, including the held ones.
+    ticked = PedestrianEpisodeClock()
+    t = 0.0
+    ticked.tick(t)
+    while t < hold_seconds:
+        t += step
+        ticked.tick(t)
+    before = ticked.value
+    ticked.release()
+    t += step
+    first_released_delta = ticked.tick(t) - before
+
+    # COUNTERFACTUAL: the guard moved above the stamp, so held iterations never
+    # tick.  Same /clock timeline, same release point, only the held calls gone.
+    skipped = PedestrianEpisodeClock()
+    skipped.tick(0.0)
+    before_skipped = skipped.value
+    skipped.release()
+    t2 = hold_seconds + step
+    stale_delta = skipped.tick(t2) - before_skipped
+
+    assert first_released_delta == pytest.approx(step, abs=1e-6), (
+        'ticking the clock on held iterations must make the first released '
+        f'step one /clock step; got {first_released_delta}'
+    )
+    assert stale_delta > hold_seconds, (
+        'counterfactual is not exercising the hazard, so the assertion above '
+        f'proves nothing; got {stale_delta}'
+    )
+    assert stale_delta > 100 * first_released_delta, (
+        'the two directions must be far apart for this guard to have power'
+    )
+
+
+def test_hunav_stamps_the_request_before_the_motion_release_guard():
+    """The stamp assignment must precede the held-iteration ``continue``.
+
+    This is the line-order half of the property pinned above.  It is deliberately
+    a separate test: the behavioural one proves the clock needs held ticks, and
+    this one proves the production loop actually makes them.  Reordering these
+    two statements reintroduces the teleport with every other test still green,
+    which is exactly why it needs its own guard.
+    """
+    if not _HUNAV_PY.is_file():
+        pytest.skip(f'{_HUNAV_PY} not present')
+    source = _HUNAV_PY.read_text()
+
+    stamp = source.find('header.stamp = self._pedestrian_clock_stamp()')
+    guard = source.find('if not self._pedestrian_motion_released():')
+    assert stamp != -1, 'could not locate the episode-clock stamp assignment'
+    assert guard != -1, 'could not locate the pedestrian motion release guard'
+    assert stamp < guard, (
+        'the compute_agents request is stamped AFTER the held-iteration guard, '
+        'so held iterations no longer tick the episode clock. The first released '
+        'request will carry the whole hold as one integration step and HuNav will '
+        'teleport every pedestrian. Move the stamp back above the guard.'
+    )
+
+
 def test_agent_manager_rotation_is_still_pop_front_push_back():
     """Pin the rotation semantics the mirror equivalence relies on."""
     if not _AGENT_MANAGER_CPP.is_file():
@@ -580,8 +664,18 @@ def test_hunav_logs_the_effective_behaviour_not_just_the_requested_mode():
     )
 
 
-def test_shipped_default_yaml_keeps_todays_behaviour():
-    """The new mode must be opt-in: the shipped default stays ``once``."""
+def test_shipped_default_yaml_ships_reciprocate():
+    """The shipped default is pinned, so it cannot drift silently.
+
+    This guard's PURPOSE is unchanged from when it pinned ``once``: the shipped
+    traversal mode decides the scene dynamics of every run that does not
+    override it, so it must never move without someone editing this assertion.
+    Only the pinned VALUE changed, deliberately -- see configs/hunav/default.yaml
+    for why ``once`` left pedestrians world-stationary for 94-99% of an episode.
+
+    Consequence worth restating where it will be read: metrics from a
+    ``reciprocate`` run are NOT comparable with ``once``-mode runs.
+    """
     default_yaml = (
         _SRC_ARENA / 'arena_bringup' / 'configs' / 'hunav' / 'default.yaml'
     )
@@ -589,11 +683,19 @@ def test_shipped_default_yaml_keeps_todays_behaviour():
         pytest.skip(f'{default_yaml} not present')
     import yaml
     cfg = yaml.safe_load(default_yaml.read_text())
-    assert cfg.get('goal_traversal') == 'once', (
-        'shipping anything other than "once" by default would silently change '
-        'the benchmark for every existing run configuration'
+    assert cfg.get('goal_traversal') == 'reciprocate', (
+        'the shipped default traversal mode is pinned; changing it changes the '
+        'scene dynamics of every run that does not override it, and breaks '
+        'metric comparability with previously banked runs'
     )
-    assert cfg.get('cyclic_goals') is False, 'legacy key must stay consistent'
+    # The legacy key cannot express `reciprocate`, so "consistent" here means it
+    # carries the same wire bit (True), not the same mode.  Pinned so the file can
+    # never show a reader a contradiction, and so that deleting `goal_traversal`
+    # degrades the default to `cyclic` (still moving) rather than `once` (stops).
+    assert cfg.get('cyclic_goals') is True, (
+        'legacy key must stay consistent with goal_traversal: reciprocate, '
+        'whose wire_cyclic_goals is True'
+    )
 
 
 # --------------------------------------------------------------------------

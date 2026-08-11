@@ -267,9 +267,15 @@ def test_no_waypoints_keeps_once_and_cyclic_exactly_as_before():
     assert goal_xy(cyclic) == expected and cyclic.cyclic_goals is True
 
 
-def test_default_config_ships_once():
-    assert HunavDynamicObstacle._default.goal_traversal is GoalTraversal.ONCE, (
-        'the installed configs/hunav/default.yaml must keep todays behaviour; '
+def test_default_config_ships_reciprocate():
+    assert HunavDynamicObstacle._default.goal_traversal is GoalTraversal.RECIPROCATE, (
+        'the installed configs/hunav/default.yaml must ship reciprocate; '
         'note _load_config reads the INSTALLED share copy, so this also detects '
-        'an installed config that has drifted from the source tree'
+        'an installed config that has drifted from the source tree -- which is '
+        'the failure this assertion is really here to catch, since a stale '
+        'installed copy would run the whole benchmark in the old regime while '
+        'the source tree looked correct'
     )
+    # The wire bit is derived, never authored, so pin it too: a default whose
+    # mode and wire bit disagreed would raise only later, inside to_msg().
+    assert HunavDynamicObstacle._default.cyclic_goals is True

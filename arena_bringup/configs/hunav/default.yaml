@@ -4,21 +4,38 @@ skin: 0
 max_vel: 0.8
 radius: 0.3
 goal_radius: 0.2
-# Legacy spelling, still honoured.  `false` = walk waypoint 0 -> N once and stop;
-# `true` = return to waypoint 0 and repeat in the same direction.
-cyclic_goals: false
+# Legacy spelling, still honoured, but `goal_traversal` below is authoritative and
+# overrides this whenever both are present.  `false` = walk waypoint 0 -> N once and
+# stop; `true` = return to waypoint 0 and repeat in the same direction.
+#
+# This is held at `true` purely so the file is internally consistent with
+# `goal_traversal: reciprocate` (reciprocate rides on the same wire bit as cyclic).
+# It is NOT the knob to turn: it cannot express `reciprocate` at all, and if
+# `goal_traversal` below were ever deleted this key would degrade the default to
+# `cyclic` -- still continuously moving, which is the safe direction -- rather than
+# silently back to `once`.
+cyclic_goals: true
 # How pedestrians consume their waypoint list.  Takes precedence over
 # `cyclic_goals` above when both are set.  One of:
-#   once        walk 0 -> N, then stop            (default; == cyclic_goals: false)
+#   once        walk 0 -> N, then stop            (== cyclic_goals: false)
 #   cyclic      walk 0 -> N, return to 0, repeat  (== cyclic_goals: true)
-#   reciprocate walk 0 -> N -> 0 -> N, forever    (ping-pong)
-# `reciprocate` keeps pedestrians moving for the whole episode instead of the
-# 0.9-6% measured with `once`, which CHANGES SCENE DYNAMICS: social metrics from
-# a `reciprocate` run are not comparable with those from an `once` run.  The
-# effective mode is recorded in the run manifest so a future reader can tell
-# which regime produced a number.  A run-level override is available as the
-# `pedestrian_goal_traversal` launch argument.
-goal_traversal: once
+#   reciprocate walk 0 -> N -> 0 -> N, forever    (ping-pong; default)
+#
+# THE DEFAULT IS `reciprocate`, changed deliberately from `once`.  Under `once` a
+# pedestrian walks its 3.5-18.1 m route and then stands still for the rest of the
+# episode, leaving it world-stationary for 94-99% of a ~300 s run.  That made the
+# benchmark almost statically populated and left the robot-reaction question
+# unanswerable for want of range contrast, so `reciprocate` is now the shipped
+# behaviour rather than an opt-in.
+#
+# CHANGING SCENE DYNAMICS IS THE POINT, AND IT BREAKS COMPARABILITY: the encounter
+# population under `reciprocate` is completely different, so social and
+# proximity metrics from a `reciprocate` run are NOT comparable with any `once`-mode
+# run, in either direction.  The effective mode is recorded in the run manifest so a
+# future reader can tell which regime produced a number.  A run-level override is
+# available as the `pedestrian_goal_traversal` launch argument, and per-pedestrian
+# scenario keys still take precedence over both.
+goal_traversal: reciprocate
 init_pose:
   x: 0.0
   y: 0.0
