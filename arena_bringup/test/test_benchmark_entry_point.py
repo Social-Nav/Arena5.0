@@ -457,3 +457,123 @@ def test_entry_point_adds_no_lines_to_existing_files():
     assert result.stdout.strip() == '', (
         f'existing machinery was modified: {result.stdout}'
     )
+
+
+# --------------------------------------------------------------------------
+# GPU device access inside the containers
+# --------------------------------------------------------------------------
+# A healthy host GPU does not imply a usable GPU inside the containers.  An
+# outage that kept both GPU containers running while denying /dev/nvidia* at the
+# device-cgroup level voided a slot: the failure only surfaced ~10 minutes in, as
+# an episode-start barrier timeout.  These drive the three distinguishable causes
+# through a stub `docker`, so they assert the branch AND its remedy text.
+
+def _docker_stub_env(tmp_path, *, running='true', nodes=True, openable=True, nvml=True):
+    """A PATH whose `docker` simulates one GPU-device state inside a container.
+
+    Only the calls check_gpu_devices makes are simulated; every other docker call
+    succeeds quietly so the surrounding checks do not add noise.
+    """
+    bindir = tmp_path / 'bin'
+    bindir.mkdir(exist_ok=True)
+    for tool in ('bash', 'sh', 'env', 'python3', 'ls', 'cat', 'tr', 'printf', 'grep', 'sed', 'awk'):
+        found = shutil.which(tool)
+        if found and not (bindir / tool).exists():
+            (bindir / tool).symlink_to(found)
+    stub = bindir / 'docker'
+    stub.write_text(
+        '#!/bin/sh\n'
+        'case "$*" in\n'
+        f'  *State.Running*) echo "{running}"; exit 0 ;;\n'
+        # The probe order in check_gpu_devices: list nodes, then open, then NVML.
+        '  *"ls /dev/nvidia*"*)\n'
+        f'      { "echo /dev/nvidia0" if nodes else "true" }; exit 0 ;;\n'
+        '  *"/dev/nvidia0"*)\n'
+        f'      exit { 0 if openable else 1 } ;;\n'
+        '  *nvidia-smi*)\n'
+        f'      exit { 0 if nvml else 1 } ;;\n'
+        '  *) exit 0 ;;\n'
+        'esac\n'
+    )
+    stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
+    return {'PATH': str(bindir) + os.pathsep + os.environ.get('PATH', '')}
+
+
+def test_doctor_fails_when_gpu_devices_exist_but_cannot_be_opened(tmp_path):
+    """The outage shape: container up, nodes listed, open() denied."""
+    result = _run(['doctor'], env=_docker_stub_env(tmp_path, openable=False))
+    combined = result.stdout + result.stderr
+    assert result.returncode != 0, combined
+    assert 'cannot be opened' in combined, combined
+    # The remedy must be named, because nothing else about the run looks wrong.
+    assert 'restart' in combined.lower(), combined
+
+
+def test_doctor_fails_when_the_gpu_was_never_mapped_into_the_container(tmp_path):
+    """A different cause with a different fix, so it must not report as the outage."""
+    result = _run(['doctor'], env=_docker_stub_env(tmp_path, nodes=False))
+    combined = result.stdout + result.stderr
+    assert result.returncode != 0, combined
+    assert 'no /dev/nvidia* devices' in combined, combined
+    assert 'cannot be opened' not in combined, combined
+
+
+def test_doctor_distinguishes_an_nvml_failure_from_the_cgroup_outage(tmp_path):
+    result = _run(['doctor'], env=_docker_stub_env(tmp_path, nvml=False))
+    combined = result.stdout + result.stderr
+    assert result.returncode != 0, combined
+    assert 'NVML will not initialise' in combined, combined
+    assert 'not the cgroup outage' in combined, combined
+
+
+def test_doctor_only_skips_the_gpu_device_check_when_containers_are_down(tmp_path):
+    """'doctor' legitimately runs before 'up', so a stopped container is not a FAIL.
+
+    The cold path stays covered because `run` repeats the check after `up`.
+    """
+    result = _run(['doctor'], env=_docker_stub_env(tmp_path, running='false'))
+    combined = result.stdout + result.stderr
+    assert 'cannot verify GPU device access yet' in combined, combined
+
+
+def test_run_rechecks_gpu_device_access_after_starting_the_containers():
+    """Without this, a `doctor` that could only SKIP would leave the run unguarded.
+
+    Asserts the executed path, not only the plan text.  The plan is a separate
+    hand-written string, so checking it alone would pass even if the real branch
+    stopped calling the check -- verified: deleting the call left a plan-only
+    assertion green.
+    """
+    out = _run(['plan', 'run']).stdout
+    assert 'GPU device access' in out, out
+    order = [
+        out.index('start containers'),
+        out.index('GPU device access'),
+        out.index('start the model server'),
+    ]
+    assert order == sorted(order), f'GPU recheck must sit between up and serve:\n{out}'
+
+    # The real branch: do_run must call check_gpu_devices between do_up and the
+    # model server, and must abort if it fails.  Comments are stripped first --
+    # with them included, the assertion was satisfied by a comment that merely
+    # mentions the function, and deleting the actual call still passed.
+    body = SCRIPT.read_text().split('do_run(){', 1)[1].split('\n}\n', 1)[0]
+    real = body.split('doctor || exit 1', 1)[1]
+    real = '\n'.join(
+        line for line in real.splitlines() if not line.lstrip().startswith('#')
+    )
+    assert 'check_gpu_devices' in real, (
+        'do_run describes a GPU recheck in its plan but never performs one'
+    )
+    positions = [
+        real.index('do_up'),
+        real.index('check_gpu_devices'),
+        real.index('start the model server'),
+    ]
+    assert positions == sorted(positions), (
+        f'check_gpu_devices must run after do_up and before the server:\n{real}'
+    )
+    guard = real[real.index('check_gpu_devices'):real.index('start the model server')]
+    assert 'CHECK_FAILURES' in guard and 'die' in guard, (
+        f'a failing GPU recheck must abort rather than only print:\n{guard}'
+    )

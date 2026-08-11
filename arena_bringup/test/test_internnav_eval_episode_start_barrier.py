@@ -281,6 +281,17 @@ def _build_recorder(tmp_path, *, episode_start_publishers, sim_top_down=True, wa
     recorder.reset_generation = 1
     recorder.current_episode = 0
 
+    # Establish the per-episode state through the PRODUCTION reset rather than by
+    # hand.  This fixture builds the recorder with __new__, so any per-episode
+    # counter that _reset_episode_stream_state forgets is simply absent, and the
+    # first increment raises AttributeError instead of quietly continuing from a
+    # previous episode's value.  Hand-zeroing those counters here is what used to
+    # hide exactly that bug: sim_top_down_skipped_frame_count and
+    # sim_top_down_corrupt_skip_count were never reset in production, yet every
+    # test here started from a clean zero and so could not see it.  Called before
+    # the per-test frame state below, which then overrides what it clears.
+    recorder._reset_episode_stream_state()
+
     recorder.latest_rgb = _settled_frame()
     recorder.latest_rgb_generation = 1
     recorder.latest_sim_top_down = _settled_frame(1)
@@ -296,28 +307,19 @@ def _build_recorder(tmp_path, *, episode_start_publishers, sim_top_down=True, wa
     recorder.debug_overlay_writer = None
     recorder.sim_top_down_writer = _FakeWriter() if sim_top_down else None
 
-    recorder.sim_top_down_skipped_frame_count = 0
-    recorder.sim_top_down_corrupt_skip_count = 0
+    # Configuration only.  The per-episode counters and gate flags deliberately
+    # do NOT appear here -- _reset_episode_stream_state() above owns them, so a
+    # forgotten reset surfaces instead of being papered over.
     recorder.sim_top_down_warmup_sec = warmup_sec
     recorder.sim_top_down_post_warmup_discard_frames = 2
-    recorder.sim_top_down_post_warmup_discard_count = 0
-    recorder.ego_skipped_frame_count = 0
-    recorder.ego_noise_skip_count = 0
     recorder.ego_warmup_sec = 0.0
     recorder.ego_post_warmup_discard_frames = 0
-    recorder.ego_post_warmup_discard_count = 0
     recorder.ego_noise_sigma_threshold = 1.0
     recorder.ego_settle_timeout_sec = 10.0
-    recorder.ego_stream_open = False
-    recorder.ego_settle_timed_out = False
 
     recorder.episode_start_topic = '/task_generator_node/episode_start'
     recorder.video_streams_ready_topic = '/task_generator_node/video_streams_ready'
     recorder.episode_start_wait_timeout_sec = 180.0
-    recorder.episode_start_seen_episode = None
-    recorder.streams_ready_episode = None
-    recorder.streams_ready_wall_time = 0.0
-    recorder.pre_episode_start_held_frames = 0
 
     recorder._streams_ready_pub = _FakePublisher()
     recorder.count_publishers = lambda _topic: episode_start_publishers
@@ -563,3 +565,39 @@ def test_the_recorder_and_the_task_generator_derive_the_same_topic_names():
     # A non-default namespace must stay consistent across both halves.
     other = module._episode_barrier_topics('/bench_tg/task_reset')
     assert other['ARENA_EVAL_EPISODE_START_TOPIC'] == '/bench_tg/episode_start'
+
+
+def test_every_per_episode_counter_is_zeroed_by_the_episode_reset(tmp_path):
+    """video_index.json labels these per-episode, so the reset must zero them.
+
+    sim_top_down_skipped_frames and sim_top_down_corrupt_skips were reported per
+    episode while accumulating across a whole run, because
+    _reset_episode_stream_state zeroed only the ego counters and the
+    sim_top_down post-warmup discard.  Measured rising monotonically 183 -> 1848
+    over two ten-episode runs.  Asserted by name so adding a counter to the
+    reported set without resetting it fails here.
+    """
+    recorder = _build_recorder(tmp_path, episode_start_publishers=1, warmup_sec=0.0)
+    per_episode_counters = (
+        'sim_top_down_skipped_frame_count',
+        'sim_top_down_corrupt_skip_count',
+        'sim_top_down_post_warmup_discard_count',
+        'ego_skipped_frame_count',
+        'ego_noise_skip_count',
+        'ego_post_warmup_discard_count',
+    )
+    for name in per_episode_counters:
+        setattr(recorder, name, 7)
+
+    recorder._reset_episode_stream_state()
+
+    still_set = {
+        name: getattr(recorder, name, '<absent>')
+        for name in per_episode_counters
+        if getattr(recorder, name, None) != 0
+    }
+    assert not still_set, (
+        f'these per-episode counters survived the episode reset: {still_set}. '
+        f'video_index.json reports them per episode, so they would accumulate '
+        f'across the run while appearing to describe one episode'
+    )

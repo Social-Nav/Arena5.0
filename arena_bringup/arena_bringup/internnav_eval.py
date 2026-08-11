@@ -760,13 +760,109 @@ except Exception as e:
 # INCLUDED launch description does nothing unless that description also declares
 # the argument AND lists it in the node's `parameters` allowlist.  Checking one
 # end of a boundary is what cost an evaluation slot, so all three sites are
-# checked here by name.
+# checked here.
+#
+# These checks ask the launch system what the file DOES, not what its text looks
+# like.  The previous version matched source substrings, so it required
+# `name='pedestrian_goal_traversal'` in single quotes -- and arena.launch.py uses
+# single quotes while task_generator.launch.py uses double.  A reformat, a rename
+# of the local variable, or a switch of quote style would have failed the gate and
+# aborted the run with a "rebuild and re-install" diagnosis that had nothing to do
+# with the actual cause.  A gate keyed on the lexical form of another file's source
+# is a gate that fires on formatting.
+ARG = "pedestrian_goal_traversal"
+
+
+def _declared_argument_names(launch_path):
+    """The argument names the launch file really declares, per the launch system."""
+    from ros2launch.api.api import get_launch_description_from_any_launch_file
+    description = get_launch_description_from_any_launch_file(launch_path)
+    return {a.name for a in description.get_launch_arguments()}
+
+
+def _node_parameter_names(launch_path):
+    """The ROS parameter names the launch file's nodes really receive.
+
+    This is the allowlist whose absence caused the void run: a declared argument
+    that is not in it never reaches the node.  Keys are substitution tuples, so
+    they are performed rather than string-matched.
+    """
+    from ros2launch.api.api import get_launch_description_from_any_launch_file
+    from launch import LaunchContext
+    from launch.utilities import perform_substitutions
+    import launch_ros.actions
+
+    def walk(entity):
+        yield entity
+        children = list(getattr(entity, "entities", None) or [])
+        children += list(getattr(entity, "_entities", None) or [])
+        for child in children:
+            yield from walk(child)
+
+    context = LaunchContext()
+    names = set()
+    description = get_launch_description_from_any_launch_file(launch_path)
+    for node in (e for e in walk(description) if isinstance(e, launch_ros.actions.Node)):
+        for item in (getattr(node, "_Node__parameters", None) or ()):
+            if not isinstance(item, dict):
+                continue
+            for key in item.keys():
+                try:
+                    names.add(
+                        perform_substitutions(context, list(key))
+                        if isinstance(key, (tuple, list))
+                        else str(key)
+                    )
+                except Exception:
+                    continue
+    return names
+
+
+def _forwards_into_include(launch_path, arg):
+    """Whether the argument is spread into an include's launch_arguments.
+
+    Structural rather than behavioural, and deliberately so: arena.launch.py
+    builds its include inside an OpaqueFunction, which the launch system only
+    materialises when it visits it with a fully resolved context, so the include
+    cannot be inspected without effectively starting the launch.  This walks the
+    AST instead of the text, so it is immune to quote style, whitespace and line
+    breaks -- the things that made the previous check fire on formatting -- and it
+    follows the local variable the argument was actually bound to rather than
+    assuming it is named after the argument.
+    """
+    import ast
+
+    tree = ast.parse(open(launch_path).read())
+    bound = set()
+    for node in ast.walk(tree):
+        # <local> = LaunchArgument(name="pedestrian_goal_traversal", ...)
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
+            continue
+        for kw in node.value.keywords:
+            if kw.arg == "name" and isinstance(kw.value, ast.Constant) and kw.value.value == arg:
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        bound.add(target.id)
+    if not bound:
+        return False
+    # ...then **<local>.<anything> inside a dict that is handed to an include.
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Dict):
+            continue
+        for key, value in zip(node.keys, node.values):
+            if key is not None:  # a ** entry parses as key=None
+                continue
+            inner = value.value if isinstance(value, ast.Attribute) else value
+            if isinstance(inner, ast.Name) and inner.id in bound:
+                return True
+    return False
+
+
 try:
     launch_file = get_package_share_directory("arena_bringup") + "/launch/arena.launch.py"
-    src = open(launch_file).read()
     out["launch_file"] = launch_file
-    out["launch_declares_arg"] = "name='pedestrian_goal_traversal'" in src
-    out["launch_forwards_arg"] = "**pedestrian_goal_traversal.dict" in src.replace(" ", "")
+    out["launch_declares_arg"] = ARG in _declared_argument_names(launch_file)
+    out["launch_forwards_arg"] = _forwards_into_include(launch_file, ARG)
 except Exception as e:
     out["launch_error"] = f"{type(e).__name__}: {e}"
     out["launch_declares_arg"] = False
@@ -775,12 +871,9 @@ except Exception as e:
 try:
     tg_launch = (get_package_share_directory("task_generator")
                  + "/launch/task_generator.launch.py")
-    tg = open(tg_launch).read()
-    tgc = tg.replace(" ", "")
     out["task_generator_launch_file"] = tg_launch
-    out["included_declares_arg"] = ('name="pedestrian_goal_traversal"' in tgc
-                                    or "name='pedestrian_goal_traversal'" in tgc)
-    out["included_parameterises_arg"] = "**pedestrian_goal_traversal.str_param" in tgc
+    out["included_declares_arg"] = ARG in _declared_argument_names(tg_launch)
+    out["included_parameterises_arg"] = ARG in _node_parameter_names(tg_launch)
 except Exception as e:
     out["included_error"] = f"{type(e).__name__}: {e}"
     out["included_declares_arg"] = False
@@ -860,12 +953,41 @@ def _run_pedestrian_traversal_preflight(
     report['pass'] = result.returncode == 0 and all(checks.values())
     if not report['pass']:
         failed = [k for k, v in checks.items() if not v]
+        # Name the likely cause from WHICH link failed, rather than asserting a
+        # rebuild.  The old message always said "rebuild and re-install", which
+        # sent at least one investigation down the wrong path: a probe that
+        # cannot import or introspect the launch chain is not evidence of a stale
+        # install, and the errors captured below usually say what it really was.
+        if payload.get('launch_error') or payload.get('included_error'):
+            hint = (
+                'the probe could not introspect the launch chain '
+                f"(launch_error={payload.get('launch_error')!r}, "
+                f"included_error={payload.get('included_error')!r}); this is a "
+                'probe/environment failure, not necessarily a stale install'
+            )
+        elif not checks['module_importable'] or not checks['behaviour_ok']:
+            hint = (
+                'the installed task_generator does not implement the requested '
+                'behaviour, which a stale install would explain: rebuild and '
+                're-install task_generator, then retry'
+            )
+        elif not checks['included_parameterises_arg'] or not checks['included_declares_arg']:
+            hint = (
+                'task_generator.launch.py does not pass the argument through to '
+                'the node, so it would fall back to its own default: rebuild and '
+                're-install task_generator, then retry'
+            )
+        else:
+            hint = (
+                'arena.launch.py does not declare or forward the argument, so it '
+                'would never reach the included description: rebuild and '
+                're-install arena_bringup, then retry'
+            )
         report['reason'] = (
             f'requested pedestrian traversal mode {requested!r} is NOT supported by '
             f'the build that would run (failed: {failed}). The mode would be '
             'silently ignored and the run would reproduce present-day pedestrian '
-            'behaviour while appearing to succeed. Rebuild and re-install '
-            'arena_bringup and task_generator, then retry.'
+            f'behaviour while appearing to succeed. Likely cause: {hint}.'
         )
     return report
 
@@ -2216,6 +2338,14 @@ class EvalVideoRecorder(Node):
         self.debug_overlay_fallback_frame_count = 0
         self.latest_sim_top_down = None
         self.latest_sim_top_down_generation = -1
+        # Zero the sim_top_down counters for the same reason the ego ones below
+        # are zeroed: video_index.json reports them per episode.  Only
+        # post_warmup_discard_count used to be reset here, so
+        # sim_top_down_skipped_frames and sim_top_down_corrupt_skips accumulated
+        # across every episode of a run while being labelled per-episode --
+        # measured rising monotonically 183 -> 1848 over two ten-episode runs.
+        self.sim_top_down_skipped_frame_count = 0
+        self.sim_top_down_corrupt_skip_count = 0
         self.sim_top_down_post_warmup_discard_count = 0
         # Re-arm the ego gate for the next episode and zero its counters so the
         # figures reported per episode in video_index.json describe that episode.
@@ -3674,10 +3804,6 @@ def main() -> int:
         f'require_human_states_ready:={str(args.human == "hunav").lower()}',
         'human_states_ready_timeout_sec:=20.0',
         'episode_start_delay_sec:=1.0',
-        # Empty means "leave configs/hunav/default.yaml in charge".  A non-empty
-        # value changes how long pedestrians keep walking, which changes scene
-        # dynamics, so it is also recorded under `parameters` below.
-        f'pedestrian_goal_traversal:={args.pedestrian_goal_traversal}',
         f'vln_instruction:={args.vln_instruction}',
         f'dual_vln_mode:={args.dual_vln_mode}',
         f'dual_vln_device:={args.dual_vln_device}',
@@ -3705,6 +3831,15 @@ def main() -> int:
     ]
     if args.local_planner == 'dual_vln':
         launch_cmd.append('enable_collision_monitor:=false')
+    # Only forwarded when a mode was actually requested.  An empty value means
+    # "leave configs/hunav/default.yaml in charge", and ros2launch rejects a
+    # trailing ':=' outright (parse_launch_arguments raises RuntimeError on
+    # `count == 1 and argument.endswith(':=')`), so emitting it unconditionally
+    # aborts every default-flag run before the launch service starts.  A
+    # non-empty value changes how long pedestrians keep walking, which changes
+    # scene dynamics, so it is also recorded under `parameters` below.
+    if args.pedestrian_goal_traversal:
+        launch_cmd.append(f'pedestrian_goal_traversal:={args.pedestrian_goal_traversal}')
     if args.internnav_direct_cmd_vel:
         launch_cmd.append('robot_launch_file:=internnav_async_eval.launch.py')
     if args.dual_vln_rgb_topic:

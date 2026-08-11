@@ -308,6 +308,60 @@ check_gpu(){
     fi
 }
 
+#: Services that request 'gpus: all'. arena-1 deliberately has none.
+BENCHMARK_GPU_SERVICES="isaac internnav"
+
+# A healthy host GPU does NOT imply a usable GPU inside the containers, and the
+# difference has already cost an evaluation slot. In that outage both GPU
+# containers lost device access at the *device-cgroup* level while staying up:
+# the /dev/nvidia* nodes were still listed, but open() returned EPERM, so NVML
+# reported "Failed to initialize NVML", Isaac logged cudaErrorNoDevice 1.73M
+# times, Replicator returned nothing, the cameras never published and the run
+# died on the episode-start barrier ~10 minutes in. Nothing observable from
+# outside the containers was wrong: they were running and /health went ready.
+#
+# So the assertion has to be made from INSIDE each GPU container, and it has to
+# be an open() rather than a stat(): `test -e` passes during the exact failure
+# this exists to catch. `: < /dev/nvidia0` performs the open and nothing else.
+check_gpu_devices(){
+    local svc cname state nodes
+    for svc in $BENCHMARK_GPU_SERVICES; do
+        cname="$(benchmark_container "$svc")"
+        state="$(docker inspect -f '{{.State.Running}}' "$cname" 2>/dev/null)"
+        if [ "$state" != "true" ]; then
+            # Not a FAIL: 'doctor' legitimately runs before 'up'. do_run re-checks
+            # after the containers are started, so the cold path is still covered.
+            check_report SKIP "$svc: not running, cannot verify GPU device access yet" \
+                "'$name run' repeats this check after starting the containers"
+            continue
+        fi
+        nodes="$(docker exec "$cname" sh -c 'ls /dev/nvidia* 2>/dev/null | tr "\n" " "' 2>/dev/null)"
+        if [ -z "$nodes" ]; then
+            check_report FAIL "$svc: no /dev/nvidia* devices inside the container" \
+                "the GPU was never mapped in; check 'gpus: all' / the nvidia runtime" \
+                "for this service in the compose file"
+            continue
+        fi
+        if ! docker exec "$cname" sh -c ': < /dev/nvidia0' >/dev/null 2>&1; then
+            check_report FAIL "$svc: /dev/nvidia0 exists but cannot be opened (EPERM)" \
+                "the device cgroup is denying access even though the container is up" \
+                "and the host GPU is healthy - this is the silent outage that voided" \
+                "a slot: NVML fails, Isaac logs cudaErrorNoDevice, cameras never" \
+                "publish and the run dies on the episode-start barrier" \
+                "FIX: restart the GPU containers ('$name stop' then '$name up'," \
+                "or 'docker restart $cname')"
+            continue
+        fi
+        if ! docker exec "$cname" sh -c 'nvidia-smi -L' >/dev/null 2>&1; then
+            check_report FAIL "$svc: devices open but NVML will not initialise" \
+                "not the cgroup outage - the nodes are openable, so suspect a" \
+                "driver/userspace mismatch between host and container"
+            continue
+        fi
+        check_report PASS "$svc: GPU devices openable inside the container and NVML responds"
+    done
+}
+
 check_model_runtime(){
     local cname
     cname="$(benchmark_container internnav)"
@@ -338,6 +392,7 @@ doctor(){
     check_images
     check_containers
     check_arena_built
+    check_gpu_devices
     check_model_runtime
     echo
     if [ "$CHECK_FAILURES" -gt 0 ]; then
@@ -475,6 +530,8 @@ do_run(){
         run_step "start containers ($BENCHMARK_SERVICES) without building" \
             arena_docker_compose up -d --remove-orphans --no-build $BENCHMARK_SERVICES
         run_step_sh "wait for the arena workspace build marker /.built" "<poll docker exec ... test -f /.built>"
+        run_step_sh "re-assert GPU device access inside $BENCHMARK_GPU_SERVICES now that they are up" \
+            "<docker exec ... sh -c ': < /dev/nvidia0' and nvidia-smi -L, per GPU container>"
         run_step_sh "start the model server in the background, logging to $serve_log" \
             "setsid bash .../features/internnav/main launch --robot $ROBOT --mode internnav --device $DEVICE </dev/null >>$serve_log 2>&1 &"
         wait_for_model
@@ -486,6 +543,14 @@ do_run(){
 
     doctor || exit 1
     do_up
+    # Re-assert GPU device access now that the containers are actually up. When
+    # 'doctor' ran above they may not have been, in which case check_gpu_devices
+    # could only SKIP -- and this is the one precondition whose failure is
+    # invisible until ~10 minutes into the run.
+    CHECK_FAILURES=0
+    check_gpu_devices
+    [ "$CHECK_FAILURES" -eq 0 ] || die "GPU device access is not usable inside the containers" \
+        "the FAIL above names the cause and the fix; no model server was started"
     mkdir -p "$(dirname "$serve_log")"
     # Cleanup must be a trap, not a trailing statement: run_step calls die() on
     # failure, which exits, so a failed evaluation would otherwise leave the GPU
