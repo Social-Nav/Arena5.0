@@ -144,10 +144,14 @@ def generate_launch_description():
     )
     social_yielding = LaunchArgument(
         name='social_yielding',
-        default_value='false',
-        choices=['true', 'false'],
-        description='Enable proactive-yielding pipeline: detect pedestrian block '
-                    '-> pause -> snapshot -> LLM pixel goal -> reproject -> yield replan',
+        default_value='auto',
+        choices=['auto', 'true', 'false'],
+        description='Enable state for the proactive-yielding pipeline (trigger + orchestrator, '
+                    'which always launch but stay inert until enabled). OVERRIDE: an explicit '
+                    'true/false here wins over the scenario file. `auto` (the default) means "not '
+                    'specified" and defers to the scenario file\'s robots[].social_yielding, then '
+                    'false. Tri-state because a plain boolean cannot distinguish "not passed" from '
+                    '"passed false".',
     )
 
     def create_task_generators(
@@ -258,6 +262,7 @@ def generate_launch_description():
                     **record_data_dir.dict,
                     **debug.dict,
                     **save_data.dict,
+                    **social_yielding.dict,
                     'namespace': namespace,
                     'headless': headlessness,
                     'reference': str(reference),
@@ -319,19 +324,25 @@ def generate_launch_description():
                 PythonExpression(['"', train_config.substitution, '" != ""'])
             ),
         ),
+        # Always launch both yielding nodes; they stay INERT (no polling) until enabled at reset.
+        # Enable resolution: the launch arg if explicitly true/false, else scenario.yaml's
+        # `robot.social_yielding`, else false (task_generator resolves + publishes it).
+        # Both yielding nodes read ARENA_ROBOT to build their namespace and base frame.
+        launch.actions.SetEnvironmentVariable(
+            name='ARENA_ROBOT',
+            value=robot.substitution,
+        ),
         launch.actions.ExecuteProcess(
             cmd=['bash', '-c',
                  'source /opt/arena_ws/src/Arena/_meta/tools/source && '
                  'python3 /opt/arena_ws/src/Arena/arena_isaac/arena_isaac/arena_isaac/social_yielding/proactive_yielding_trigger.py'],
             output='screen',
-            condition=launch.conditions.IfCondition(social_yielding.substitution),
         ),
         launch.actions.ExecuteProcess(
             cmd=['bash', '-c',
                  'source /opt/arena_ws/src/Arena/_meta/tools/source && '
                  'python3 /opt/arena_ws/src/Arena/arena_isaac/arena_isaac/arena_isaac/social_yielding/social_yielding_orchestrator.py'],
             output='screen',
-            condition=launch.conditions.IfCondition(social_yielding.substitution),
         ),
     ])
     return ld

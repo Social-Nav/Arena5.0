@@ -1,0 +1,36 @@
+# Robot social profile: PASSIVE -- the most cautious of the three. Wide bubble, slow cruise, so
+# the robot decelerates and lets pedestrians pass. Must be requested explicitly: a scenario
+# without `social_attributes` now gets ../neutral, because passive brakes too early and too often
+# to serve as an interaction baseline.
+#
+# Siblings: ../neutral (midway), ../aggressive. All three must define the SAME keys.
+# Parameter reference, rules and the side-by-side comparison: docs/scenario_and_social_config.md
+
+weights:
+  social_weight: 700.0
+  proxemics_weight: 150.0         # bubble strength
+  proxemics_d0: 1.0               # bubble range (~1 m standoff)
+  proxemics_alpha: 3.0
+  social_clear_distance: 2.0      # hard cutoff: peds beyond this are skipped entirely
+  social_safety_distance: 0.9
+  social_mid_gain: 1.0
+  social_near_gain: 6.0
+
+weights_optimizer:
+  max_linear_velocity: 0.7        # hard vx CEILING, not the cruise speed
+
+trajectorizer:
+  desired_linear_vel: 0.30        # the real speed knob (social_mpc ignores max_vel_x)
+
+# Pedestrian bubbles in the GLOBAL costmap -- navfn's only ped source. Byte-identical in all three
+# profiles on purpose: shrinking them made navfn plan too close to peds. Details in nav2.yaml.
+global_social_layer:
+  amplitude: 254.0                # LETHAL_OBSTACLE; never 255 (= NO_INFORMATION, not a cost)
+  cutoff: 20.0
+  covariance_front_height: 0.1105
+  covariance_front_width: 0.043
+  covariance_rear_height: 0.043
+  covariance_rear_width: 0.043
+  covariance_right_height: 0.043
+  covariance_when_still: 0.0736
+  speed_factor_multiplier: 1.0    # blunt/pointy knob: stretches front_height only

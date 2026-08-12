@@ -19,13 +19,19 @@ class PositionH(Position):
 
 
 class Goals(list[Position]):
+    # NOTE on z: a scenario waypoint is written [x, y, heading_deg], but Position.parse maps a
+    # 3-element list to (x, y, z) -- so the heading lands in z (e.g. 83.66 -> 83.66 m up).
+    # Per-waypoint headings are meaningless under SFM anyway (orientation is emergent from
+    # velocity toward the next goal; hunav.py re-derives it via atan2 and overwrites it), so the
+    # value is intentionally dropped and z is forced flat. Without this, as_poses() below would
+    # carry the bogus altitude into agent_msg.goals.
     @classmethod
     def parse(cls, obj: dict) -> "Goals":
         waypoints = [
             Position(
                 x=waypoint.get('x', 0.),
                 y=waypoint.get('y', 0.),
-                z=waypoint.get('z', 0.),
+                z=0.,
             )
             for waypoint in (obj.get(wpname) for wpname in obj['goals'])
             if waypoint is not None
@@ -134,6 +140,7 @@ class HunavDynamicObstacle:
                 Position(
                     x=waypoint.x,
                     y=waypoint.y,
+                    z=0.,   # drop waypoint.z: it holds the scenario's heading, see Goals.parse
                 )
                 for waypoint
                 in obj.waypoints
@@ -158,7 +165,12 @@ class HunavDynamicObstacle:
                 z=extra.get('position', {}).get('z', cls._default.init_pose.z),
                 h=extra.get('position', {}).get('h', cls._default.init_pose.h),
             ),
-            yaw=0.0,
+            # Initial heading, in RADIANS. The scenario writes it as the 3rd element of `pose`
+            # in degrees; DynamicObstacle.parse converts it, so obj.pose.orientation already
+            # holds radians here. Was hardcoded 0.0, which made every pedestrian spawn facing
+            # +x regardless of the scenario. `extra['position']['h']` keeps priority as the
+            # explicit override (same precedence as x/y/z above).
+            yaw=extra.get('position', {}).get('h', obj.pose.orientation.to_yaw()),
             model=obj.model,
             goals=waypoints,
             velocity=extra.get('velocity', cls._default.velocity),

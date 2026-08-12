@@ -1,0 +1,32 @@
+# Generated from topdown pixel waypoints
+# Parameter reference: docs/scenario_and_social_config.md
+#
+# SURPRISED pedestrian + aggressive robot, crossing paths. The ped stops and stares while the robot
+# is visible within `dist`, so the crossing resolves by the ped holding still rather than swerving.
+# Visibility-gated, so dist/duration/once/vel all matter here (they are dead on regular).
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [2.34691, -5.89032, 278.31028]
+  behavior_tree: BTSurprisedNav.xml
+  behavior:
+    type: 3        # must match the tree above
+    dist: 1.5      # detection radius
+    duration: 2    # seconds stopped per trigger
+    once: false    # re-trigger every time the robot comes back into view
+    vel: 0.0       # speed while surprised: 0 => stand still and watch
+    social_force_factor: 10.0   # inert for surprised; kept comparable with the regular variant
+  velocity: 0.82
+  desired_velocity: 1.05
+  waypoints:
+  - [2.07709, -3.04307, 268.66778]
+  - [2.1186, -1.25808, 268.66778]
+robot:
+  name: robot
+  pose: [0.9873, -4.18463, -1.11964]
+  social_attributes: aggressive
+  waypoints:
+  - [5.58479, -4.30916, -1.11964]
+  behavior: moves along the main vertical aisle through the central crossing for routine
+    floor navigation

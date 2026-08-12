@@ -571,7 +571,16 @@ class IsaacSimulator(BaseSim, NodeInterface):
         req.goals = goals
         res = await self._clients.NavigatePedestrians.call_timeout(req)
 
-        return tuple(a and b for a, b in zip(goals, res and res.ret or ()))
+        # Return one truthful flag PER GOAL, aligned with `goals` so the caller can name which
+        # pedestrian failed. The old expression was `zip(goals, res.ret)` with `a and b` -- but
+        # `a` is a PedestrianGoal, which is always truthy, so the result only ever reflected
+        # res.ret. Worse, on timeout `res and res.ret or ()` collapsed to an empty tuple and zip
+        # truncated to length 0, turning a whole-batch failure into "nothing happened".
+        if res is None or not res.ret:
+            return tuple(False for _ in goals)
+        ret = tuple(res.ret)
+        # Pad rather than truncate: a short reply must not silently hide the missing entries.
+        return tuple(bool(ret[i]) if i < len(ret) else False for i in range(len(goals)))
 
     async def _delete_entity(self, name: str) -> bool:
         self._logger.debug(f"Attempting to delete prim {name}")

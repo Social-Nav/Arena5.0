@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import os
 import time
 import traceback
@@ -35,6 +36,9 @@ from task_generator.shared import (
     Position,
     Wall,
 )
+import rclpy.time
+import tf2_ros
+
 from task_generator.simulators.human import BaseHumanSimulator
 from task_generator.simulators.human.dummy import DummyHumanSimulator
 from task_generator.simulators.sim import BaseSim
@@ -42,16 +46,56 @@ from task_generator.simulators.sim import BaseSim
 from . import HunavDynamicObstacle
 
 
-def _create_robot_message():
-    """Creates a standard robot message for HuNav communication"""
+def _create_robot_message(
+    pose: typing.Optional[tuple[float, float, float]] = None,
+    velocity: typing.Optional[tuple[float, float]] = None,
+):
+    """Creates the robot Agent message that HuNav uses to reason about the robot.
+
+    This message is the ONLY channel through which HuNav learns where the robot is: the
+    hunav_agent_manager node subscribes to nothing (its only subscription is an unrelated
+    std_msgs/String in agent_say_node) and receives the robot solely as
+    ComputeAgents.Request.robot. Everything pedestrian-side that depends on the robot reads
+    from it:
+      - isRobotVisible() -> robotSquaredDistance(): centre-to-centre distance vs `dist`,
+        gating BTSurprisedNav / BTScaredNav / BTCuriousNav / BTThreateningNav.
+      - lineOfSight(): the +-99.7 deg FOV cone, computed from the *pedestrian's* yaw and the
+        robot position.
+      - SFM: BEH_REGULAR pushes robot_.sfmAgent into otherAgents (so social_force_factor acts
+        on it) and BEH_IMPASSIVE pushes it in as an obstacle.
+
+    Until 2026-08-03 this function took no arguments and hardcoded (0, 0) with zero velocity,
+    so HuNav believed the robot stood still at the map origin forever. Every robot-aware
+    pedestrian behaviour was silently inert -- peds walked through the robot, and tuning
+    social_force_factor had no visible effect. Pass a real pose; `None` keeps the old
+    origin fallback for the pre-TF window only.
+
+    Args:
+        pose: (x, y, yaw) in the map frame. None -> origin (degraded, logged by the caller).
+        velocity: (vx, vy) in the map frame. Feeds SFM's velocity/angle-aware social force.
+    """
     robot_msg = Agent()
     robot_msg.id = 0
     robot_msg.name = "robot"
     robot_msg.type = Agent.ROBOT
-    robot_msg.position.position.x = 0.0
-    robot_msg.position.position.y = 0.0
-    robot_msg.yaw = 0.0
     robot_msg.radius = 0.3
+
+    x, y, yaw = pose if pose is not None else (0.0, 0.0, 0.0)
+    robot_msg.position.position.x = x
+    robot_msg.position.position.y = y
+    robot_msg.yaw = yaw
+    # HuNav reads orientation from `yaw`, but Agent.position is a full Pose and downstream
+    # consumers (publish_agents_tf / publish_robot_state) republish the quaternion, so keep
+    # the two representations consistent instead of leaving an identity quaternion behind.
+    robot_msg.position.orientation.z = np.sin(yaw / 2.0)
+    robot_msg.position.orientation.w = np.cos(yaw / 2.0)
+
+    if velocity is not None:
+        vx, vy = velocity
+        robot_msg.velocity.linear.x = vx
+        robot_msg.velocity.linear.y = vy
+        robot_msg.linear_vel = float(np.hypot(vx, vy))
+
     return robot_msg
 
 
@@ -300,6 +344,19 @@ class HunavHumanSimulator(
         self._agent_previous_orientations = {}
         self._orientation_smoothing_factor = 0.15  # 0.05-0.3 range
 
+        # Robot pose feed for HuNav. See _create_robot_message: this TF lookup is the only way
+        # pedestrians learn where the robot is. map->base_link (not odom) because HuNav works in
+        # the same map frame as the pedestrian positions, so no second transform is needed; odom
+        # would drift relative to it.
+        self._tf_buffer = tf2_ros.Buffer()
+        self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self.node)
+        # Previous (x, y, sim_time_sec) used to finite-difference the robot velocity, which SFM's
+        # social force needs (it is velocity/angle aware, not just distance based).
+        self._robot_prev_xyt: typing.Optional[tuple[float, float, float]] = None
+        self._robot_pose_warned = False
+        # Pedestrians whose last pedestrian_update failed; used to log only transitions.
+        self._move_failed_names: set[str] = set()
+
         self._logger.debug("Collections initialized")
 
         self._obstacle_subscriber = self.node.create_subscription(
@@ -462,6 +519,92 @@ class HunavHumanSimulator(
         except Exception as e:
             self._logger.error(f"Error in obstacle callback: {e}")
 
+    def _robot_base_frames(self) -> list[str]:
+        """TF frames to try for the robot base, most specific first.
+
+        Derived from the live RobotManager rather than hardcoded, so namespaced robots
+        (e.g. `Ai2_Bot2/base_link`) and unnamespaced single-robot runs both work. HuNav's
+        Agent message models exactly ONE robot, so if several are managed we take the first
+        and note it -- picking arbitrarily is better than silently reporting the origin.
+        """
+        frames: list[str] = []
+        try:
+            managers = list(self.node._robots_manager.managers.values())
+        except Exception:
+            managers = []
+
+        if len(managers) > 1:
+            self._logger.debug(
+                f"{len(managers)} robots managed but HuNav models one; using "
+                f"'{managers[0].name}'"
+            )
+        for manager in managers[:1]:
+            try:
+                frames.append(str(manager.frame(
+                    manager._config.model_params.base_frame)))
+            except Exception:
+                # Fall back to the plain namespaced base_link if model_params is unavailable.
+                try:
+                    frames.append(str(manager.frame('base_link')))
+                except Exception:
+                    pass
+
+        frames.append('base_link')
+        # De-duplicate, preserving order.
+        return list(dict.fromkeys(f for f in frames if f))
+
+    def _robot_state_for_hunav(self):
+        """Look up the robot's map-frame pose+velocity for the next ComputeAgents call.
+
+        Returns (pose, velocity) with pose=(x, y, yaw) and velocity=(vx, vy), or (None, None)
+        if no TF is available yet (during startup / right after a reset). The caller then sends
+        the origin fallback, which degrades pedestrian robot-awareness for those few cycles.
+        """
+        transform = None
+        for frame in self._robot_base_frames():
+            try:
+                transform = self._tf_buffer.lookup_transform(
+                    'map', frame, rclpy.time.Time())
+                break
+            except Exception:
+                continue
+
+        if transform is None:
+            if not self._robot_pose_warned:
+                self._logger.warning(
+                    'robot pose unavailable (TF map->'
+                    f'{"/".join(self._robot_base_frames())} failed); HuNav will see the '
+                    'robot at the origin until TF arrives, so pedestrians cannot react to it'
+                )
+                self._robot_pose_warned = True
+            return None, None
+
+        if self._robot_pose_warned:
+            self._logger.info('robot pose TF acquired; pedestrians can now see the robot')
+            self._robot_pose_warned = False
+
+        t = transform.transform.translation
+        q = transform.transform.rotation
+        yaw = float(np.arctan2(
+            2.0 * (q.w * q.z + q.x * q.y),
+            1.0 - 2.0 * (q.y * q.y + q.z * q.z),
+        ))
+
+        # node.sim_time is arena_rclpy_mixins.Time (a wrapper around builtin_interfaces Time),
+        # NOT rclpy.time.Time -- it exposes to_seconds() and has no .nanoseconds.
+        now = self.node.sim_time.to_seconds()
+        velocity = (0.0, 0.0)
+        if self._robot_prev_xyt is not None:
+            px, py, pt = self._robot_prev_xyt
+            dt = now - pt
+            # Guard against a zero/backwards dt (paused clock, or a reset rewinding sim time),
+            # which would otherwise produce an enormous bogus velocity.
+            if dt > 1e-3:
+                velocity = ((t.x - px) / dt, (t.y - py) / dt)
+        self._robot_prev_xyt = (t.x, t.y, now)
+
+        return (float(t.x), float(t.y), yaw), velocity
+
     def _update_agent_obstacles(self, current_agents):
         """Update agent closest_obs with latest obstacle data before HuNav call
 
@@ -525,15 +668,70 @@ class HunavHumanSimulator(
                 while not done.is_set():
                     await rate.get()
                     async with self._agents_lock:
-                        await self._simulator.pedestrian_update(
+                        results = await self._simulator.pedestrian_update(
                             self._arena_pedestrians_container
                         )
+                        self._report_move_failures(results)
         except asyncio.CancelledError:
             pass
         except Exception as e:
             self._logger.error(
                 f"Failed to update agent positions: {e}\n{traceback.format_exc()}"
             )
+
+    def _report_move_failures(self, results):
+        """Log pedestrians the simulator refused to move, at 10 Hz without spamming.
+
+        WHY THIS EXISTS: this loop drives the ONLY channel that moves a pedestrian inside Isaac
+        (NavigatePedestrians). /people is published from hunav's own integrator, so when the
+        service fails the RViz marker keeps walking while the character stands still -- the
+        symptom looks like a rendering bug rather than a failed service call. The return value
+        was previously discarded, so those failures were completely invisible.
+
+        Isaac returns False when PeopleManager has no live Person for that prim path, which is
+        what happens after SpawnWorld replaces the USD stage: the manager entry survives but the
+        prim under it is gone.
+
+        Only transitions are logged (recovery included), so a persistent failure costs one line.
+        """
+        peds = list(self._arena_pedestrians_container.pedestrians)
+        if not peds:
+            # Nothing spawned yet (or all deleted): no failure to report, and clear any stale set
+            # so the next real failure still counts as a transition.
+            self._move_failed_names = set()
+            return
+
+        if not results:
+            # A shorter-than-expected reply is NOT "nothing happened": every simulator backend
+            # returns one flag per pedestrian, so an EMPTY result means the whole batch never
+            # reached the simulator. Silently returning here was the blind spot -- pedestrians
+            # stood still in Isaac with nothing in the log, because this is the only place that
+            # reports it. Treat the batch as failed instead.
+            failed = {p.name for p in peds}
+        else:
+            # A short (but non-empty) reply is padded with failures rather than truncated, for the
+            # same reason. Naming by index is only valid while len(results) == len(peds).
+            if len(results) != len(peds):
+                self._logger.error(
+                    f"pedestrian_update returned {len(results)} flags for {len(peds)} pedestrians; "
+                    f"treating the unreported tail as failed (names may be approximate).")
+            failed = {
+                peds[i].name if i < len(peds) else f'#{i}'
+                for i, ok in enumerate(results) if not ok
+            }
+            failed |= {p.name for p in peds[len(results):]}
+        if failed == self._move_failed_names:
+            return  # unchanged since the last report; stay quiet
+        newly = failed - self._move_failed_names
+        fixed = self._move_failed_names - failed
+        if newly:
+            self._logger.error(
+                f"pedestrian_update FAILED for {sorted(newly)} -- these characters will NOT move "
+                f"in Isaac (their /people markers still will). Usual cause: no live prim after a "
+                f"stage reload.")
+        if fixed:
+            self._logger.info(f"pedestrian_update recovered for {sorted(fixed)}")
+        self._move_failed_names = failed
 
     async def _spawn_obstacles_impl(self, obstacles):
         self._logger.debug(f'Spawning walls for {len(obstacles)} obstacles')
@@ -693,7 +891,8 @@ class HunavHumanSimulator(
 
                 # Create request
                 request = ComputeAgents.Request()
-                request.robot = _create_robot_message()
+                robot_pose, robot_vel = self._robot_state_for_hunav()
+                request.robot = _create_robot_message(robot_pose, robot_vel)
                 request.current_agents = self._agents_container
 
                 # Call HuNav service
@@ -931,7 +1130,8 @@ class HunavHumanSimulator(
                         # Create request
                         request = ComputeAgents.Request()
                         request.current_agents = current_agents
-                        request.robot = _create_robot_message()
+                        robot_pose, robot_vel = self._robot_state_for_hunav()
+                        request.robot = _create_robot_message(robot_pose, robot_vel)
                         response = await self._compute_agents_client.call_timeout(
                             request
                         )
@@ -962,16 +1162,34 @@ class HunavHumanSimulator(
                                             )
                                         )
 
-                                        arena_ped.pose = self._round_coordinates(
-                                            updated_agent.position, 2
+                                        # Copy, not alias: _round_coordinates returns its
+                                        # own argument. Keep the spawn z -- hunav is 2D
+                                        # and would overwrite it with 0.
+                                        ped_z = arena_ped.pose.position.z
+                                        arena_ped.pose = copy.deepcopy(
+                                            self._round_coordinates(
+                                                updated_agent.position, 2
+                                            )
                                         )
+                                        arena_ped.pose.position.z = ped_z
 
-                                        arena_ped.twist.linear.x = (
-                                            updated_agent.velocity.linear.x
-                                        )
-                                        arena_ped.twist.linear.y = (
-                                            updated_agent.velocity.linear.y
-                                        )
+                                        # Use the FINITE-DIFFERENCED speed, not hunav's own
+                                        # velocity field. Reason: this twist is what
+                                        # NavigatePedestrians reads as `goal.velocity`, and it
+                                        # gates walking on `speed >= _MIN_WALK_SPEED` (0.05).
+                                        # hunav leaves velocity.linear at 0 on the first cycles
+                                        # (and whenever it reports position-only updates), so the
+                                        # character was told "you are standing still" while the
+                                        # position it was given kept advancing -- pedestrian frozen
+                                        # in Isaac, /people marker walking in RViz, and no failure
+                                        # logged because the service returned True.
+                                        # calculated_vel_* is derived from the position delta this
+                                        # cycle, so it is non-zero exactly when the agent moves.
+                                        # updated_agent.velocity is overwritten with the same
+                                        # values ~30 lines below; assigning it here kept the two
+                                        # inconsistent for the rest of this iteration.
+                                        arena_ped.twist.linear.x = calculated_vel_x
+                                        arena_ped.twist.linear.y = calculated_vel_y
                                         arena_ped.twist.linear.z = 0.0
 
                                         arena_ped.twist.angular.x = 0.0

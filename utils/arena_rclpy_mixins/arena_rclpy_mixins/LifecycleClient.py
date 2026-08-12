@@ -88,9 +88,15 @@ class LifecycleClient(TimeNode, rclpy.node.Node):
 
 
 class AsyncLifecycleClient(AsyncNode):
-    async def get_lifecycle_state_async(self, node_name: str, *, timeout: float | None = None, **kwargs) -> lifecycle_msgs.msg.State:
+    async def get_lifecycle_state_async(self, node_name: str, *, timeout: float | None = None, **kwargs) -> lifecycle_msgs.msg.State | None:
         """
-        Asynchronously get state of lifecycle node
+        Asynchronously get state of lifecycle node.
+
+        Returns None if the get_state service does not answer (node not up yet / slow),
+        instead of raising. Callers must handle None gracefully — a missing lifecycle
+        answer must NOT crash the whole task_generator node (it previously did via an
+        `assert`, taking down the node when a costmap's get_state was momentarily
+        unavailable during startup/reset).
         """
         cli = self.create_client_wrapper(
             lifecycle_msgs.srv.GetState,
@@ -98,10 +104,21 @@ class AsyncLifecycleClient(AsyncNode):
             **kwargs,
         )
 
-        await cli.ensure(timeout_sec=timeout)
-        res = await cli.call_timeout(lifecycle_msgs.srv.GetState.Request(), timeout_sec=timeout)
-        assert res is not None
-        return res.current_state
+        # The client MUST be destroyed again: this helper is called per-reset (and in a poll loop
+        # by wait_for_lifecycle_state_async, once per check_interval), so leaking one client per
+        # call accumulates entities that the executor re-scans on every _wait_for_ready_callbacks
+        # iteration. 11 resets in one session was already ~88 stale clients.
+        try:
+            # Default to a bounded wait so a never-answering service can't hang/None-loop.
+            eff_timeout = 5.0 if timeout is None else timeout
+            if not await cli.ensure(timeout_sec=eff_timeout):
+                return None
+            res = await cli.call_timeout(lifecycle_msgs.srv.GetState.Request(), timeout_sec=eff_timeout)
+            if res is None:
+                return None
+            return res.current_state
+        finally:
+            self.destroy_client(cli.client)
 
     async def get_available_lifecycle_states_async(self, node_name: str, *, timeout: float | None = None, **kwargs) -> list[lifecycle_msgs.msg.State]:
         """
@@ -158,7 +175,9 @@ class AsyncLifecycleClient(AsyncNode):
         while True:
 
             current_state = await self.get_lifecycle_state_async(node_name, timeout=timeout, **kwargs)
-            if current_state.id == desired_state.id:
+            # None = get_state unavailable this poll; treat as "not yet in desired state"
+            # and keep waiting (until the timeout below), rather than crashing on .id.
+            if current_state is not None and current_state.id == desired_state.id:
                 return True
             if timeout is not None:
                 if (self.wall_time - start_time).to_seconds() >= timeout:

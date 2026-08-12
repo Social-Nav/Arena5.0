@@ -1,0 +1,34 @@
+# Robot social profile: NEUTRAL -- midway between passive and aggressive. Keeps a normal-looking
+# personal gap and a moderate cruise: it yields when a pedestrian is genuinely in the way instead of
+# pre-emptively braking (passive) or holding its line through the encounter (aggressive).
+#
+# Every value is interpolated between the two. Deltas below are vs passive (the baseline).
+# Parameter reference and rules: docs/scenario_and_social_config.md
+
+weights:
+  social_weight: 550.0            # 700->550
+  proxemics_weight: 110.0         # 150->110: bubble strength
+  proxemics_d0: 0.8               # 1.0->0.8: bubble range (~1.2 m effective)
+  proxemics_alpha: 3.0
+  social_clear_distance: 1.9      # 2.0->1.9. Hard cutoff: peds beyond this are skipped entirely
+  social_safety_distance: 0.82    # 0.9->0.82. Also the ramp denominator (clear - safety = 1.08)
+  social_mid_gain: 1.0
+  social_near_gain: 5.0           # 6.0->5.0
+
+weights_optimizer:
+  max_linear_velocity: 0.8        # hard vx CEILING, not the cruise speed
+
+trajectorizer:
+  desired_linear_vel: 0.4        # 0.35->0.55: the real speed knob (social_mpc ignores max_vel_x)
+
+# Byte-identical to passive and aggressive on purpose -- see passive/profile.yaml.
+global_social_layer:
+  amplitude: 254.0
+  cutoff: 20.0
+  covariance_front_height: 0.1105
+  covariance_front_width: 0.043
+  covariance_rear_height: 0.043
+  covariance_rear_width: 0.043
+  covariance_right_height: 0.043
+  covariance_when_still: 0.0736
+  speed_factor_multiplier: 1.0

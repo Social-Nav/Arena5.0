@@ -307,7 +307,17 @@ class Task(_TaskRegistry, NodeInterface, Props_):
         Returns:
             bool: True if the task is done, False otherwise.
         """
-        return self._force_reset or await self.__tm_robots.done
+        # Third reset cause, short-circuited before tm_robots.done so it needs its own log:
+        # something called force_reset() explicitly. Today that is the RViz "publish point"
+        # tool (Mod_OverrideRobot._cb_new_scenario on /clicked_point), which is easy to hit
+        # by accident while placing a goal and then looks like a spontaneous reset.
+        if self._force_reset:
+            self.node.get_logger().debug(
+                "[Reset-reason] FORCED: force_reset() was called "
+                "(e.g. an RViz /clicked_point publish), not a timeout or goal-reached."
+            )
+            return True
+        return await self.__tm_robots.done
 
     async def set_robot_position(self, pose: Pose):
         """

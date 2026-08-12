@@ -1,0 +1,51 @@
+{
+  "agents": [
+    {
+      "name": "hunav_1",
+      "role": "patient leaving office",
+      "model": "female_adult_business_02",
+      "from_region": {
+        "region_id": 0,
+        "label": "office"
+      },
+      "to_region": {
+        "region_id": 2,
+        "label": "waiting_area"
+      },
+      "spawn_waypoint": "wp_r00_office_006",
+      "waypoints": [
+        "wp_r00_office_008",
+        "wp_r00_office_013",
+        "wp_r00_office_012",
+        "wp_r02_waiting_area_001",
+        "wp_r02_waiting_area_002",
+        "wp_r02_waiting_area_009",
+        "wp_r02_waiting_area_010",
+        "wp_r02_waiting_area_011",
+        "wp_r02_waiting_area_012"
+      ],
+      "velocity": 0.9,
+      "desired_velocity": 1.1,
+      "behavior": "exit the office into the main waiting passage while yielding near the doorway"
+    }
+  ],
+  "robot": {
+    "name": "robot",
+    "from_region": {
+      "region_id": 2,
+      "label": "waiting_area"
+    },
+    "to_region": {
+      "region_id": 0,
+      "label": "office"
+    },
+    "start_waypoint": "wp_r02_waiting_area_001",
+    "waypoints": [
+      "wp_r00_office_012",
+      "wp_r00_office_013",
+      "wp_r00_office_010",
+      "wp_r00_office_009"
+    ],
+    "behavior": "enter the office from the doorway-side waiting passage and stop inside after a safe door interaction"
+  }
+}

@@ -1,0 +1,108 @@
+# Generated from topdown pixel waypoints
+# Variant of intersection_test: threatening pedestrian instead of regular.
+
+# PAIRED SETUP: threatening pedestrian + passive robot. This is the most adversarial pairing
+# available -- the ped does not merely refuse to yield, it actively hunts the robot down.
+#
+# WHAT THREATENING ACTUALLY DOES (blockRobot, agent_manager.cpp:298-359) -- per tick, while the
+# branch holds:
+#   1. computes a temporary goal `front_dist` metres in FRONT of the robot's heading and pushes it
+#      to the front of the ped's goal list (radius 0.05 m, so the ped commits to reaching it),
+#   2. overrides desiredVelocity to a hardcoded 2.0 m/s so the ped can outrun the robot and get
+#      there first -- note this IGNORES the `desired_velocity` field below for the whole chase,
+#   3. integrates one SFM step toward that goal,
+#   4. if it ends up within 0.6 m of the robot, additionally rotates to face it,
+#   5. restores the original goals and velocity at the end of the tick.
+# Because the goal is recomputed from the robot's CURRENT pose every tick, the ped tracks the robot
+# rather than aiming at a fixed interception point -- it re-blocks as the robot tries to go around.
+# The goal-restore in step 5 is why the ped resumes its normal route the instant the branch stops
+# holding, rather than being permanently derailed.
+#
+# NOTE the goal maths is `newgx = rx + front_dist*sin(h); newgy = ry + front_dist*cos(h)` --
+# sin/cos are swapped relative to the usual (cos, sin) convention, so the "in front of the robot"
+# point is actually rotated 90 deg from the robot's heading. That is upstream behavior, not a local
+# change; the practical effect is the ped cuts across the robot's side rather than dead ahead of it.
+# Do not "fix" it here -- it would silently diverge this scenario from every other threatening one.
+#
+# THE ROBOT POSE FEED THIS DEPENDS ON. Until 2026-08-03 _create_robot_message() in
+# simulators/human/hunav/hunav.py took no arguments and hardcoded position 0,0 / yaw 0 / zero
+# velocity, so every pedestrian believed the robot stood at the world origin. For threatening that
+# is doubly fatal: IsRobotVisible measured against (0,0), AND blockRobot would have aimed its
+# blocking goal at the origin, sending the ped to the far corner of the map. hunav.py now looks up
+# map->base_link over TF on every ComputeAgents call and finite-differences the velocity.
+#
+# GOTCHAS
+#   1. isRobotVisible() uses CENTER-TO-CENTER distance (robotSquaredDistance), not distance to the
+#      robot's path. Combined with the FOV gate below, a robot that swings wide can drop out of the
+#      branch mid-chase -- which reads as the ped losing interest and walking off.
+#   2. lineOfSight() requires the robot inside +-99.74 deg of the ped's heading (a 199.5 deg cone,
+#      hardcoded at agent_manager.cpp:91 and shared by all peds). No raytracing -- a robot behind a
+#      wall still counts as visible.
+#   3. The ped's heading is not what `pose` says: from_dynamic_obstacle hardcodes yaw=0.0 and to_msg
+#      sends that, so the ped starts facing +x and only swings toward its route once moving. For the
+#      first few ticks the robot can sit outside the cone no matter what this file says.
+#   4. IsRobotVisible's `distance` is HARDCODED to 4.5 in BTThreateningNav.xml -- it does NOT read
+#      {dist}. See the `dist` comment below for what dist does control here.
+#
+# HOW TO CHECK IT ACTUALLY FIRED -- do NOT use the RViz marker text. bt_node.cpp:633 builds that
+# /THREATENING suffix from a.behavior.type, which comes straight from this file whether or not the
+# branch ever ran; it only proves the config was parsed. Use instead:
+#   - `ros2 topic echo <ns>/robot_states` -- publish_robot_state republishes the robot Agent
+#     verbatim, so a non-zero, moving position proves the TF feed landed (it was pinned at 0,0).
+#   - `ros2 topic echo <ns>/human_states`, field agents[0].behavior.state -- blockRobot sets it to 1
+#     and updatePosition()/computeForces() clear it, so state==1 is the hard signal that a
+#     threatening tick happened this cycle.
+#   - the ped visibly exceeding its own desired_velocity (1.05) -- the 2.0 override is unique to the
+#     chase, so a ped moving faster than its configured speed is the branch running.
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [2.34691, -5.89032, 278.31028]
+  behavior_tree: BTThreateningNav.xml   # Threatening: cuts in front of the robot to block it
+  behavior:
+    type: 6        # BEH_THREATENING (1=regular 2=impassive 3=surprised 4=scared 5=curious 6=threatening)
+                   # `type` does NOT pick the tree -- behavior_tree above does. type is read by the
+                   # computeForces switch and the RViz label only. BEH_THREATENING is not a case in
+                   # that switch, so it falls to default: forces are computed WITHOUT the robot in
+                   # otherAgents. That is deliberate -- the chase comes from blockRobot moving the
+                   # goal, not from a social force, and adding robot repulsion would fight it.
+    dist: 1.5      # m - THIS IS NOT THE DETECTION RADIUS on this tree. bt_node.cpp:260 maps
+                   # behavior.dist onto the {frontdist} blackboard key, which BTThreateningNav.xml
+                   # passes as ThreateningNav's `goal_dist` -> blockRobot's front_dist. So it sets
+                   # HOW FAR AHEAD OF THE ROBOT the ped plants its blocking goal. Detection distance
+                   # is hardcoded to 4.5 in the xml and cannot be configured from here.
+                   # 1.5 puts the block just outside the robot's 0.55 m combined-radius contact
+                   # zone, so the ped cuts it off rather than colliding. Smaller values (< 0.8) make
+                   # the ped aim essentially at the robot and bodycheck it; larger ones (> 2.5) make
+                   # it overshoot and the block stops registering as an obstruction.
+    duration: 8.0  # s of chasing. Accumulates ONLY while the robot stays visible: IsRobotVisible is
+                   # the first child of the Sequence, so a failure halts before TimeExpiredCondition
+                   # ticks. Longer than the surprised variant because a chase has to outlast the
+                   # robot's replanning attempts, not just one pass.
+    once: true     # one-shot. With false the timer resets on expiry and the ped immediately
+                   # re-engages, which makes the robot effectively unable to ever cross.
+    social_force_factor: 10.0  # applies to the walking phases before/after the chase (RegularNavTree
+                   # is the Fallback's second branch). During the chase itself computeForces takes
+                   # the default path, so this gain acts on other humans only -- there are none in
+                   # this scenario, so it is inert while threatening is active.
+    # NOTE: `vel` is not read here. blockRobot hardcodes desiredVelocity = 2.0 for the chase, so the
+    # ped's speed during threatening is not configurable from this file at all.
+  velocity: 0.82
+  desired_velocity: 1.05   # normal walking speed, used before/after the chase. Overridden to 2.0
+                           # by blockRobot for every tick the threatening branch holds.
+  waypoints:
+  - [2.07709, -3.04307, 268.66778]
+  - [2.1186, -1.25808, 268.66778]
+robot:
+  name: robot
+  pose: [0.9873, -4.18463, -1.11964]
+  social_attributes: passive   # passive | aggressive. Matched to the threatening ped above: the ped
+                               # will never yield, so a passive robot is the honest test of whether
+                               # the social layer can find a way through an actively hostile agent.
+                               # Switch to aggressive to see the robot force the crossing instead.
+                               # Pushed at reset to controller_server + global_costmap social_layer.
+  waypoints:
+  - [5.58479, -4.30916, -1.11964]
+  behavior: moves along the main vertical aisle through the central crossing for routine
+    floor navigation

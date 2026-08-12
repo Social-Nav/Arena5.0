@@ -70,9 +70,32 @@ class Obstacle(Entity):
 
 @attrs.define
 class DynamicObstacle(Entity):
+    # Overrides Entity.pose to read the [x, y, yaw] form's yaw as DEGREES, matching how
+    # scenario.yaml writes pedestrian headings (values across the shipped scenarios span
+    # -180..+278, so they cannot be radians). Mirrors what RobotGoal already does for the
+    # robot's own pose in tree/World/Scenario.py.
+    #
+    # This converter only fires for RAW values, i.e. direct construction such as
+    # CustomDynamicObstacle.parse's `cls(**known_values)`. The scenario-file path goes through
+    # `parse` below, because cattrs structures the field into a Pose (via Pose.parse, radians)
+    # before any attrs converter runs.
+    #
+    # NOT applied to Entity/Obstacle: static + interactive obstacles share that field and no
+    # scenario currently defines any, so widening it is a separate, untested change.
+    pose: Pose = attrs.field(converter=Pose.converter_deg)
     model: PedestrianIdentifier = attrs.field(converter=PedestrianIdentifier.converter)
     waypoints: list[Position] = attrs.field(factory=list)
     velocity: float = attrs.field(converter=float, default=1.0)  # m/s
+
+    @classmethod
+    def parse(cls, value: dict) -> Self:
+        if isinstance(value, dict):
+            key = 'pose' if 'pose' in value else 'pos'
+            raw = value.get(key)
+            converted = Pose.xy_yaw_deg_to_rad(raw)
+            if converted is not raw:
+                value = {**value, key: converted}
+        return super().parse(value)
 
 
 @attrs.define

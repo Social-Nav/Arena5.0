@@ -90,7 +90,7 @@ controller_server:
     # Goal checker parameters
     goal_checker:
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.5
+      xy_goal_tolerance: 0.25
       yaw_goal_tolerance: 6.2832   # 2*pi = 360deg => heading NOT checked at goal (arrive at position only)
       stateful: True
 
@@ -149,7 +149,20 @@ local_costmap:
       resolution: 0.05   # 0.1->0.05: finer near-robot precision; cell count unchanged (5/0.05 == 10/0.1 == 100)
       robot_radius: 0.25
       footprint_padding: 0.05
-      plugins: ["obstacle_layer", "social_layer", "inflation_layer"]
+      # social_layer REMOVED here (2026-08-03). It was a third redundant pedestrian channel in the
+      # LOCAL costmap and measurably dead weight:
+      #   - obstacle_layer already marks peds LETHAL (254) within obstacle_max_range 2.0 m, and
+      #     inflation_layer spreads that to 0.55 m. Computing max(social, inflation) point by point,
+      #     the social gaussian NEVER won for aggressive (r 0.26-0.41 < 0.55) and won only in the
+      #     0.55-0.81 m moving-front lobe for passive -- where its cost 71 reaches the MPC as
+      #     (0.05*71)^2 ~= 12.6 against a velocity term of ~64. Invisible either way.
+      #   - The MPC has its OWN pedestrian critics (proxemics + social_work) reading /people
+      #     directly. Those are velocity/angle aware and 4th-power, i.e. strictly more expressive
+      #     than an isotropic gaussian, and they are what the profiles actually tune.
+      # Keeping it only re-introduced the freeze risk we already fought (high ped cost pinning
+      # vx=0 in corridors). The GLOBAL costmap keeps its social_layer -- there obstacle_layer is
+      # disabled, so it is the ONLY thing that tells navfn a pedestrian exists.
+      plugins: ["obstacle_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
@@ -159,26 +172,6 @@ local_costmap:
         enabled: True
         observation_sources: ${observation_sources_string}
         ${**observation_sources_dict}: ''
-      # social_layer (启用时把 plugins 改为 ["obstacle_layer", "social_layer", "inflation_layer"]):
-      social_layer:
-        plugin: "nav2_social_costmap_plugin::SocialLayer"
-        enabled: True
-        people_topic: "/people"
-        cutoff: 30.0    # 10->30: higher floor => smaller footprint. radius r=sqrt(-2*var*ln(cutoff/A))
-        amplitude: 150.0   # 254->150: peak no longer LETHAL/INSCRIBED (253). Pedestrian center is now a
-                           # strong-but-traversable cost, so it won't turn the robot's start cell lethal
-                           # (navfn can't plan from a lethal start) and won't pin MPC obstacle-cost so hard.
-        covariance_front_height: 0.06   # 0.12->0.06 (var/2). front r ~0.36m (was ~0.72 at cutoff30)
-        covariance_front_width: 0.06
-        covariance_rear_height: 0.06
-        covariance_rear_width: 0.06
-        covariance_when_still: 0.05      # 0.12->0.05: tightest, for STOPPED (Surprised) peds. still r ~0.33m
-        use_vel_factor: True
-        speed_factor_multiplier: 2.0
-        use_passing: True
-        covariance_right_height: 0.06
-        covariance_right_width: 0.06
-        publish_occgrid: False
       # voxel_layer (备用，切换时把 plugins 改回 ["voxel_layer", "inflation_layer"]):
       # voxel_layer:
       #   plugin: "nav2_costmap_2d::VoxelLayer"
@@ -220,7 +213,11 @@ global_costmap:
       origin_y: -20.0
       track_unknown_space: true
       rolling_window: false
-      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      # social_layer added to GLOBAL so navfn plans paths that steer AROUND pedestrians'
+      # personal space (its intended use — the plugin's velocity-stretched ellipse only really
+      # matters for global planning). Ordered before inflation so it maxes onto static and
+      # inflation still runs last. amplitude kept LOW (see below) to avoid no-plan/freeze.
+      plugins: ["static_layer", "social_layer", "inflation_layer"] #"obstacle_layer",
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
@@ -230,6 +227,40 @@ global_costmap:
         enabled: True
         observation_sources: ${observation_sources_string_global}
         ${**observation_sources_dict}: ''
+      social_layer:
+        plugin: "nav2_social_costmap_plugin::SocialLayer"
+        enabled: True
+        people_topic: "/people"
+        # Radius in any direction: r = sqrt(2*var*ln(A/cutoff)) -- amplitude affects SIZE too, so
+        # raising it silently inflates the footprint. At a 1.05 m/s ped: forward 1.07 m, lateral
+        # 0.47 m, aspect 2.30, standing 0.43 m.
+        #
+        # amplitude 254 = LETHAL_OBSTACLE. Being >= 253 INSCRIBED means navfn treats a ped as an
+        # impassable wall (narrow corridor -> possible no-path -> social_yielding spam) and
+        # inflation_layer re-inflates these cells. Revert to 160.0 if either shows up. Never 255:
+        # that is NO_INFORMATION, not a cost.
+        amplitude: 254.0
+        cutoff: 20.0
+        # ALONG motion, and the ONLY one the velocity factor stretches.
+        covariance_front_height: 0.1105
+        # LATERAL. front_height/front_width is the tip ratio; equal values give a circle.
+        # Below ~0.03 the footprint aliases into a jagged sliver at global res 0.10.
+        covariance_front_width: 0.043
+        covariance_rear_height: 0.043
+        covariance_rear_width: 0.043
+        # Standing ped: isotropic circle, r 0.61 m. Its own independent branch -- a still ped
+        # uses ONLY this value, so it can be sized without touching the moving shape.
+        covariance_when_still: 0.0736
+        use_vel_factor: True
+        # The blunt/pointy knob: front_height is scaled by (1 + speed*factor). 2.0->1.0 drops the
+        # stretch at 1.05 m/s from 3.10x to 2.05x.
+        speed_factor_multiplier: 1.0
+        use_passing: True
+        # Right-hand-passing lobe. Must stay <= covariance_rear_height: updateCosts derives the
+        # paint box from rear_height only, so a larger right lobe is silently clipped.
+        covariance_right_height: 0.043
+        covariance_right_width: 0.043
+        publish_occgrid: False
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0

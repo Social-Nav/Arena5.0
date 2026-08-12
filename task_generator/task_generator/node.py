@@ -104,7 +104,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         )
 
         await self._world_manager.sync()
-        await self.reset_task(first_map=True)
+        await self.reset_task(reason='startup (first_map, during setup)', first_map=True)
 
         self._check_status_task = asyncio.create_task(self._check_task_status())
 
@@ -165,13 +165,25 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         self._logger.info("Managers set up")
 
     # RUNTIME
-    async def reset_task(self, **kwargs):
+    async def reset_task(self, reason: str = 'unspecified', **kwargs):
+        """Reset the task. `reason` is logged and exists purely for diagnosability.
+
+        WHY: every reset funnels through here, but only THREE of the five callers go via
+        `is_done` (timeout / goal-reached / force_reset), which is where the other
+        [Reset-reason] lines live. The startup reset and the external `reset_task` SERVICE
+        bypass that check entirely, so a reset from either was previously SILENT -- which is
+        exactly the case that looks like "the task reset itself right after starting".
+        Logging here cannot be bypassed.
+        """
         async with self._reset_lock:
             self._start_time = self.sim_time
 
             await self._simulator.before_reset_task()
 
-            self.get_logger().info("resetting")
+            # DEBUG, not WARN: these lines were added to diagnose spurious resets and that is
+            # settled, so at WARN they only add noise to every episode. Re-enable with
+            # `--log-level task_generator_node:=debug` when a reset needs explaining again.
+            self.get_logger().debug(f"[Reset-reason] reset_task: {reason}")
 
             await self._task.reset(**kwargs)
 
@@ -204,7 +216,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
                 async with self._reset_lock:
                     done = await self._task.is_done
                 if done:
-                    await self.reset_task()
+                    await self.reset_task(
+                        reason='auto-reset loop (cause on the preceding [Reset-reason] line)')
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -233,7 +246,12 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         response: std_srvs.Empty.Response
     ):
         self.get_logger().debug("Task Generator received task-reset request!")
-        await self.reset_task()
+        # No caller identity is available on an Empty service request, so name the likely
+        # sources instead: the RViz task_generator_gui panel, a script, or a manual
+        # `ros2 service call`. This is the path that produces resets with no timeout and no
+        # goal-reached behind them.
+        await self.reset_task(
+            reason='reset_task SERVICE called externally (RViz panel / script / ros2 service call)')
         return response
 
     async def _cb_pause_simulation(

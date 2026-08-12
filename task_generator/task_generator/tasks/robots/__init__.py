@@ -70,11 +70,35 @@ class TM_Robots(TaskMode):
                 self._last_reset = now  # clock jumped/rewound: restart the window
         self._last_clock_seen = now
 
-        if (now - self._last_reset) > self.node.conf.Robot.TIMEOUT.value:
+        elapsed = now - self._last_reset
+        timeout = self.node.conf.Robot.TIMEOUT.value
+        if elapsed > timeout:
+            # WHY log here: `done` returning True is the ONLY input to the auto-reset loop
+            # (node._check_task_status), so this is the single place that knows the real
+            # cause. Without it a reset just happens, and a timeout reset is
+            # indistinguishable from a goal-reached reset in the log.
+            self.node.get_logger().debug(
+                f"[Reset-reason] TIMEOUT: {elapsed}s elapsed since last reset > "
+                f"robot timeout {timeout}s. The robot did not reach its goal in time "
+                f"(nav aborted, blocked, or the goal is unreachable)."
+            )
             return True
 
         if not self._PROPS.robots:
             return False
-        if not all(await asyncio.gather(*(robot_manager.is_done for robot_manager in self._PROPS.robots.values()))):
+
+        states = await asyncio.gather(*(
+            robot_manager.is_done for robot_manager in self._PROPS.robots.values()))
+        if not all(states):
             return False
+
+        # Every robot reports goal-reached. Name them, because `is_done` is driven by
+        # navigate_to_pose reporting STATUS_SUCCEEDED -- which a stale status array from
+        # the PREVIOUS episode can also produce, and that misfires as an instant reset.
+        reached = ', '.join(
+            name for name, done in zip(self._PROPS.robots.keys(), states) if done)
+        self.node.get_logger().debug(
+            f"[Reset-reason] GOAL REACHED by [{reached}] after {elapsed}s "
+            f"(nav2 reported STATUS_SUCCEEDED)."
+        )
         return True

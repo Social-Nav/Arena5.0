@@ -267,7 +267,25 @@ def generate_launch_description():
         # nav2 nodes
         Node(
             package='nav2_controller', executable='controller_server', name='controller_server',
-            output='screen', parameters=[nav2_configured_params]
+            output='screen', parameters=[nav2_configured_params],
+            # BREAKS A FEEDBACK LOOP. controller_server and velocity_smoother both hardcode
+            # "cmd_vel" (it is a TwistPublisher/TwistSubscriber ctor arg, NOT a ROS param, so
+            # remapping is the only way to move it -- and is what upstream nav2 bringup does).
+            # Without this remap the smoother subscribed to cmd_vel while collision_monitor
+            # published its own output back onto cmd_vel, so the smoother was reading its own
+            # output fed back round the loop. With feedback: OPEN_LOOP it integrates from its
+            # last output, so the accel ramp never completed: cmd_vel carried an alternating
+            # mix of the controller's 0.8 and the fed-back low value, and the robot plateaued
+            # around 0.1-0.2 m/s while the MPC was asking for 0.8 (a persistent d=-0.68 in
+            # [MOTION-DIAG]). Isaac's differential controller reads cmd_vel, so it executed
+            # that mixture too.
+            # Chain is now strictly one-way:
+            #   controller -> cmd_vel_nav -> smoother -> cmd_vel_smoothed
+            #     -> collision_monitor -> cmd_vel -> Isaac
+            # matching the comment in nav2.yaml. Must live on the Node, NOT in the SetRemap
+            # list above: that applies to every node in the group and would move
+            # collision_monitor and behavior_server too, leaving the loop intact.
+            remappings=[('cmd_vel', 'cmd_vel_nav')],
         ),
         Node(
             package='nav2_smoother', executable='smoother_server', name='smoother_server',
@@ -291,7 +309,11 @@ def generate_launch_description():
         ),
         Node(
             package='nav2_velocity_smoother', executable='velocity_smoother', name='velocity_smoother',
-            output='screen', parameters=[nav2_configured_params]
+            output='screen', parameters=[nav2_configured_params],
+            # Read the controller's output, not the shared cmd_vel bus. Same reason as the
+            # controller_server remap above -- this is the other half of breaking the loop.
+            # Its OUTPUT stays cmd_vel_smoothed, which collision_monitor consumes.
+            remappings=[('cmd_vel', 'cmd_vel_nav')],
         ),
         Node(
             package='nav2_collision_monitor', executable='collision_monitor', name='collision_monitor',

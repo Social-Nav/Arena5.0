@@ -1,0 +1,28 @@
+# Generated from topdown pixel waypoints
+# Parameter reference: docs/scenario_and_social_config.md
+#
+# REGULAR pedestrian + passive robot, crossing paths. Both sides yield, so it resolves by mutual
+# give-way. The directory name still says "threatening": that variant is PARKED in
+# scenario.threatening.yaml.bak beside this file -- copy it back over scenario.yaml to restore.
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [2.34691, -5.89032, 278.31028]
+  behavior_tree: BTRegularNav.xml
+  behavior:
+    type: 1                    # must match the tree above
+    social_force_factor: 10.0  # how hard the ped swerves for the robot
+  velocity: 0.82
+  desired_velocity: 1.05
+  waypoints:
+  - [2.07709, -3.04307, 268.66778]
+  - [2.1186, -1.25808, 268.66778]
+robot:
+  name: robot
+  pose: [0.9873, -4.18463, -1.11964]
+  social_attributes: passive
+  waypoints:
+  - [5.58479, -4.30916, -1.11964]
+  behavior: moves along the main vertical aisle through the central crossing for routine
+    floor navigation

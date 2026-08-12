@@ -1,0 +1,35 @@
+# Generated from topdown pixel waypoints
+# Parameter reference: docs/scenario_and_social_config.md
+#
+# Aggressive robot (0.80) overtakes a slow regular pedestrian (0.30), same direction, one corridor.
+#
+# BROKEN GEOMETRY: the robot spawns 0.31 m AHEAD of the ped (both heading +y) and inside its radius
+# (0.31 vs 0.25 + 0.30 = 0.55), so it just leads and never overtakes. Move the robot behind the ped,
+# ~[-7.43445, -0.90, 88.81411], checked against the map first.
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [-6.96198, 2.38587, 88.36646]
+  behavior_tree: BTRegularNav.xml
+  behavior:
+    type: 1                   # must match the tree above
+    social_force_factor: 6.0  # how hard the ped steps aside; lower toward 5 to hold its line
+  velocity: 0.35
+  desired_velocity: 0.30      # >= 0.80 kills the differential, no overtake possible
+  waypoints:
+  - [-6.96198, 3.83872, 99.335]
+  - [-6.96198, 4.70098, 103.24052]
+  - [-6.96198, 4.90178, 105.75117]
+  - [-7.16278, 5.8231, 64.09349]
+  - [-6.76118, 6.64993, 97.23692]
+  - [-6.85567, 7.39407, 97.23692]
+robot:
+  name: robot
+  pose: [-6.96198, 0.44874, 88.81411]   # see BROKEN GEOMETRY above
+  social_attributes: aggressive   # passive's 0.35 cruise would be slower than the ped
+  social_yielding: false          # off so the MPC alone has to produce the overtake
+  waypoints:
+  - [-6.96198, 7.56654, 88.81411]
+  behavior: moves in the same direction as the pedestrian and uses a slightly longer
+    central corridor traverse

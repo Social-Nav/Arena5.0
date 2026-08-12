@@ -1,0 +1,63 @@
+{
+  "agents": [
+    {
+      "name": "hunav_1",
+      "role": "crossing pedestrian",
+      "model": "female_adult_business_02",
+      "from_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "spawn_waypoint": "wp_r00_classroom_061",
+      "waypoints": [
+        "wp_r00_classroom_068",
+        "wp_r00_classroom_075"
+      ],
+      "velocity": 0.82,
+      "desired_velocity": 1.02,
+      "behavior": "walks from the left side across the open classroom lane after the robot has passed"
+    },
+    {
+      "name": "hunav_2",
+      "role": "opposite crossing pedestrian",
+      "model": "male_adult_medical_01",
+      "from_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "spawn_waypoint": "wp_r00_classroom_063",
+      "waypoints": [
+        "wp_r00_classroom_068",
+        "wp_r00_classroom_062"
+      ],
+      "velocity": 1.0,
+      "desired_velocity": 1.22,
+      "behavior": "walks from the right side to the left through the shared crossing point slightly ahead of the other pedestrian"
+    }
+  ],
+  "robot": {
+    "name": "robot",
+    "from_region": {
+      "region_id": 0,
+      "label": "classroom"
+    },
+    "to_region": {
+      "region_id": 0,
+      "label": "classroom"
+    },
+    "start_waypoint": "wp_r00_classroom_060",
+    "waypoints": [
+      "wp_r00_classroom_068",
+      "wp_r00_classroom_069"
+    ],
+    "behavior": "moves vertically through the central open area first, using the shared crossing waypoint before the pedestrians arrive"
+  }
+}

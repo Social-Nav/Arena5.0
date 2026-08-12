@@ -365,6 +365,43 @@ class Pose(Parseable, Idempotent):
 
         raise ValueError(f"could not parse Pose from {value}")
 
+    @staticmethod
+    def xy_yaw_deg_to_rad(value: typing.Any) -> typing.Any:
+        """
+        If value is the [x, y, yaw] list form, return [x, y, radians(yaw)]; otherwise
+        return it UNCHANGED (same object, so callers can test identity).
+
+        scenario.yaml writes headings in degrees (see the generator in task_generator
+        tasks/obstacles/prompt/prompt.py, which emits math.degrees(...)), while
+        Pose.parse / Orientation.from_yaw expect radians. Every other accepted form
+        (geometry_msgs.msg.Pose, [x,y], the 6/7-element euler/quaternion lists, the
+        split [[position], [orientation]] form) carries no ambiguous scalar yaw.
+        """
+        if (
+            isinstance(value, (list, tuple))
+            and len(value) == 3
+            and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in value)
+        ):
+            return [value[0], value[1], math.radians(value[2])]
+        return value
+
+    @classmethod
+    def converter_deg(cls, value: typing.Any) -> Self:
+        """
+        Like Pose.converter, but interprets the [x, y, yaw] form's yaw as DEGREES.
+
+        The [x, y, yaw] form must go through parse(), not the constructor -- Pose(...)
+        would bind the whole list to `position` and leave orientation at identity.
+
+        NOTE this only helps when the RAW value reaches the converter. Under cattrs the
+        field is structured into a Pose first (Pose.parse, radians), so callers on that
+        path must pre-convert the raw value with xy_yaw_deg_to_rad instead.
+        """
+        converted = cls.xy_yaw_deg_to_rad(value)
+        if converted is not value:      # was the [x, y, yaw_deg] form
+            return cls.parse(converted)
+        return cls.converter(value)
+
     @classmethod
     def from_msg(
         cls,

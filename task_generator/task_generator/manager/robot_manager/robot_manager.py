@@ -2,6 +2,8 @@ import asyncio
 import os
 import typing
 
+import yaml
+
 import action_msgs.msg
 import ament_index_python
 import arena_bringup.extensions.NodeLogLevelExtension as NodeLogLevelExtension
@@ -19,6 +21,8 @@ import tf2_ros
 from arena_rclpy_mixins.shared import Namespace
 from arena_robots.Robot import RobotView
 from nav2_msgs.srv import ClearCostmapAroundRobot, ClearEntireCostmap
+from rcl_interfaces.srv import SetParameters
+from rcl_interfaces.msg import Parameter as ParameterMsg, ParameterValue, ParameterType
 
 import launch
 import task_generator.utils.arena as Utils
@@ -117,6 +121,9 @@ class RobotManager(NodeInterface):
         self._cmd_vel_pub = None
         self._nav_stop_ticks = 0
         self._stop_vel_timer = None
+        # Name of the profile applied by the last set_social_attributes call. Only used to
+        # look up that profile's vx ceiling when warning about a too-large scenario override.
+        self._active_social_attributes: typing.Optional[str] = None
 
         self._goal_tolerance_distance = self.node.conf.Robot.GOAL_TOLERANCE_RADIUS.value
         self._goal_tolerance_angle = self.node.conf.Robot.GOAL_TOLERANCE_ANGLE.value
@@ -273,22 +280,67 @@ class RobotManager(NodeInterface):
         await asyncio.sleep(0.05)
         await self._clear_local_costmap(-1)
 
+    async def _lifecycle_state_retry(
+        self,
+        node_name: str,
+        *,
+        attempts: int = 3,
+        timeout: float = 3.0,
+    ) -> typing.Optional[lifecycle_msgs.msg.State]:
+        """get_lifecycle_state_async, retried, for use on the reset path.
+
+        WHY THIS EXISTS. The whole reset runs between Isaac's PauseSimulation and
+        UnpauseSimulation (isaac_simulator.before_reset_task / after_reset_task). While Isaac is
+        paused its main loop never calls world.step(), so the ROS2 bridge stops publishing /clock
+        and SIM TIME IS FROZEN. Every nav2 node here runs with use_sim_time:=True, so a frozen
+        clock means their wait sets never time out and their service executors can stall — a
+        get_state request issued in that window can simply go unanswered until the unpause.
+
+        A single 3 s attempt therefore reports "node not up yet?" for a node that is up and
+        ACTIVE, and the caller silently skips real work: a skipped social_attributes push leaves
+        the episode running the PREVIOUS scenario's profile, which is invisible in the logs.
+
+        Retrying is the cheap fix (the frozen window is short and bounded by the unpause) and it
+        keeps the honest failure mode: still None after all attempts -> genuinely absent.
+        """
+        for attempt in range(1, attempts + 1):
+            state = await self.node.get_lifecycle_state_async(node_name, timeout=timeout)
+            if state is not None:
+                if attempt > 1:
+                    self._logger.info(
+                        f"{node_name} get_state answered on attempt {attempt}/{attempts}")
+                return state
+            if attempt < attempts:
+                self._logger.warn(
+                    f"{node_name} get_state timed out (attempt {attempt}/{attempts}); "
+                    "sim clock is frozen while Isaac is paused — retrying")
+                await asyncio.sleep(0.5)
+        return None
+
     async def _clear_costmap(self, node_name: str, srv_name: str) -> bool:
         """Call ClearEntireCostmap on the given service, guarded by lifecycle state."""
-        state = await self.node.get_lifecycle_state_async(node_name)
+        state = await self._lifecycle_state_retry(node_name)
+        if state is None:
+            self._logger.warn(
+                f"{node_name} get_state unavailable (node not up yet?); skipping costmap clear")
+            return False
         if state.id != lifecycle_msgs.msg.State.PRIMARY_STATE_ACTIVE:
             return False
 
         self._logger.info(f"Service name: {srv_name}")
         cli = self.node.create_client_wrapper(ClearEntireCostmap, srv_name)
-        await cli.ensure()
+        try:
+            await cli.ensure()
 
-        result = await cli.call_timeout(ClearEntireCostmap.Request())
-        if result is None:
-            self._logger.error(f"service call failed for {srv_name}")
-            return False
-        self._logger.info(f"successfull service call for {srv_name}")
-        return True
+            result = await cli.call_timeout(ClearEntireCostmap.Request())
+            if result is None:
+                self._logger.error(f"service call failed for {srv_name}")
+                return False
+            self._logger.info(f"successfull service call for {srv_name}")
+            return True
+        finally:
+            # Destroy: one client per reset would otherwise accumulate for the whole session.
+            self.node.destroy_client(cli.client)
 
     async def _clear_local_costmap(self, reset_distance: float = -1) -> bool:
         """Clear the local costmap around the robot.
@@ -311,7 +363,11 @@ class RobotManager(NodeInterface):
             req = ClearCostmapAroundRobot.Request()
             req.reset_distance = reset_distance
 
-        state = await self.node.get_lifecycle_state_async(node_name)
+        state = await self._lifecycle_state_retry(node_name)
+        if state is None:
+            self._logger.warn(
+                f"{node_name} get_state unavailable (node not up yet?); skipping costmap clear")
+            return False
         if state.id != lifecycle_msgs.msg.State.PRIMARY_STATE_ACTIVE:
             return False
 
@@ -320,23 +376,184 @@ class RobotManager(NodeInterface):
             srv_type,
             srv_name,
         )
-        await cli.ensure()
+        try:
+            await cli.ensure()
 
-        result = await cli.call_timeout(req)
-        if result is None:
-            self._logger.error(
-                f"service call failed for {srv_name}")
-            return False
-        self._logger.info(
-            f"successfull service call for {srv_name}"
-        )
-        return True
+            result = await cli.call_timeout(req)
+            if result is None:
+                self._logger.error(
+                    f"service call failed for {srv_name}")
+                return False
+            self._logger.info(
+                f"successfull service call for {srv_name}"
+            )
+            return True
+        finally:
+            # Destroy: one client per reset would otherwise accumulate for the whole session.
+            self.node.destroy_client(cli.client)
 
     async def _clear_global_costmap(self) -> bool:
         """Clear the entire global costmap (removes dynamic obstacle marks from previous episode)."""
         node_name = self.node.service_namespace(self.name, 'global_costmap/global_costmap')
         srv_name = os.path.abspath(node_name('../clear_entirely_global_costmap'))
         return await self._clear_costmap(node_name, srv_name)
+
+    # Map a profile.yaml section -> (target node, param-name prefix).
+    #
+    # The knobs live on THREE different nodes, so a profile push is fanned out per node:
+    #   - controller_server: the MPC. It is wrapped by RotationShim (plugin "FollowPath"), which
+    #     configures the primary controller with the SAME name, so social_mpc params sit directly
+    #     under FollowPath.* (verified). Hot-reloaded via the MPC's dynamic-parameter callback.
+    #   - global_costmap: the SocialLayer pedestrian bubbles. No callback needed — the layer
+    #     re-reads every parameter on each updateCosts() (social_layer.cpp get_parameters()), so a
+    #     push lands on the next costmap cycle. Only the GLOBAL costmap is targeted: the local one
+    #     no longer loads social_layer (see nav2.yaml), because obstacle_layer+inflation already
+    #     cover peds there and the MPC's own /people critics do the real local avoidance.
+    _PROFILE_TARGETS: dict[str, tuple[str, str]] = {
+        'weights': ('controller_server', 'FollowPath.optimizer.weights.'),
+        # Optimizer knobs that live directly under `optimizer.` rather than `optimizer.weights.`
+        # (currently just max_linear_velocity, the hard vx ceiling + VelocityCost target). Kept as
+        # its own section because the MPC's dynamic-param callback matches these two prefixes
+        # separately, and the weights.* branch would not recognize this key.
+        'weights_optimizer': ('controller_server', 'FollowPath.optimizer.'),
+        'trajectorizer': ('controller_server', 'FollowPath.trajectorizer.'),
+        'global_social_layer': ('global_costmap/global_costmap', 'social_layer.'),
+    }
+
+    def _load_social_attributes(self, name: str) -> dict[str, dict[str, float]]:
+        """Read configs/nav2/profiles/<name>/profile.yaml -> {node: {param: value}}."""
+        share = ament_index_python.packages.get_package_share_directory('arena_simulation_setup')
+        path = os.path.join(share, 'configs', 'nav2', 'profiles', name, 'profile.yaml')
+        if not os.path.isfile(path):
+            self._logger.error(f"social_attributes '{name}' not found at {path}; skipping")
+            return {}
+        with open(path, 'r') as f:
+            data = yaml.safe_load(f) or {}
+
+        unknown = set(data.keys()) - set(self._PROFILE_TARGETS.keys())
+        if unknown:
+            self._logger.warn(
+                f"social_attributes '{name}': ignoring unknown section(s) {sorted(unknown)}")
+
+        by_node: dict[str, dict[str, float]] = {}
+        for section, (node, prefix) in self._PROFILE_TARGETS.items():
+            for key, value in (data.get(section) or {}).items():
+                by_node.setdefault(node, {})[prefix + key] = float(value)
+        return by_node
+
+    async def _push_params(self, node: str, params: dict[str, float], label: str) -> bool:
+        """SetParameters on one lifecycle node, guarded by its lifecycle state."""
+        node_name = self.node.service_namespace(self.name, node)
+        srv_name = os.path.abspath(node_name('set_parameters'))
+
+        # Retried: a single attempt inside the Isaac pause window reports None for a node that is
+        # ACTIVE, and silently skipping the push leaves the PREVIOUS profile in force for the
+        # whole episode. Escalated to error() because that is a real, silent behavior regression.
+        state = await self._lifecycle_state_retry(str(node_name))
+        if state is None:
+            self._logger.error(
+                f"{node_name} get_state unavailable; SKIPPED {label} push — this robot is still "
+                "running the previously-applied profile for this episode")
+            return False
+        if state.id != lifecycle_msgs.msg.State.PRIMARY_STATE_ACTIVE:
+            self._logger.warn(f"{node_name} not ACTIVE; skipping {label} push")
+            return False
+
+        req = SetParameters.Request()
+        req.parameters = [
+            ParameterMsg(
+                name=name,
+                value=ParameterValue(type=ParameterType.PARAMETER_DOUBLE, double_value=val),
+            )
+            for name, val in params.items()
+        ]
+        cli = self.node.create_client_wrapper(SetParameters, srv_name)
+        try:
+            await cli.ensure()
+            result = await cli.call_timeout(req)
+            if result is None or not all(r.successful for r in result.results):
+                self._logger.error(f"{label} push failed on {srv_name}")
+                return False
+            self._logger.info(f"applied {label} ({len(params)} params) to {node_name}")
+            return True
+        finally:
+            # Destroy: one client per reset would otherwise accumulate for the whole session.
+            self.node.destroy_client(cli.client)
+
+    async def set_social_attributes(self, attributes: typing.Optional[str]) -> bool:
+        """Push a social-attributes preset to this robot's MPC and social costmap layers at reset.
+
+        Fans out over the nodes in _PROFILE_TARGETS. The MPC hot-reloads its half via a
+        dynamic-parameter callback and SocialLayer re-reads its half every costmap cycle, so the
+        preset takes effect immediately without a relaunch.
+        No-op when attributes is falsy (caller resolves the default profile).
+        """
+        if not attributes:
+            return True
+        by_node = self._load_social_attributes(attributes)
+        if not by_node:
+            return False
+        # Remembered so set_desired_linear_vel can read this profile's vx ceiling for its
+        # clipping warning without racing the push it just made.
+        self._active_social_attributes = attributes
+
+        label = f"social_attributes '{attributes}'"
+        results = [
+            await self._push_params(node, params, label)
+            for node, params in by_node.items()
+        ]
+        return all(results)
+
+    async def set_desired_linear_vel(self, vel: typing.Optional[float]) -> bool:
+        """Push a per-robot cruise-speed override, on top of whatever profile just went out.
+
+        MUST be called AFTER set_social_attributes: both write the same key
+        (FollowPath.trajectorizer.desired_linear_vel), and last write wins. That ordering is
+        what makes the scenario field outrank the profile while leaving every other profile
+        knob untouched.
+
+        No-op when vel is None (field absent -> the profile's value stands).
+        """
+        if vel is None:
+            return True
+
+        if vel <= 0.0:
+            self._logger.error(
+                f"desired_linear_vel={vel} is not positive; ignoring it and keeping the "
+                f"profile's cruise speed")
+            return False
+
+        # Warn on a value the stack cannot deliver. Two independent clamps sit above this
+        # knob and NEITHER moves with it, so a larger value is silently clipped and the robot
+        # just runs at the ceiling -- which looks like "the field did nothing".
+        #   optimizer.max_linear_velocity        -> Ceres upper bound on vx (profile key)
+        #   velocity_smoother_max_velocity[0]    -> model_params.yaml, clips the output
+        ceiling = self._profile_max_linear_velocity()
+        if ceiling is not None and vel > ceiling:
+            self._logger.warn(
+                f"desired_linear_vel={vel} exceeds the vx ceiling {ceiling} "
+                f"(optimizer.max_linear_velocity); it will be clipped, so the robot will "
+                f"cruise at {ceiling} instead. Raise the ceiling in the profile AND "
+                f"velocity_smoother_max_velocity[0] if you really want more.")
+
+        node, prefix = self._PROFILE_TARGETS['trajectorizer']
+        return await self._push_params(
+            node, {prefix + 'desired_linear_vel': float(vel)},
+            f"desired_linear_vel {vel}")
+
+    def _profile_max_linear_velocity(self) -> typing.Optional[float]:
+        """The vx ceiling the ACTIVE profile just pushed, for the warning above.
+
+        Read from the profile file rather than the live node: the profile push and this call
+        happen in the same reset, and reading it back over a service would race that push.
+        Returns None if unavailable -- a missing ceiling must not block the override.
+        """
+        try:
+            by_node = self._load_social_attributes(self._active_social_attributes or 'neutral')
+            node, prefix = self._PROFILE_TARGETS['weights_optimizer']
+            return by_node.get(node, {}).get(prefix + 'max_linear_velocity')
+        except Exception:
+            return None
 
     async def _wait_for_odom_tf(self, timeout_s: float = 10.0) -> bool:
         """Wait until a *fresh* odom TF is available after the current reset.

@@ -1,0 +1,35 @@
+# Generated from topdown pixel waypoints
+# Parameter reference: docs/scenario_and_social_config.md
+#
+# SURPRISED pedestrian: stops and stares while the robot is visible within `dist`, then resumes.
+# Visibility-gated, so dist/duration/once matter here (they are dead on regular).
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [-10.22413, 2.93262, -11.88923]
+  behavior_tree: BTSurprisedNav.xml
+  behavior:
+    type: 3        # must match the tree above
+    dist: 1.0      # detection radius
+    duration: 2    # seconds stopped per trigger
+    once: false    # re-trigger every time the robot comes back into view
+    vel: 0.0
+  velocity: 0.9
+  desired_velocity: 1.1
+  waypoints:
+  - [-9.92176, 2.86896, 11.02318]
+  - [-8.69635, 3.10767, 90.0]
+  - [-8.69635, 4.11028, 72.59742]
+  - [-8.02795, 6.24281, 93.3174]
+  - [-8.0916, 7.3409, 93.3174]
+robot:
+  name: robot
+  pose: [-8.69635, 3.10767, -168.97682]
+  social_attributes: neutral
+  social_yielding: true  
+  waypoints:
+  - [-9.92176, 2.86896, -168.97682]
+  - [-10.16048, 0.57729, 99.89374]
+  behavior: leave the office through the doorway-side waiting passage after a safe
+    door interaction
