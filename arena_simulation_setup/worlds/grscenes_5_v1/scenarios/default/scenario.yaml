@@ -1,9 +1,80 @@
+dynamic:
+- name: hunav_1
+  model: male_adult_medical_01
+  pose:
+  - -7.10372
+  - 7.94922
+  - 2.800236795162
+  behavior_tree: ./BTScaredNav.xml
+  behavior:
+    type: 4
+    duration: 5.0
+    once: false
+    dist: 5.0
+    vel: 1.2
+    social_force_factor: 3.0
+  velocity: 0.9
+  desired_velocity: 0.9
+  waypoints:
+  - - -8.00142
+    - 8.26814
+    - 0.0
+  - - -10.60001
+    - 8.94141
+    - 0.0
+  - - -11.21422
+    - 8.89417
+    - 0.0
+  - - -11.04886
+    - 10.93761
+    - 0.0
+  - - -10.2929
+    - 10.38245
+    - 0.0
+  - - -9.14716
+    - 10.24071
+    - 0.0
+  - - -7.2809
+    - 10.11078
+    - 0.0
+- name: hunav_2
+  model: female_adult_business_02
+  pose:
+  - -14.62783
+  - 10.40608
+  - -1.570796326795
+  behavior_tree: ./BTScaredNav.xml
+  behavior:
+    type: 4
+    duration: 5.0
+    once: false
+    dist: 3.5
+    vel: 1.2
+    social_force_factor: 3.0
+  velocity: 0.68
+  desired_velocity: 0.4
+  waypoints:
+  - - -14.62783
+    - 10.38245
+    - 0.0
+  - - -13.97818
+    - 10.38245
+    - 0.0
+  - - -13.41122
+    - 10.15803
+    - 0.0
+  - - -12.56077
+    - 10.15803
+    - 0.0
+  - - -12.66707
+    - 10.60688
+    - 0.0
 robots:
 - start:
-  - -6.43045
-  - 3.88597
-  - 1.873901025738
+  - -6.53676
+  - 11.61088
+  - -1.504542755725
   goal:
-  - -7.38721
-  - 6.94522
-  - 1.873901025738
+  - -7.16278
+  - -1.27578
+  - -1.504542755725

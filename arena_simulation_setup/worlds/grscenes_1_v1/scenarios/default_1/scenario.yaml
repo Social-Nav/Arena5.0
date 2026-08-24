@@ -6,8 +6,8 @@ dynamic:
   - -4.55428
   - 1.607144030198
   behavior_tree: ./BTRegularNav.xml
-  velocity: 0.78
-  desired_velocity: 1.02
+  velocity: 0.5
+  desired_velocity: 0.5
   waypoints:
   - - 2.81144
     - -3.7824
