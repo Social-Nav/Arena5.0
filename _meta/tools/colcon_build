@@ -10,6 +10,20 @@
 # INSTALL_BASE (default: $ARENA_WS_DIR/install): The base directory for installing packages.
 
 _SKIP_OLD=${SKIP_OLD:-$([[ "${*}" == *"--packages-"* ]] || echo 1 )}
+_ARENA_VENV="${ARENA_VENV_DIR:-/opt/venv}"
+_ARENA_PYTHON="$_ARENA_VENV/bin/python3"
+_ARENA_COLCON="$_ARENA_VENV/bin/colcon"
+
+if [ ! -x "$_ARENA_PYTHON" ]; then
+    echo "Arena venv Python executable not found: $_ARENA_PYTHON" >&2
+    exit 1
+fi
+if [ ! -x "$_ARENA_COLCON" ]; then
+    echo "Arena venv colcon executable not found: $_ARENA_COLCON" >&2
+    exit 1
+fi
+
+colcon_cmd(){ "$_ARENA_PYTHON" "$_ARENA_COLCON" "$@"; }
 
 if [ -n "${BUILD_BASE}" ]; then
     _BUILD_BASE="${BUILD_BASE}"
@@ -98,14 +112,14 @@ if [ "${_SKIP_OLD}" = 1 ]; then
             _BUILD_PACKAGES+=("$package")
         fi
 
-    done < <(colcon list --base-paths "${_PATHS[@]}"); #only check packages to be built
+    done < <(colcon_cmd list --base-paths "${_PATHS[@]}"); #only check packages to be built
     ARGS+=("--packages-select" "${_BUILD_PACKAGES[@]}")
 fi
 
 
 echo "BUILDING: colcon build ${ARGS[*]} $*"
 
-eval "colcon build ${ARGS[*]} $*"
+eval "colcon_cmd build ${ARGS[*]} $*"
 result=$?
 
 unset _SKIP_OLD

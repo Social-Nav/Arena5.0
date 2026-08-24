@@ -1,0 +1,8 @@
+.cache/
+.git/
+.venv/
+build/
+install/
+log/
+outputs/
+.docker/

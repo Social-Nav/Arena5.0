@@ -151,6 +151,8 @@ RUN if [ -z "${HTTP_PROXY}${HTTPS_PROXY}${http_proxy}${https_proxy}" ]; then \
     fi && \
     curl -fsSL https://pyenv.run | bash
 
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH="/opt/venv/bin:${PATH}"
 ENTRYPOINT ["/entrypoint.sh"]
 
 
