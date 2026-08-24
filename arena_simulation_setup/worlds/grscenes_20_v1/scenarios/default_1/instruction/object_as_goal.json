@@ -1,0 +1,10 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "instruction_mode": "object_as_goal",
+  "timestamp": "2026-08-18T09:18:10",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk straight down the main aisle of the restaurant. On your left are booths with black and white patterned upholstery, and on your right is a long banquette with matching upholstery against a bright turquoise wall. Continue to the end of the aisle and stop by the last table on your right.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk straight down the main aisle of the restaurant. On your left are booths with black and white patterned upholstery, and on your right is a long banquette with matching upholstery against a bright turquoise wall. Continue to the end of the aisle and stop by the last table on your right."
+  }
+}

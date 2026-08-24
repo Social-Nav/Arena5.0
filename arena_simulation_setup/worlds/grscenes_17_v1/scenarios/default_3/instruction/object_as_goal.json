@@ -1,0 +1,10 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "instruction_mode": "object_as_goal",
+  "timestamp": "2026-08-18T09:17:28",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk forward, keeping the long wooden bar counter on your left and the round dining table on your right. Continue towards the woven tapestry on the wall ahead and stop next to the pet bed on the floor.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk forward, keeping the long wooden bar counter on your left and the round dining table on your right. Continue towards the woven tapestry on the wall ahead and stop next to the pet bed on the floor."
+  }
+}

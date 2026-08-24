@@ -1,0 +1,10 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "instruction_mode": "object_as_goal",
+  "timestamp": "2026-08-18T09:03:23",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk past the desk and turn left. Walk past the couch and turn right. Walk past the desk and stop near the trash can.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk past the desk and turn left. Walk past the couch and turn right. Walk past the desk and stop near the trash can."
+  }
+}

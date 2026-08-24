@@ -1,0 +1,10 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "instruction_mode": "object_as_goal",
+  "timestamp": "2026-08-18T09:23:05",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk forward across the room, heading towards the large whiteboard on the far wall. Stop in front of the collection of shopping baskets and the small shopping cart lined up against the wall.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk forward across the room, heading towards the large whiteboard on the far wall. Stop in front of the collection of shopping baskets and the small shopping cart lined up against the wall."
+  }
+}

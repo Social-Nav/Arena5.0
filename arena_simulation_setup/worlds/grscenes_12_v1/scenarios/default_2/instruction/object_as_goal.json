@@ -1,0 +1,10 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "instruction_mode": "object_as_goal",
+  "timestamp": "2026-08-24T01:39:59",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk forward past the white chairs on your left. Head towards the seating area and stop in front of the wooden coffee table and the white sofa.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk forward past the white chairs on your left. Head towards the seating area and stop in front of the wooden coffee table and the white sofa."
+  }
+}
