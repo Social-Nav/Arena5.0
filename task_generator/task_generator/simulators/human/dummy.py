@@ -15,7 +15,12 @@ class DummyHumanSimulator(BaseHumanSimulator):
         self,
         obstacles,
     ) -> Sequence[DynamicObstacle | None]:
-        return obstacles
+        """Leave dynamic obstacles unmaterialized in no-human dummy mode.
+
+        The empty result keeps the inputs registered but unspawned and makes the
+        base implementation skip the simulator's pedestrian spawn call.
+        """
+        return ()
 
     async def _remove_obstacles_impl(
         self,
