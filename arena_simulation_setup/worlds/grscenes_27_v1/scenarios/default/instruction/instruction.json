@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T08:44:34",
+  "raw_text": "```json\n{\n  \"instruction\": \"In the large white room, walk straight ahead towards the seating area. You will see a long white counter against the far wall and several small round tables with blue and white chairs. Continue forward and stop in the open space just in front of the tables and chairs.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "In the large white room, walk straight ahead towards the seating area. You will see a long white counter against the far wall and several small round tables with blue and white chairs. Continue forward and stop in the open space just in front of the tables and chairs."
+  }
+}

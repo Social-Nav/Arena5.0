@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-18T00:55:35",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk forward past the low tables and chairs on your left. Turn right and walk past the counter on your right. Stop when you reach the small white table with the glowing base.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk forward past the low tables and chairs on your left. Turn right and walk past the counter on your right. Stop when you reach the small white table with the glowing base."
+  }
+}

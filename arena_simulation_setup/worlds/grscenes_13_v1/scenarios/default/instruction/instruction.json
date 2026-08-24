@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T06:36:30",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk forward past the white reception desk on your left. Turn slightly right and walk past the blue sofa and round table. Head towards the desk with the computer monitor. Stop next to the IV stand beside the blue sofa.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk forward past the white reception desk on your left. Turn slightly right and walk past the blue sofa and round table. Head towards the desk with the computer monitor. Stop next to the IV stand beside the blue sofa."
+  }
+}

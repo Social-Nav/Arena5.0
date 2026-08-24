@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T08:20:55",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk forward into the large white room. Go straight, heading towards the smaller white sofa against the far wall. You will pass a large sectional sofa on your left and several small baskets and a shopping cart on your right. Your destination is directly in front of the two-seater white sofa, which is under the two abstract paintings.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk forward into the large white room. Go straight, heading towards the smaller white sofa against the far wall. You will pass a large sectional sofa on your left and several small baskets and a shopping cart on your right. Your destination is directly in front of the two-seater white sofa, which is under the two abstract paintings."
+  }
+}

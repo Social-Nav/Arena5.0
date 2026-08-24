@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T06:47:45",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk forward on the grey carpet with orange streaks, heading towards the white desks on your left. Keep the large white shelving unit on your right. Continue straight past the first desk and stop at the second desk, next to the black and white office chair.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk forward on the grey carpet with orange streaks, heading towards the white desks on your left. Keep the large white shelving unit on your right. Continue straight past the first desk and stop at the second desk, next to the black and white office chair."
+  }
+}

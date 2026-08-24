@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T08:52:15",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk straight down the main aisle of the office. On your left are rows of desks and on your right are wooden bookshelves and potted plants against the white wall. Continue forward towards the person in the white coat standing near the wooden door at the end of the hall. Stop in the middle of the aisle.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk straight down the main aisle of the office. On your left are rows of desks and on your right are wooden bookshelves and potted plants against the white wall. Continue forward towards the person in the white coat standing near the wooden door at the end of the hall. Stop in the middle of the aisle."
+  }
+}

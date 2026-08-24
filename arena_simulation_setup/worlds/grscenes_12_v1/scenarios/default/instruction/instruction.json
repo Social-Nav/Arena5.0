@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T06:31:39",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk straight ahead, passing the white chairs on your left and the empty white shelves on your right. Continue forward towards the small white cart and the potted plant. Stop when you reach the cart.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk straight ahead, passing the white chairs on your left and the empty white shelves on your right. Continue forward towards the small white cart and the potted plant. Stop when you reach the cart."
+  }
+}

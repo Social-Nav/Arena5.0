@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T06:52:37",
+  "raw_text": "```json\n{\n  \"instruction\": \"Turn left and walk past the white checkout counter on your right. Continue straight along the wooden shelves filled with various snacks and boxes. Stop when you reach the person standing in front of the shelves.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Turn left and walk past the white checkout counter on your right. Continue straight along the wooden shelves filled with various snacks and boxes. Stop when you reach the person standing in front of the shelves."
+  }
+}

@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -26,6 +27,8 @@ HTTP_ADAPTER_REPLACED_TARGETS = {
     *LEGACY_INTERNNAV_ADAPTER_TARGETS.keys(),
 }
 GENERIC_VLN_INSTRUCTIONS = {'', 'navigate', 'go', 'start', 'default', 'none', 'null'}
+SCENARIO_INSTRUCTION_SCHEMA_VERSION = 1
+SCENARIO_INSTRUCTION_FIELD = 'parsed_result.instruction'
 
 
 def _write_yaml(path: str, data) -> None:
@@ -370,6 +373,71 @@ def _scenario_key(value: str | None) -> str:
         return parent or os.path.splitext(base)[0]
     stem, ext = os.path.splitext(base)
     return stem if ext in {'.yaml', '.yml'} else base
+
+
+def _load_scenario_instruction_json(path: str, *, world: str, scenario: str) -> dict:
+    expected_path = os.path.abspath(path)
+    context = f'world={world!r}, scenario={scenario!r}, expected_path={expected_path!r}'
+
+    try:
+        with open(expected_path, 'rb') as json_file:
+            json_bytes = json_file.read()
+    except OSError as exc:
+        raise RuntimeError(f'Unable to read scenario instruction JSON ({context}): {exc}') from exc
+
+    try:
+        payload = json.loads(json_bytes.decode('utf-8'))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f'Invalid scenario instruction JSON ({context}): {exc}') from exc
+
+    if not isinstance(payload, dict):
+        raise RuntimeError(f'Invalid scenario instruction schema ({context}): root must be an object')
+
+    required_string_fields = ('video_file', 'model', 'timestamp', 'raw_text')
+    for field in required_string_fields:
+        value = payload.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise RuntimeError(
+                f'Invalid scenario instruction schema ({context}): {field} must be a non-empty string'
+            )
+
+    parsed_result = payload.get('parsed_result')
+    if not isinstance(parsed_result, dict):
+        raise RuntimeError(
+            f'Invalid scenario instruction schema ({context}): parsed_result must be an object'
+        )
+    instruction = parsed_result.get('instruction')
+    if not isinstance(instruction, str) or not instruction.strip():
+        raise RuntimeError(
+            f'Invalid scenario instruction schema ({context}): '
+            f'{SCENARIO_INSTRUCTION_FIELD} must be a non-empty string'
+        )
+
+    instruction_file = os.path.join(os.path.dirname(expected_path), 'instruction.txt')
+    try:
+        with open(instruction_file, 'rb') as text_file:
+            instruction_bytes = text_file.read()
+    except OSError as exc:
+        raise RuntimeError(
+            f'Unable to read scenario instruction text projection ({context}, '
+            f'instruction_file={instruction_file!r}): {exc}'
+        ) from exc
+    if instruction_bytes != instruction.encode('utf-8'):
+        raise RuntimeError(
+            f'Invalid scenario instruction text projection ({context}, '
+            f'instruction_file={instruction_file!r}): content differs from '
+            f'{SCENARIO_INSTRUCTION_FIELD}'
+        )
+
+    return {
+        'instruction': instruction,
+        'json_path': expected_path,
+        'json_sha256': hashlib.sha256(json_bytes).hexdigest(),
+        'schema_version': SCENARIO_INSTRUCTION_SCHEMA_VERSION,
+        'instruction_field': SCENARIO_INSTRUCTION_FIELD,
+        'instruction_file': instruction_file,
+        'instruction_file_sha256': hashlib.sha256(instruction_bytes).hexdigest(),
+    }
 
 
 def _candidate_grscenes_instruction_manifests(workspace_root: str) -> list[str]:
@@ -3165,37 +3233,90 @@ def _apply_runtime_defaults(args) -> dict:
         and _is_generic_vln_instruction(getattr(args, 'vln_instruction', ''))
         and str(getattr(args, 'world', '') or '').strip().startswith('grscenes_')
     ):
-        workspace_root = _workspace_root_from_runtime()
-        manifest_path, manifest_attempts = _resolve_existing_manifest_path(
-            str(getattr(args, 'vln_instruction_manifest', '') or ''),
-            workspace_root,
-        )
-        if manifest_path:
-            lookup = _lookup_grscenes_instruction_from_manifest(
-                manifest_path,
-                world=getattr(args, 'world', ''),
-                scenario=getattr(args, 'scenario_file', ''),
-                episode=getattr(args, 'vln_instruction_episode', ''),
-                timestamp=getattr(args, 'vln_instruction_timestamp', ''),
+        world = str(getattr(args, 'world', '') or '').strip()
+        scenario = _scenario_key(getattr(args, 'scenario_file', ''))
+        scenario_instruction_found = False
+        expected_json_path = None
+
+        if scenario:
+            try:
+                sim_setup_share = get_package_share_directory('arena_simulation_setup')
+            except Exception as exc:
+                raise RuntimeError(
+                    'Unable to resolve the installed arena_simulation_setup package share '
+                    f'for world={world!r}, scenario={scenario!r}, '
+                    "expected_path='<unresolved package share>'"
+                ) from exc
+            expected_json_path = os.path.join(
+                sim_setup_share,
+                'worlds',
+                world,
+                'scenarios',
+                scenario,
+                'instruction',
+                'instruction.json',
             )
-            if lookup.get('ok') and lookup.get('instruction'):
-                args.vln_instruction = str(lookup['instruction'])
-                args.vln_instruction_manifest = manifest_path
+            if os.path.lexists(expected_json_path):
+                resolved = _load_scenario_instruction_json(
+                    expected_json_path,
+                    world=world,
+                    scenario=scenario,
+                )
+                args.vln_instruction = resolved['instruction']
+                args.vln_instruction_file = resolved['instruction_file']
                 adjustments['vln_instruction'] = {
-                    'source': 'grscenes_manifest',
-                    'manifest_path': manifest_path,
-                    'world': lookup.get('world'),
-                    'scenario': lookup.get('scenario'),
-                    'episode': lookup.get('episode'),
-                    'timestamp': lookup.get('timestamp'),
-                    'instruction_file': lookup.get('instruction_file'),
-                    'match_count': lookup.get('match_count'),
-                    'ambiguous': lookup.get('ambiguous'),
+                    'source': 'arena_simulation_setup_scenario_instruction_json',
+                    'world': world,
+                    'scenario': scenario,
+                    'json_path': resolved['json_path'],
+                    'sha256': resolved['json_sha256'],
+                    'schema_version': resolved['schema_version'],
+                    'instruction_field': resolved['instruction_field'],
+                    'instruction_file': resolved['instruction_file'],
+                    'instruction_file_sha256': resolved['instruction_file_sha256'],
                 }
+                scenario_instruction_found = True
+
+        if not scenario_instruction_found:
+            adjustments['vln_instruction_scenario_json_missing'] = {
+                'source': 'arena_simulation_setup_scenario_instruction_json',
+                'world': world,
+                'scenario': scenario,
+                'expected_json_path': expected_json_path,
+                'reason': 'scenario_unspecified' if not scenario else 'instruction_json_not_found',
+                'policy': 'fall_back_to_legacy_manifest_then_fail_closed',
+            }
+            workspace_root = _workspace_root_from_runtime()
+            manifest_path, manifest_attempts = _resolve_existing_manifest_path(
+                str(getattr(args, 'vln_instruction_manifest', '') or ''),
+                workspace_root,
+            )
+            if manifest_path:
+                lookup = _lookup_grscenes_instruction_from_manifest(
+                    manifest_path,
+                    world=getattr(args, 'world', ''),
+                    scenario=getattr(args, 'scenario_file', ''),
+                    episode=getattr(args, 'vln_instruction_episode', ''),
+                    timestamp=getattr(args, 'vln_instruction_timestamp', ''),
+                )
+                if lookup.get('ok') and lookup.get('instruction'):
+                    args.vln_instruction = str(lookup['instruction'])
+                    args.vln_instruction_manifest = manifest_path
+                    adjustments['vln_instruction'] = {
+                        'source': 'grscenes_manifest',
+                        'manifest_path': manifest_path,
+                        'world': lookup.get('world'),
+                        'scenario': lookup.get('scenario'),
+                        'episode': lookup.get('episode'),
+                        'timestamp': lookup.get('timestamp'),
+                        'instruction_file': lookup.get('instruction_file'),
+                        'match_count': lookup.get('match_count'),
+                        'ambiguous': lookup.get('ambiguous'),
+                    }
+                else:
+                    adjustments['vln_instruction_manifest_lookup_failed'] = lookup
             else:
-                adjustments['vln_instruction_manifest_lookup_failed'] = lookup
-        else:
-            adjustments['vln_instruction_manifest_not_found'] = manifest_attempts
+                adjustments['vln_instruction_manifest_not_found'] = manifest_attempts
 
     env_python, env_python_name = _first_env_value(
         'ARENA_VLN_MODEL_PYTHON',

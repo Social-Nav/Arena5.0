@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T09:34:46",
+  "raw_text": "```json\n{\n  \"instruction\": \"Begin in the grocery aisle next to the open freezer. Walk forward into the main aisle, passing a central display shelf with a sign in Chinese characters. Turn right into the next aisle. Proceed straight down this aisle, keeping the shelves with green and white boxes on your left and shelves with brown and yellow boxes on your right. Stop at the end of the aisle in front of the man in the white lab coat.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Begin in the grocery aisle next to the open freezer. Walk forward into the main aisle, passing a central display shelf with a sign in Chinese characters. Turn right into the next aisle. Proceed straight down this aisle, keeping the shelves with green and white boxes on your left and shelves with brown and yellow boxes on your right. Stop at the end of the aisle in front of the man in the white lab coat."
+  }
+}

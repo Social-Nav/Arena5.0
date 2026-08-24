@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T07:41:08",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk straight forward down the aisle. Keep the booths with the black and white patterned cushions on your left. Pass the first table and stop just past the second table on your left.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk straight forward down the aisle. Keep the booths with the black and white patterned cushions on your left. Pass the first table and stop just past the second table on your left."
+  }
+}

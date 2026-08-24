@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T06:35:02",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk forward through the white room, keeping the large wall of empty white shelves on your right. Go past the modern white sofas and chairs on your left. Continue straight ahead, heading towards the light-colored wood-paneled wall at the far end of the room. Pass the potted plants and the wheeled cart. Stop in front of the white chest freezer that is against the wooden wall.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk forward through the white room, keeping the large wall of empty white shelves on your right. Go past the modern white sofas and chairs on your left. Continue straight ahead, heading towards the light-colored wood-paneled wall at the far end of the room. Pass the potted plants and the wheeled cart. Stop in front of the white chest freezer that is against the wooden wall."
+  }
+}

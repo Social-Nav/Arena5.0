@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T07:13:13",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk straight forward, passing the round wooden table on your left. Continue towards the long wooden bar counter ahead. Stop in the open space directly in front of the bar, between the bar stools.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk straight forward, passing the round wooden table on your left. Continue towards the long wooden bar counter ahead. Stop in the open space directly in front of the bar, between the bar stools."
+  }
+}

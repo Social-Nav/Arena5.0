@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T06:44:03",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk straight past the woman and the white counter. Head towards the desk with the computer and the white chair. Stop near the IV stand next to the blue couch.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk straight past the woman and the white counter. Head towards the desk with the computer and the white chair. Stop near the IV stand next to the blue couch."
+  }
+}

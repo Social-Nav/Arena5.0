@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T09:12:36",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk forward past the glass display counter on your left. Continue straight towards the white desk with the computer monitor. Turn left and walk towards the tall shelves filled with boxes and bottles. Stop in front of the shelves.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk forward past the glass display counter on your left. Continue straight towards the white desk with the computer monitor. Turn left and walk towards the tall shelves filled with boxes and bottles. Stop in front of the shelves."
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T09:45:47",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk forward into the room with the light green walls and shiny white floor. Pass the large built-in shelving unit on your right. Continue straight ahead towards the small seating area in the center of the room. Your destination is the light grey armchair with the patterned pillow. Stop in front of it.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk forward into the room with the light green walls and shiny white floor. Pass the large built-in shelving unit on your right. Continue straight ahead towards the small seating area in the center of the room. Your destination is the light grey armchair with the patterned pillow. Stop in front of it."
+  }
+}

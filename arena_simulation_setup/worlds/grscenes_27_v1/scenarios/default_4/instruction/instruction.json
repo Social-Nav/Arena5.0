@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T08:48:27",
+  "raw_text": "```json\n{\n  \"instruction\": \"Start in a large, bright white room with empty shelving units on your left. Walk straight ahead towards the seating area in the center of the room. You will see an empty shopping cart on your left. Stop in front of the first small, round white table that is surrounded by four blue chairs.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Start in a large, bright white room with empty shelving units on your left. Walk straight ahead towards the seating area in the center of the room. You will see an empty shopping cart on your left. Stop in front of the first small, round white table that is surrounded by four blue chairs."
+  }
+}

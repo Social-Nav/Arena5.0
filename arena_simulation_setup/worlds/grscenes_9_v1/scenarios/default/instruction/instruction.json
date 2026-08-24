@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T10:23:11",
+  "raw_text": "```json\n{\n  \"instruction\": \"Turn left and walk past the wooden cubby shelf with the light green bins. Continue forward, then turn right to walk past the white desk. Go straight across the open room towards the large wooden shelving unit filled with stuffed animals. Your destination is in front of the lower shelves where the stuffed unicorns and reindeer are.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Turn left and walk past the wooden cubby shelf with the light green bins. Continue forward, then turn right to walk past the white desk. Go straight across the open room towards the large wooden shelving unit filled with stuffed animals. Your destination is in front of the lower shelves where the stuffed unicorns and reindeer are."
+  }
+}

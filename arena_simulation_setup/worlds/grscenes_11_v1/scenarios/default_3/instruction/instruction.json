@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T06:29:45",
+  "raw_text": "```json\n{\n  \"instruction\": \"Turn left and walk straight ahead, keeping the wall with the wooden decoration on your left. Continue walking past the desks on your right. Turn right and stop facing the desks and the whiteboard.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Turn left and walk straight ahead, keeping the wall with the wooden decoration on your left. Continue walking past the desks on your right. Turn right and stop facing the desks and the whiteboard."
+  }
+}

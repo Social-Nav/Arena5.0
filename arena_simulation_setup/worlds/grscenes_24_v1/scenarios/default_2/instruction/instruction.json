@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T08:10:02",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk forward towards the long shelf with the cubbies and toys. Stop when you are standing next to the doctor in the white coat.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk forward towards the long shelf with the cubbies and toys. Stop when you are standing next to the doctor in the white coat."
+  }
+}

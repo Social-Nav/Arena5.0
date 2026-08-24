@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T09:02:50",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk straight down the main aisle of the office. On your left are rows of white and wood desks, and on your right, you'll see potted plants and wooden bookshelves against the white wall. Continue forward past the first large desk cluster on your left and stop in the middle of the walkway, before reaching the wooden door at the far end.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk straight down the main aisle of the office. On your left are rows of white and wood desks, and on your right, you'll see potted plants and wooden bookshelves against the white wall. Continue forward past the first large desk cluster on your left and stop in the middle of the walkway, before reaching the wooden door at the far end."
+  }
+}

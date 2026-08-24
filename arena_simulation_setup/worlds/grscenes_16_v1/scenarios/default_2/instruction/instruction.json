@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T07:02:13",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk forward past the wooden counter and the rack of basketballs on your right. Keep the large windows on your left. Stop when you reach the man in the white coat standing next to the small whiteboard.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk forward past the wooden counter and the rack of basketballs on your right. Keep the large windows on your left. Stop when you reach the man in the white coat standing next to the small whiteboard."
+  }
+}

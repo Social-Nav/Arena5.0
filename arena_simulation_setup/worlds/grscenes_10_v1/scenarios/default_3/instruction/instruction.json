@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T06:17:18",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk forward into the large, modern office and make a wide left turn. Proceed down the aisle between the rows of white desks. Keep the desks with computers and black and white chairs on your left. Continue past the first long desk and proceed to the end of the second long desk. Stop at the last workstation in this row.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk forward into the large, modern office and make a wide left turn. Proceed down the aisle between the rows of white desks. Keep the desks with computers and black and white chairs on your left. Continue past the first long desk and proceed to the end of the second long desk. Stop at the last workstation in this row."
+  }
+}

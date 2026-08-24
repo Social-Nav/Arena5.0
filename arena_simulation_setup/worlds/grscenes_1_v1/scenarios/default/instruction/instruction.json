@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T06:05:27",
+  "raw_text": "```json\n{\n  \"instruction\": \"Turn left and walk past the poster with the blue stripe into the large waiting area with rows of blue chairs. Turn around and walk back towards the poster, passing a medical cart on your left. Go through the opening on your right into an examination room. Immediately turn right into the narrow hallway. Walk straight down the hall, keeping the long white counter on your right. Your destination is the black door at the very end of the hall.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Turn left and walk past the poster with the blue stripe into the large waiting area with rows of blue chairs. Turn around and walk back towards the poster, passing a medical cart on your left. Go through the opening on your right into an examination room. Immediately turn right into the narrow hallway. Walk straight down the hall, keeping the long white counter on your right. Your destination is the black door at the very end of the hall."
+  }
+}

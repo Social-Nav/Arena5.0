@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T10:27:16",
+  "raw_text": "```json\n{\n  \"instruction\": \"Begin in the children's play area. Walk straight forward, passing the low wooden table with pastel stools on your left. Continue across the open room, heading towards the low wooden cabinet filled with light green storage bins. Stop directly in front of this cabinet, which is located under two framed pictures on the wall.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Begin in the children's play area. Walk straight forward, passing the low wooden table with pastel stools on your left. Continue across the open room, heading towards the low wooden cabinet filled with light green storage bins. Stop directly in front of this cabinet, which is located under two framed pictures on the wall."
+  }
+}

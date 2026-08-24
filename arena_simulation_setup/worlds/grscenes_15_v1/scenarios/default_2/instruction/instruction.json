@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T06:56:08",
+  "raw_text": "```json\n{\n  \"instruction\": \"Turn around and walk straight down the aisle. Pass the circular wooden display stand with shoes and folded clothes on your left. Continue forward into the snack aisle, keeping the checkout counters to your right. Proceed down the aisle and stop in front of the shelves filled with colorful red, green, and white boxes of snacks.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Turn around and walk straight down the aisle. Pass the circular wooden display stand with shoes and folded clothes on your left. Continue forward into the snack aisle, keeping the checkout counters to your right. Proceed down the aisle and stop in front of the shelves filled with colorful red, green, and white boxes of snacks."
+  }
+}

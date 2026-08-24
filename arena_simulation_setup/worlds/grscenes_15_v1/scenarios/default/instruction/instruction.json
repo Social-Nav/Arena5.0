@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T06:52:09",
+  "raw_text": "```json\n{\n  \"instruction\": \"Turn left and walk past the white checkout counter on your right. Continue straight past the shelves of snacks, then turn left into the aisle. Walk forward, keeping the shelves with green instant noodle cups on your left and the small round display stand on your right. At the end of this aisle, turn right. Proceed down the aisle between the shelves of colorful boxes and stop when you are standing next to the woman in the grey hoodie.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Turn left and walk past the white checkout counter on your right. Continue straight past the shelves of snacks, then turn left into the aisle. Walk forward, keeping the shelves with green instant noodle cups on your left and the small round display stand on your right. At the end of this aisle, turn right. Proceed down the aisle between the shelves of colorful boxes and stop when you are standing next to the woman in the grey hoodie."
+  }
+}

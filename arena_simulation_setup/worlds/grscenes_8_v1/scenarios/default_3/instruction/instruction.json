@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T10:16:07",
+  "raw_text": "```json\n{\n  \"instruction\": \"Turn right and walk past the white reception desk. Continue straight ahead, keeping the dark sliding doors to your right. Walk past the potted plant and water cooler. Stop in front of the long counter with the white geometric chairs.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Turn right and walk past the white reception desk. Continue straight ahead, keeping the dark sliding doors to your right. Walk past the potted plant and water cooler. Stop in front of the long counter with the white geometric chairs."
+  }
+}

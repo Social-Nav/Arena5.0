@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T06:39:25",
+  "raw_text": "```json\n{\n  \"instruction\": \"Exit from behind the white counter and turn left. Walk forward through the room, passing the long, light blue L-shaped sofa on your right. Continue straight ahead towards the white desk in the corner, which is next to the shelves of medicine. Your destination is the white chair positioned in front of the desk.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Exit from behind the white counter and turn left. Walk forward through the room, passing the long, light blue L-shaped sofa on your right. Continue straight ahead towards the white desk in the corner, which is next to the shelves of medicine. Your destination is the white chair positioned in front of the desk."
+  }
+}
