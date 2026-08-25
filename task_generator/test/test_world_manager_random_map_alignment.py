@@ -12,7 +12,7 @@ from PIL import Image
 
 from arena_simulation_setup.shared import Position
 from task_generator.manager.world_manager import world_manager_ros
-from task_generator.manager.world_manager.utils import WorldOccupancy
+from task_generator.manager.world_manager.utils import WorldMap, WorldOccupancy
 from task_generator.manager.world_manager.world_manager import WorldManager
 from task_generator.manager.world_manager.world_manager_ros import WorldManagerROS
 
@@ -110,6 +110,56 @@ def test_direct_yaml_loader_preserves_asymmetric_origin_and_in_bounds_round_trip
     assert (runtime_row, runtime_column) == (3, 3)
     assert 0 <= runtime_row < world_map.shape[0]
     assert 0 <= runtime_column < world_map.shape[1]
+
+
+class _DeterministicRng:
+    def choice(self, population, size, replace=False):
+        assert not replace
+        return np.arange(size) % population
+
+
+class _SamplerNode:
+    conf = SimpleNamespace(General=SimpleNamespace(RNG=SimpleNamespace(value=_DeterministicRng())))
+
+    def get_logger(self):
+        return SimpleNamespace(get_child=lambda _name: SimpleNamespace())
+
+
+def _sampler_manager(grid):
+    manager = WorldManager.__new__(WorldManager)
+    manager._NodeInterface__node = _SamplerNode()
+    costmap = nav_msgs.msg.OccupancyGrid()
+    costmap.info.height, costmap.info.width = grid.shape
+    costmap.info.resolution = 1.0
+    costmap.info.origin.orientation.w = 1.0
+    costmap.data = grid.reshape(-1).tolist()
+    manager._map = WorldMap.from_costmap(costmap)
+    return manager
+
+
+def test_sampling_exhaustion_raises_without_unchecked_partial_positions():
+    manager = _sampler_manager(np.full((7, 7), 100, dtype=np.int8))
+
+    with pytest.raises(RuntimeError, match=r'requested=2, validated=0, missing=2'):
+        manager.get_positions_on_map(n=2, safe_dist=1.0)
+
+
+def test_sufficient_sampling_is_deterministic_and_returns_only_valid_cells():
+    grid = np.zeros((9, 9), dtype=np.int8)
+    grid[4, 4] = 100
+
+    first = _sampler_manager(grid).get_positions_on_map(n=2, safe_dist=1.0, forbid=False)
+    second = _sampler_manager(grid).get_positions_on_map(n=2, safe_dist=1.0, forbid=False)
+
+    assert [(p.x, p.y) for p in first] == [(p.x, p.y) for p in second]
+    for point in first:
+        row = int(round(point.y))
+        column = int(round(9 - point.x))
+        assert 0 <= row < 9
+        assert 0 <= column < 9
+        lo_r, hi_r = max(0, row - 1), min(9, row + 2)
+        lo_c, hi_c = max(0, column - 1), min(9, column + 2)
+        assert not np.any(grid[lo_r:hi_r, lo_c:hi_c] == 100)
 
 
 def test_available_candidates_keep_input_shape_and_kernel_center_alignment():

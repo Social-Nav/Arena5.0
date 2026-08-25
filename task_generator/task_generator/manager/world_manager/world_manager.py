@@ -1,6 +1,5 @@
 import itertools
 from collections.abc import Collection
-from math import floor
 from typing import Optional
 
 import numpy as np
@@ -302,16 +301,12 @@ class WorldManager(NodeInterface):
                         raise RuntimeError(
                             f"Failed to find free position after {depth} tries")
 
-                except RuntimeError:
-                    result += [
-                        self._map.tf_grid2pos(
-                            (
-                                (-1 - floor(i / 5)) * int(self._shape[1] / 5),
-                                int((i % 5) * self._shape[0] / 5)
-                            )
-                        ) for i in range(to_produce)]
-                    self._logger.warn(
-                        f"Couldn't find enough empty cells for {to_produce} requests")
+                except RuntimeError as exc:
+                    raise RuntimeError(
+                        f"Couldn't find enough validated map positions: "
+                        f"requested={target}, validated={len(result)}, missing={to_produce}, "
+                        f"safe_dist={safe_dist}m"
+                    ) from exc
 
                 return result
 
