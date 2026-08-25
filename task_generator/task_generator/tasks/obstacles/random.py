@@ -211,6 +211,7 @@ class TM_Random(TM_Obstacles):
                     model=model,
                     waypoints=list(itertools.islice(waypoints, waypoints_per_ped)),
                     pose=next(positions),
+                    extra={"behavior_tree": "BTRegularNav.xml"},
                 )
                 for i, model in enumerate(
                     self.node.conf.General.RNG.value.choice(
