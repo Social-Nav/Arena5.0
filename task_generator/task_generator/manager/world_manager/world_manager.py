@@ -340,7 +340,7 @@ class WorldManager(NodeInterface):
             WorldOccupancy.not_full(occupancy).astype(
                 np.uint8) * np.iinfo(np.uint8).max,
             filt,
-            mode="full",
+            mode="same",
             boundary="fill",
             fillvalue=int(WorldOccupancy.FULL)
         )
