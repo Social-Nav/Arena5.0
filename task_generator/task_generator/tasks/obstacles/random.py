@@ -18,6 +18,10 @@ try:
 except ImportError:
     Self = typing.TypeVar('Self')
 
+from task_generator.manager.world_manager.density_aware_sampler import (
+    DensityAwarePositionSampler,
+    DensityAwareSamplingConfig,
+)
 from task_generator.shared import DynamicObstacle, Obstacle, Orientation, Pose
 from task_generator.tasks import identifier_to_available
 from task_generator.tasks.obstacles import Obstacles, TM_Obstacles
@@ -153,15 +157,26 @@ class TM_Random(TM_Obstacles):
             return index
 
         waypoints_per_ped = 2
-        points = self._PROPS.world_manager.get_positions_on_map(
-            n=N_STATIC_OBSTACLES
-            + N_INTERACTIVE_OBSTACLES
-            + N_DYNAMIC_OBSTACLES * (1 + waypoints_per_ped),
-            safe_dist=1
+        static_and_interactive = self._PROPS.world_manager.get_positions_on_map(
+            n=N_STATIC_OBSTACLES + N_INTERACTIVE_OBSTACLES,
+            safe_dist=1,
+        ) if N_STATIC_OBSTACLES + N_INTERACTIVE_OBSTACLES else []
+        pedestrian_sample = DensityAwarePositionSampler(
+            world_map=self._PROPS.world_manager.map,
+            rng=self.node.conf.General.RNG.value,
+            candidate_provider=self._PROPS.world_manager._occupancy_to_available,
+            config=DensityAwareSamplingConfig(goals_per_agent=waypoints_per_ped),
+        ).sample(N_DYNAMIC_OBSTACLES)
+        positions = map(
+            lambda pos: Pose(
+                pos,
+                orientation=Orientation.from_yaw(
+                    2 * np.pi * self.node.conf.General.RNG.value.random()
+                ),
+            ),
+            [*static_and_interactive, *(route.start for route in pedestrian_sample.routes)],
         )
-
-        positions = map(lambda pos: Pose(pos, orientation=Orientation.from_yaw(2 * np.pi * self.node.conf.General.RNG.value.random())), points[:(N_STATIC_OBSTACLES + N_INTERACTIVE_OBSTACLES + N_DYNAMIC_OBSTACLES)])
-        waypoints = iter(points[(N_STATIC_OBSTACLES + N_INTERACTIVE_OBSTACLES + N_DYNAMIC_OBSTACLES):])
+        pedestrian_routes = iter(pedestrian_sample.routes)
 
         obstacles: list[Obstacle] = []
 
@@ -209,7 +224,7 @@ class TM_Random(TM_Obstacles):
                 DynamicObstacle(
                     name=f"Pedestrian_{i}",
                     model=model,
-                    waypoints=list(itertools.islice(waypoints, waypoints_per_ped)),
+                    waypoints=list(next(pedestrian_routes).goals),
                     pose=next(positions),
                     extra={"behavior_tree": "BTRegularNav.xml"},
                 )
