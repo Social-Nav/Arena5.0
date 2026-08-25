@@ -201,7 +201,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
 
         world_map = WorldMap.from_costmap(grid)
         if self._origin is not None:
-            world_map.origin = self._origin
+            world_map.origin = Position(x=self._origin.y, y=self._origin.x)
             self._origin = None
         return world_map
 
