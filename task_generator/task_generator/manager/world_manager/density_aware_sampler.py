@@ -105,6 +105,61 @@ class DensityAwarePositionSampler:
     def _to_position(self, candidate: np.ndarray) -> Position:
         return self._map.tf_grid2pos(self._key(candidate))
 
+    @staticmethod
+    def _supercover_cells(start: np.ndarray, end: np.ndarray) -> tuple[tuple[int, int], ...]:
+        """Return every grid cell touched by the segment between cell centers.
+
+        At an exact grid-corner crossing both side-adjacent cells are included,
+        not only the diagonal cell. This is the conservative supercover needed
+        for a footprint-safe mask: touching an unsafe cell corner is rejected.
+        """
+        row, column = map(int, start)
+        end_row, end_column = map(int, end)
+        delta_row = end_row - row
+        delta_column = end_column - column
+        count_row = abs(delta_row)
+        count_column = abs(delta_column)
+        step_row = 0 if delta_row == 0 else (1 if delta_row > 0 else -1)
+        step_column = 0 if delta_column == 0 else (1 if delta_column > 0 else -1)
+        index_row = index_column = 0
+        cells: list[tuple[int, int]] = [(row, column)]
+
+        while index_row < count_row or index_column < count_column:
+            decision = (
+                (1 + 2 * index_row) * count_column
+                - (1 + 2 * index_column) * count_row
+            )
+            if decision == 0:
+                cells.append((row + step_row, column))
+                cells.append((row, column + step_column))
+                row += step_row
+                column += step_column
+                index_row += 1
+                index_column += 1
+            elif decision < 0:
+                row += step_row
+                index_row += 1
+            else:
+                column += step_column
+                index_column += 1
+            cells.append((row, column))
+
+        return tuple(dict.fromkeys(cells))
+
+    @classmethod
+    def _segment_is_clear(
+        cls,
+        safe_mask: np.ndarray,
+        start: np.ndarray,
+        end: np.ndarray,
+    ) -> bool:
+        for row, column in cls._supercover_cells(start, end):
+            if not (0 <= row < safe_mask.shape[0] and 0 <= column < safe_mask.shape[1]):
+                return False
+            if not safe_mask[row, column]:
+                return False
+        return True
+
     def sample(self, agent_count: int) -> DensityAwareSample:
         if agent_count < 0:
             raise ValueError('agent_count must be non-negative')
@@ -142,6 +197,10 @@ class DensityAwarePositionSampler:
             structure=np.ones((3, 3), dtype=np.uint8),
         )
 
+        route_safe_mask = np.zeros(self._map.shape, dtype=bool)
+        if len(route_candidates):
+            route_safe_mask[route_candidates[:, 0], route_candidates[:, 1]] = True
+
         route_by_component: dict[int, np.ndarray] = {}
         if cfg.require_same_component:
             route_labels = labels[route_candidates[:, 0], route_candidates[:, 1]] if len(route_candidates) else []
@@ -167,6 +226,7 @@ class DensityAwarePositionSampler:
             'restart_count': 0,
             'start_candidates_examined': 0,
             'route_candidates_examined': 0,
+            'route_segments_rejected': 0,
         }
 
         if len(start_candidates) < agent_count:
@@ -217,6 +277,9 @@ class DensityAwarePositionSampler:
                         if not cfg.allow_point_reuse and self._key(candidate) in used:
                             continue
                         if np.linalg.norm(candidate - previous) < route_min_cells:
+                            continue
+                        if not self._segment_is_clear(route_safe_mask, previous, candidate):
+                            diagnostics['route_segments_rejected'] += 1
                             continue
                         goal = candidate
                         break

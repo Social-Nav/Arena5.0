@@ -69,6 +69,59 @@ def test_sampling_is_deterministic_and_route_goals_are_not_globally_packed():
     )
 
 
+def test_supercover_clear_straight_and_corner_touch():
+    safe = np.ones((6, 6), dtype=bool)
+    assert DensityAwarePositionSampler._segment_is_clear(
+        safe, np.array([1, 1]), np.array([1, 4])
+    )
+
+    # Diagonal through the corner shared by (1,2) and (2,1) must include both.
+    safe[1, 2] = False
+    assert not DensityAwarePositionSampler._segment_is_clear(
+        safe, np.array([1, 1]), np.array([2, 2])
+    )
+    cells = DensityAwarePositionSampler._supercover_cells(
+        np.array([1, 1]), np.array([2, 2])
+    )
+    assert {(1, 1), (1, 2), (2, 1), (2, 2)} <= set(cells)
+
+
+def test_route_resamples_a_segment_crossing_footprint_expanded_obstacle():
+    grid = np.zeros((40, 40), dtype=np.int8)
+    grid[:, 19:21] = 100
+    sample = _sample(
+        seed=31,
+        count=5,
+        grid=grid,
+        config=DensityAwareSamplingConfig(require_same_component=False),
+    )
+    assert sample.diagnostics['route_segments_rejected'] > 0
+    for route in sample.routes:
+        xs = [route.start.x, *[goal.x for goal in route.goals]]
+        assert all(x < 19 for x in xs) or all(x > 21 for x in xs)
+
+
+def test_segment_constraint_exhaustion_is_fail_closed():
+    safe = np.zeros((7, 7), dtype=np.int64)
+    safe[1, 1] = 1
+    safe[5, 5] = 1
+    world = _world(np.zeros((7, 7), dtype=np.int8))
+    sampler = DensityAwarePositionSampler(
+        world_map=world,
+        rng=np.random.default_rng(2),
+        candidate_provider=lambda occupancy, clearance: np.argwhere(safe),
+        config=DensityAwareSamplingConfig(
+            pedestrian_radius_m=0.0,
+            static_clearance_m=0.0,
+            route_point_clearance_m=0.0,
+            route_min_length_m=1.0,
+            max_start_restarts=2,
+        ),
+    )
+    with pytest.raises(DensityAwareSamplingError, match='failed to sample'):
+        sampler.sample(1)
+
+
 def test_connected_components_keep_each_route_on_one_footprint_safe_island():
     grid = np.zeros((60, 100), dtype=np.int8)
     grid[:, 49:52] = 100
