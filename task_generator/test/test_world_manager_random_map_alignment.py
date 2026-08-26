@@ -80,36 +80,51 @@ def test_map_callback_preserves_asymmetric_origin_in_world_map_coordinates(monke
     assert manager._map_name == 'asymmetric_origin_world'
 
 
-def test_direct_yaml_loader_preserves_asymmetric_origin_and_in_bounds_round_trip(tmp_path):
-    """The production direct loader uses the same internal origin convention."""
-    Image.fromarray(np.full((6, 8), 255, dtype=np.uint8)).save(tmp_path / 'map.png')
+def test_direct_yaml_loader_matches_ros_costmap_y_orientation_and_origin(tmp_path):
+    """Direct PIL loading is identical to ROS bottom-origin OccupancyGrid data."""
+    image = np.array([
+        [0, 255, 127, 255],
+        [255, 255, 255, 0],
+        [255, 0, 255, 255],
+    ], dtype=np.uint8)
+    Image.fromarray(image).save(tmp_path / 'map.png')
     map_yaml = tmp_path / 'map.yaml'
-    map_yaml.write_text(yaml.safe_dump({
+    metadata = {
         'image': 'map.png',
         'resolution': 0.5,
         'origin': [-3.25, 7.75, 0.0],
         'negate': 0,
         'occupied_thresh': 0.65,
         'free_thresh': 0.196,
-    }))
+    }
+    map_yaml.write_text(yaml.safe_dump(metadata))
 
     manager = WorldManagerROS.__new__(WorldManagerROS)
     manager._origin = Position(x=-3.25, y=7.75)
     manager._NodeInterface__node = SimpleNamespace(
         sim_time=SimpleNamespace(to_msg=lambda: nav_msgs.msg.OccupancyGrid().info.map_load_time)
     )
+    direct = manager._load_world_map_from_yaml(str(map_yaml))
 
-    world_map = manager._load_world_map_from_yaml(str(map_yaml))
+    ros_grid = nav_msgs.msg.OccupancyGrid()
+    ros_grid.info.height, ros_grid.info.width = image.shape
+    ros_grid.info.resolution = metadata['resolution']
+    ros_grid.info.origin.position.x, ros_grid.info.origin.position.y = metadata['origin'][:2]
+    ros_grid.info.origin.orientation.w = 1.0
+    ros_grid.data = [0, 100, 0, 0, 0, 0, 0, 100, 100, 0, -1, 0]
+    expected = WorldMap.from_costmap(ros_grid)
 
-    assert (world_map.origin.x, world_map.origin.y) == pytest.approx((7.75, -3.25))
+    assert (direct.origin.x, direct.origin.y) == pytest.approx((7.75, -3.25))
     assert manager._origin is None
-    position = world_map.tf_grid2pos((2, 3))
-    assert (position.x, position.y) == pytest.approx((-1.75, 8.75))
-    runtime_row = world_map.shape[0] - 1 - round((position.y - 7.75) / 0.5)
-    runtime_column = round((position.x - -3.25) / 0.5)
-    assert (runtime_row, runtime_column) == (3, 3)
-    assert 0 <= runtime_row < world_map.shape[0]
-    assert 0 <= runtime_column < world_map.shape[1]
+    assert np.array_equal(direct.occupancy.grid, expected.occupancy.grid)
+    assert WorldOccupancy.full(direct.occupancy.grid[0, 1])
+    assert WorldOccupancy.full(direct.occupancy.grid[1, 3])
+    assert WorldOccupancy.full(direct.occupancy.grid[2, 0])
+    assert WorldOccupancy.empty(direct.occupancy.grid[0, 0])
+    assert WorldOccupancy.empty(direct.occupancy.grid[2, 2])
+
+    position = direct.tf_grid2pos((0, 1))
+    assert (position.x, position.y) == pytest.approx((-2.75, 7.75))
 
 
 class _DeterministicRng:

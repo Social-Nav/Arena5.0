@@ -197,7 +197,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         grid.info.origin.position.y = float(origin[1])
         grid.info.origin.orientation.w = 1.0
         grid.info.map_load_time = self.node.sim_time.to_msg()
-        grid.data = data.reshape(-1).astype(int).tolist()
+        grid.data = np.flipud(data).reshape(-1).astype(int).tolist()
 
         world_map = WorldMap.from_costmap(grid)
         if self._origin is not None:
