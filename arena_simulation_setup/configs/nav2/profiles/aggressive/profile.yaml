@@ -31,4 +31,4 @@ global_social_layer:
   covariance_rear_width: 0.043
   covariance_right_height: 0.043
   covariance_when_still: 0.0736
-  speed_factor_multiplier: 3.0
+  speed_factor_multiplier: 1.0
