@@ -1237,6 +1237,12 @@ class HunavHumanSimulator(
                                 f"Publishing pedestrian {ped.name} at ({ped.pose.position.x}, {ped.pose.position.y}) with velocity ({ped.twist.linear.x}, {ped.twist.linear.y})"
                             )
 
+                        # Stamp at publish time. Left at 0 the social costmap layer's
+                        # canTransform(stamp) asks TF for the oldest possible time, fails,
+                        # and skips every pedestrian.
+                        self._arena_pedestrians_container.header.stamp = (
+                            self.node.sim_time.to_msg()
+                        )
                         self._arena_peds_publisher.publish(self._arena_pedestrians_container)
                         self._publish_wall_markers()
 
@@ -1338,11 +1344,15 @@ class HunavHumanSimulator(
         vel_x = (curr_x - prev_x) / dt
         vel_y = (curr_y - prev_y) / dt
 
-        # Speed limiting
+        # Speed limiting. Guard on dv > 0: HuNav's getUpdatedAgentMsg never fills
+        # desired_velocity, so it arrives as 0.0 and scaled every speed to zero --
+        # /people had position but velocity (-0.0, -0.0), which killed the costmap's
+        # velocity-stretched gaussian and the >= 0.05 walk gate in NavigatePedestrians.
         velocity_magnitude = math.sqrt(vel_x**2 + vel_y**2)
-        if velocity_magnitude > updated_agent.desired_velocity:
+        dv = updated_agent.desired_velocity
+        if dv > 0.0 and velocity_magnitude > dv:
 
-            scale_factor = updated_agent.desired_velocity / velocity_magnitude
+            scale_factor = dv / velocity_magnitude
             vel_x *= scale_factor
             vel_y *= scale_factor
 
