@@ -122,11 +122,6 @@ def generate_launch_description():
         choices=['true', 'false'],
         description='Enable VLN dataset logging'
     )
-    session_tag = LaunchArgument(
-        name='session_tag',
-        default_value='',
-        description='Label prepended to collected_data subdirectory, e.g. grscenes_1__default',
-    )
     task_generator_param_file = LaunchArgument(
         name='task_generator_param_file',
         default_value=os.path.join(get_package_share_directory('arena_bringup'), 'configs', 'task_generator.yaml'),
@@ -141,6 +136,17 @@ def generate_launch_description():
         name='train_mode',
         default_value=PythonExpression(['"', train_config.substitution, '" != ""']),
         description='If true, RL env publishes cmd_vel directly; nav2 controller output is silenced. Implied when train_config is provided.'
+    )
+    save_snapshots = LaunchArgument(
+        name='save_snapshots',
+        default_value='false',
+        choices=['true', 'false'],
+        description='Keep the yielding snapshot dirs (head/back/topdown PNGs + depth npy) after '
+                    'the replan has read them. NOT a "skip capture" switch: the replan pipeline '
+                    'reads the snapshot back off disk, so yielding cannot work without it being '
+                    'written. Default false deletes each dir once its replan is done; true keeps '
+                    'them for debugging. With world:= set they land in '
+                    'social_gen/traj_data/grscenes/<world>/snapshots/, beside data/ and videos/.',
     )
     social_yielding = LaunchArgument(
         name='social_yielding',
@@ -291,7 +297,6 @@ def generate_launch_description():
             **robot.dict,
             **world.dict,
             **save_data.dict,
-            **session_tag.dict,
             'headless': PythonExpression([headless.substitution, '>0']),
         }.items(),
     )
@@ -331,6 +336,13 @@ def generate_launch_description():
         launch.actions.SetEnvironmentVariable(
             name='ARENA_ROBOT',
             value=robot.substitution,
+        ),
+        # Read by the orchestrator (SAVE_SNAPSHOTS) to decide whether each snapshot dir
+        # survives its replan. Passed as an env var, not a ROS param, to match how
+        # ARENA_ROBOT already reaches these two plain-python nodes.
+        launch.actions.SetEnvironmentVariable(
+            name='ARENA_SAVE_SNAPSHOTS',
+            value=save_snapshots.substitution,
         ),
         launch.actions.ExecuteProcess(
             cmd=['bash', '-c',

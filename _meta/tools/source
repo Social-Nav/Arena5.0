@@ -186,7 +186,16 @@ if [ -z ${ARENA_SOURCED+x} ] ; then
                     result=1
                 elif feature_path="$(resolve_arena_feature "$1")"; then
                     shift
-                    ($SHELL -c "source '$SOURCE_FILE' > /dev/null 2>&1 && $shell '$feature_path' $*")
+                    # Quote each argument before splicing it into the -c string. A bare $*
+                    # joins them with spaces and drops every quote, so an empty value passed
+                    # as --flag "" disappears entirely and the flag arrives with nothing
+                    # after it -- argparse then reports "expected one argument". Empty
+                    # values and values containing spaces must both survive.
+                    feature_args=""
+                    for feature_arg in "$@"; do
+                        feature_args+=" $(printf '%q' "$feature_arg")"
+                    done
+                    ($SHELL -c "source '$SOURCE_FILE' > /dev/null 2>&1 && $shell '$feature_path'$feature_args")
                     result=$?
                 else
                     echo "Unknown feature '$1'" >&2

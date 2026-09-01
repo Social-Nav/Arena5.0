@@ -28,11 +28,6 @@ def generate_launch_description():
         choices=['true', 'false'],
         description='Enable VLN dataset logging'
     )
-    session_tag = LaunchArgument(
-        name='session_tag',
-        default_value='',
-        description='Label prepended to collected_data subdirectory',
-    )
     robot = LaunchArgument(
         name='robot',
         default_value='jackal',
@@ -76,8 +71,10 @@ def generate_launch_description():
             launch_arguments={
                 'use_sim_time': use_sim_time.substitution,
                 'save_data': save_data.substitution,
-                'session_tag': session_tag.substitution,
                 'robot': robot.substitution,
+                # Reaches the logger as --world; picks the dataset dir under
+                # social_gen/traj_data/grscenes/.
+                'world': world.substitution,
                 # 'headless': headless.substitution
             }.items(),
         )
