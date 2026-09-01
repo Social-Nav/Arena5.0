@@ -75,7 +75,7 @@ __pycache__/
 /collected_data/
 
 # local-only notes (kept on disk, not shared)
-/docs/social_mpc_internals.md
+/docs/实现细节.md
 # Superseded by the Chinese 场景与社交配置说明.md, which is the tracked version.
 /docs/scenario_and_social_config.md
 /docs/social_mpc_upstream_params/
