@@ -1,4 +1,4 @@
-# Social-profile overrides (passive/neutral/aggressive) and scenario params: docs/scenario_and_social_config.md
+# Social-profile overrides (passive/neutral/aggressive) and scenario params: docs/场景与社交配置说明.md
 controller_plugins:
   - FollowPath
 controller_plugins_dict:

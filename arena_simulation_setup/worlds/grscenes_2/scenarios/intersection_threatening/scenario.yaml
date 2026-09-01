@@ -1,5 +1,5 @@
 # Generated from topdown pixel waypoints
-# Parameter reference: docs/scenario_and_social_config.md
+# Parameter reference: docs/场景与社交配置说明.md
 #
 # REGULAR pedestrian + passive robot, crossing paths. Both sides yield, so it resolves by mutual
 # give-way. The directory name still says "threatening": that variant is PARKED in

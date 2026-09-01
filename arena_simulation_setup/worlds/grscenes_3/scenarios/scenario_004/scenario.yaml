@@ -1,5 +1,5 @@
 # Generated from topdown pixel waypoints
-# Parameter reference: docs/scenario_and_social_config.md
+# Parameter reference: docs/场景与社交配置说明.md
 #
 # SURPRISED pedestrian: stops and stares while the robot is visible within `dist`, then resumes.
 # Visibility-gated, so dist/duration/once matter here (they are dead on regular).

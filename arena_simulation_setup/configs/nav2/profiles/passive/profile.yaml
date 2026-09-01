@@ -4,7 +4,7 @@
 # to serve as an interaction baseline.
 #
 # Siblings: ../neutral (midway), ../aggressive. All three must define the SAME keys.
-# Parameter reference, rules and the side-by-side comparison: docs/scenario_and_social_config.md
+# Parameter reference, rules and the side-by-side comparison: docs/场景与社交配置说明.md
 
 weights:
   social_weight: 700.0
@@ -33,4 +33,4 @@ global_social_layer:
   covariance_rear_width: 0.043
   covariance_right_height: 0.043
   covariance_when_still: 0.0736
-  speed_factor_multiplier: 1.0    # blunt/pointy knob: stretches front_height only
+  speed_factor_multiplier: 3.0    # blunt/pointy knob: stretches front_height only

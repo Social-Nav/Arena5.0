@@ -1,5 +1,5 @@
 # Generated from topdown pixel waypoints
-# Parameter reference: docs/scenario_and_social_config.md
+# Parameter reference: docs/场景与社交配置说明.md
 #
 # SURPRISED pedestrian + aggressive robot, crossing paths. The ped stops and stares while the robot
 # is visible within `dist`, so the crossing resolves by the ped holding still rather than swerving.

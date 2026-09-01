@@ -3,7 +3,7 @@
 # bubbles are identical, so navfn plans the same courteous route in both profiles.
 #
 # Siblings: ../passive (baseline), ../neutral (midway). All three must define the SAME keys.
-# Parameter reference and rules: docs/scenario_and_social_config.md
+# Parameter reference and rules: docs/场景与社交配置说明.md
 
 weights:
   social_weight: 400.0            # 700->400
@@ -31,4 +31,4 @@ global_social_layer:
   covariance_rear_width: 0.043
   covariance_right_height: 0.043
   covariance_when_still: 0.0736
-  speed_factor_multiplier: 1.0
+  speed_factor_multiplier: 3.0
