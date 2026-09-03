@@ -29,6 +29,12 @@ repositories:
     type: git
     url: https://github.com/voshch/ament_cmake_venv_pyenv
     version: master
+  # buildtool_depend of arena_models; planners.repos declares it too, but only
+  # under planners/deps/ and only when that feature is enabled.
+  deps/ament_cmake_venv_uv:
+    type: git
+    url: https://github.com/voshch/ament_cmake_venv_uv
+    version: humble
 
   # internal management
   deps/arena_models:
