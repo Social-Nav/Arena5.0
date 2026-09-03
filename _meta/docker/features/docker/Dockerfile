@@ -59,9 +59,17 @@ RUN  --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && apt-get update && apt-get install -y docker-ce-cli \
     && rm -rf /var/lib/apt/lists/*
 
-# install lightsfm
-ADD https://github.com/robotics-upo/lightsfm.git /lightsfm
-RUN cd /lightsfm && make && make install
+# lightsfm is NOT installed here any more. It is a source package pulled by
+# `arena update` into src/deps/lightsfm (Social-Nav fork) and resolved via
+# find_package, see _meta/repos/arena.repos.
+#
+# WHY IT MOVED: `make install` put the headers in /usr/local/include/lightsfm,
+# which is part of this image and not a bind mount, unlike src/, build/ and
+# install/. Edits to sfm.hpp were therefore reverted by every
+# `docker compose --force-recreate` -- the build still succeeded, pedestrian
+# behaviour changed, and nothing in the logs said why. Leaving a stale copy at
+# the old path would also shadow nothing but still mislead anyone who edits it,
+# so it is removed outright rather than kept "just in case".
 
 
 
