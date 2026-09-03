@@ -67,20 +67,41 @@ repositories:
     url: https://github.com/SteveMacenski/slam_toolbox.git
     version: jazzy
 
+  # Social Force Model headers used by hunav_agent_manager. Upstream ships only a
+  # Makefile whose `install` target copies them into /usr/local/include/lightsfm;
+  # that path is baked into the container image and is not a bind mount, so every
+  # `docker compose --force-recreate` silently reverted local edits to sfm.hpp.
+  # Managed as a source package here instead, so edits rebuild like any other dep.
+  deps/lightsfm:
+    type: git
+    url: https://github.com/Social-Nav/lightsfm.git
+    version: feature/social_yielding
+  # Social-Nav fork: carries the desired_velocity/radius echo-back and the
+  # blackboard seeding for non-Regular behavior trees, neither of which can be
+  # pushed to voshch/hunav_sim.
   deps/hunav/hunav_sim:
     type: git
-    url: https://github.com/voshch/hunav_sim.git
-    version: jazzy
+    url: https://github.com/Social-Nav/hunav_sim.git
+    version: feature/social_yielding
   deps/hunav/people_msgs:
     type: git
     url: https://github.com/wg-perception/people.git
     version: ros2
+  # Social-Nav fork: carries arena_peds_to_people_bridge, which feeds /people.
   deps/hunav/arena_hunav_sim_bridge:
     type: git
-    url: https://github.com/ductaingn/arena_hunav_sim_bridge.git
-    version: humble
+    url: https://github.com/Social-Nav/arena_hunav_sim_bridge.git
+    version: feature/social_yielding
 
   # social navigation (nav2 controller + costmap layer)
+  # Was missing from every .repos file despite nav2_social_mpc_controller
+  # depending on its ObstacleDistance msg, so `arena update` never cloned it and
+  # a fresh workspace failed to build. Social-Nav fork carries the NO_OBSTACLE
+  # sentinel fix for the uninitialised final_idx.
+  deps/obstacle_distance_manager:
+    type: git
+    url: https://github.com/Social-Nav/obstacle_distance_manager.git
+    version: feature/social_yielding
   deps/nav2_social_mpc_controller:
     type: git
     url: https://github.com/Social-Nav/nav2_social_mpc_controller.git
