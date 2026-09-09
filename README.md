@@ -13,7 +13,9 @@ The runtime has three containers:
 | `arena-arena_jazzy_ws-internnav-1` | InternNav model server and official realworld client |
 
 Requirements are Docker, Docker Compose, NVIDIA Container Toolkit, a compatible
-GPU/driver, and the GRScenes assets described in [datasets.md](datasets.md).
+GPU/driver, and the external GRScenes assets. See the
+[installation guide](docs/installation.md) for a clean-machine setup and
+[dataset notes](datasets.md) for the runtime layout.
 
 ## Run the benchmark
 
@@ -63,6 +65,8 @@ Detailed source artifacts remain alongside it for audit. See
 acceptance rules, and batch aggregation commands.
 
 ## Documentation
+
+Start with [Installation](docs/installation.md) on a clean machine.
 
 Build the same site that GitHub Actions publishes:
 
