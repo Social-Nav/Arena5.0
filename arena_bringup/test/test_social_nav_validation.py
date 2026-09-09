@@ -178,9 +178,13 @@ def test_metrics_check_requires_strict_task_and_social_success(tmp_path):
         "path_length_m": 1.0,
         "base_metrics": {"first": {"result": "GOAL_REACHED"}},
         "min_human_distance_m": 2.0,
+        "min_footprint_clearance_m": 1.45,
         "personal_space_violation_time_sec": 0.0,
+        "footprint_personal_space_violation_time_sec": 0.0,
         "near_miss_count": 0,
         "human_collision_count": 0,
+        "footprint_near_miss_count": 0,
+        "footprint_human_collision_count": 0,
         "crowd_freezing_time_sec": 0.0,
     }
 
@@ -207,9 +211,13 @@ def test_metrics_check_fails_legacy_goal_reached_when_strict_task_failed(tmp_pat
         "path_length_m": 1.0,
         "base_metrics": {"first": {"result": "GOAL_REACHED"}},
         "min_human_distance_m": 2.0,
+        "min_footprint_clearance_m": 1.45,
         "personal_space_violation_time_sec": 0.0,
+        "footprint_personal_space_violation_time_sec": 0.0,
         "near_miss_count": 0,
         "human_collision_count": 0,
+        "footprint_near_miss_count": 0,
+        "footprint_human_collision_count": 0,
         "crowd_freezing_time_sec": 0.0,
     }
 
@@ -236,6 +244,36 @@ def test_metrics_check_reports_strict_social_as_default_social_success(tmp_path)
         "path_length_m": 1.0,
         "base_metrics": {"first": {"result": "GOAL_REACHED"}},
         "min_human_distance_m": 2.0,
+        "min_footprint_clearance_m": 1.45,
+        "personal_space_violation_time_sec": 0.0,
+        "footprint_personal_space_violation_time_sec": 0.0,
+        "near_miss_count": 0,
+        "human_collision_count": 0,
+        "footprint_near_miss_count": 0,
+        "footprint_human_collision_count": 0,
+        "crowd_freezing_time_sec": 0.0,
+    }
+
+    result = _check_metrics(tmp_path, social_metrics)
+
+    assert result["pass"] is False
+    assert result["social_success"] is False
+    assert result["strict_social_success"] is False
+
+
+def test_metrics_check_rejects_legacy_social_schema_without_footprint_fields(tmp_path):
+    _write_rows(tmp_path / "metrics.csv", ["result"], [{"result": "GOAL_REACHED"}])
+    (tmp_path / "vln_task_metrics.json").write_text(
+        json.dumps({"strict_task_success": True, "strict_task_failure_reasons": []}),
+        encoding="utf-8",
+    )
+    social_metrics = {
+        "humans_present": True,
+        "strict_social_success": True,
+        "social_success": True,
+        "strict_social_failure_reasons": [],
+        "path_length_m": 1.0,
+        "min_human_distance_m": 2.0,
         "personal_space_violation_time_sec": 0.0,
         "near_miss_count": 0,
         "human_collision_count": 0,
@@ -245,8 +283,9 @@ def test_metrics_check_reports_strict_social_as_default_social_success(tmp_path)
     result = _check_metrics(tmp_path, social_metrics)
 
     assert result["pass"] is False
-    assert result["social_success"] is False
-    assert result["strict_social_success"] is False
+    assert result["required_social_fields_present"] is False
+    assert "min_footprint_clearance_m" in result["missing_social_fields"]
+    assert "footprint_human_collision_count" in result["missing_social_fields"]
 
 
 def test_diagnostic_warnings_report_unsupported_language_predicates(tmp_path):

@@ -20,6 +20,7 @@ def _args(**overrides):
         'vln_instruction_timestamp': '',
         'dual_vln_python_executable': '',
         'dual_vln_status_topic': '',
+        'task_reset_topic': '/task_generator_node/task_reset',
         'dual_vln_adapter_target': '',
         'dual_vln_mode': 'heuristic',
         'dual_vln_model_path': '',
@@ -199,3 +200,95 @@ def test_explicit_instruction_file_wins_over_present_scenario_json(tmp_path, mon
     assert args.vln_instruction_file == explicit_file
     assert 'vln_instruction' not in adjustments
     assert 'vln_instruction_scenario_json_missing' not in adjustments
+
+
+def test_relative_internnav_status_topic_is_resolved_to_robot_namespace(tmp_path, monkeypatch):
+    share = tmp_path / 'arena_simulation_setup'
+    share.mkdir()
+    _use_share(monkeypatch, share)
+    monkeypatch.setattr(
+        internnav_eval,
+        '_resolve_existing_manifest_path',
+        lambda *_args, **_kwargs: ('', []),
+    )
+    args = _args(
+        robot='Ai2_Bot2',
+        dual_vln_status_topic='internnav/status',
+    )
+
+    adjustments = internnav_eval._apply_runtime_defaults(args)
+
+    assert args.dual_vln_status_topic == '/task_generator_node/Ai2_Bot2/internnav/status'
+    assert adjustments['dual_vln_status_topic'] == args.dual_vln_status_topic
+
+
+@pytest.mark.parametrize(
+    'legacy_topic',
+    [
+        '/task_generator_node/dual_vln/status',
+        '/task_generator_node/internnav/status',
+    ],
+)
+def test_legacy_internnav_status_topics_are_resolved_to_robot_namespace(
+    tmp_path,
+    monkeypatch,
+    legacy_topic,
+):
+    share = tmp_path / 'arena_simulation_setup'
+    share.mkdir()
+    _use_share(monkeypatch, share)
+    monkeypatch.setattr(
+        internnav_eval,
+        '_resolve_existing_manifest_path',
+        lambda *_args, **_kwargs: ('', []),
+    )
+    args = _args(robot='Ai2_Bot2', dual_vln_status_topic=legacy_topic)
+
+    adjustments = internnav_eval._apply_runtime_defaults(args)
+
+    assert args.dual_vln_status_topic == '/task_generator_node/Ai2_Bot2/internnav/status'
+    assert adjustments['dual_vln_status_topic'] == args.dual_vln_status_topic
+
+
+def test_absolute_custom_internnav_status_topic_is_preserved(tmp_path, monkeypatch):
+    share = tmp_path / 'arena_simulation_setup'
+    share.mkdir()
+    _use_share(monkeypatch, share)
+    monkeypatch.setattr(
+        internnav_eval,
+        '_resolve_existing_manifest_path',
+        lambda *_args, **_kwargs: ('', []),
+    )
+    args = _args(dual_vln_status_topic='/custom/status')
+
+    adjustments = internnav_eval._apply_runtime_defaults(args)
+
+    assert args.dual_vln_status_topic == '/custom/status'
+    assert 'dual_vln_status_topic' not in adjustments
+
+
+def test_internnav_adapter_defaults_to_current_realworld_http_adapter():
+    adapter_target, source = internnav_eval._normalize_internnav_adapter_target('')
+
+    assert adapter_target == internnav_eval.REALWORLD_HTTP_ADAPTER_TARGET
+    assert source == 'default'
+
+
+def test_legacy_native_adapter_is_normalized_to_current_http_adapter():
+    adapter_target, source = internnav_eval._normalize_internnav_adapter_target(
+        'internnav.agent.internvla_n1_agent_realworld.InternVLAN1AsyncAgent'
+    )
+
+    assert adapter_target == internnav_eval.REALWORLD_HTTP_ADAPTER_TARGET
+    assert source.startswith('legacy:')
+
+
+def test_git_source_provenance_accepts_repository_root():
+    repo_root = Path(__file__).resolve().parents[2]
+
+    provenance = internnav_eval._git_source_provenance(str(repo_root))
+
+    assert provenance['git_repo'] == str(repo_root)
+    assert len(provenance['git_commit']) == 40
+    assert provenance['git_branch']
+    assert provenance['git_dirty'] is True

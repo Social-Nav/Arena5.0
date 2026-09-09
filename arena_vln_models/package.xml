@@ -3,7 +3,7 @@
 <package format="3">
   <name>arena_vln_models</name>
   <version>0.0.0</version>
-  <description>Consolidated Arena VLN model wrapper and benchmark server package.</description>
+  <description>Arena VLN model adapters and benchmark integration helpers.</description>
 
   <maintainer email="dev@example.com">dev</maintainer>
   <license>MIT</license>

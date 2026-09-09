@@ -56,6 +56,7 @@ setup(
             'social_nav_scenario_validate = arena_bringup.social_nav_scenario:main',
             'social_nav_scenario_eval = arena_bringup.social_nav_scenario:eval_main',
             'social_nav_metrics_aggregate = arena_bringup.social_nav_metrics_aggregate:main',
+            'benchmark_result = arena_bringup.benchmark_result:main',
             'grscenes_episode_to_eval_config = arena_bringup.grscenes_episode_to_eval_config:main',
             'grscenes_pedestrian_gt = arena_bringup.grscenes_pedestrian_gt:main',
             'grscenes_pedestrian_gt_batch = arena_bringup.grscenes_pedestrian_gt:batch_main',

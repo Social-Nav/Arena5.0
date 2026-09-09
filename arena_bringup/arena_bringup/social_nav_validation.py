@@ -228,7 +228,9 @@ def _check_model_control(run_dir: Path, manifest: dict[str, Any]) -> dict[str, A
     trace_path = Path(str(artifacts.get('internnav_trace_path') or run_dir / 'internnav_trace.jsonl'))
     status_path = Path(str(artifacts.get('dual_vln_status_path') or run_dir / 'internnav_status.json'))
     total, event_counts = _trace_events(trace_path)
-    teleports = _odom_teleports(run_dir)
+    task_metrics = _read_json(run_dir / 'vln_task_metrics.json')
+    task_teleports = task_metrics.get('large_teleports') if isinstance(task_metrics, dict) else None
+    teleports = task_teleports if isinstance(task_teleports, list) else _odom_teleports(run_dir)
     status = _read_json(status_path)
     direct_cmd_vel = bool(params.get('internnav_direct_cmd_vel') or params.get('dual_vln_direct_cmd_vel'))
     model_results = event_counts.get('model_result', 0)
@@ -266,6 +268,14 @@ def _check_metrics(run_dir: Path, social_metrics: dict[str, Any] | None) -> dict
     social_present = isinstance(social_metrics, dict)
     vln_task_metrics = _read_json(vln_task_metrics_path)
     strict_task_present = isinstance(vln_task_metrics, dict)
+    task_schema_version = int(vln_task_metrics.get('schema_version') or 1) if strict_task_present else 0
+    vln_metrics = vln_task_metrics.get('vln') if strict_task_present else {}
+    reference_path = vln_metrics.get('reference_path') if isinstance(vln_metrics, dict) else {}
+    reference_path_required = task_schema_version >= 2
+    reference_path_available = (
+        bool(reference_path.get('available')) if isinstance(reference_path, dict) else False
+    )
+    reference_path_ready = reference_path_available or not reference_path_required
     base_metrics = social_metrics.get('base_metrics') if social_present else {}
     base_first = base_metrics.get('first') if isinstance(base_metrics, dict) else {}
     episode_result = str(base_first.get('result') or '') if isinstance(base_first, dict) else ''
@@ -283,6 +293,24 @@ def _check_metrics(run_dir: Path, social_metrics: dict[str, Any] | None) -> dict
     except Exception:
         is_dual_vln = False
     robot_moved = (not is_dual_vln) or path_length_m >= 0.1
+    required_social_fields = (
+        'min_human_distance_m',
+        'min_footprint_clearance_m',
+        'personal_space_violation_time_sec',
+        'footprint_personal_space_violation_time_sec',
+        'near_miss_count',
+        'human_collision_count',
+        'footprint_near_miss_count',
+        'footprint_human_collision_count',
+        'crowd_freezing_time_sec',
+        'social_success',
+        'strict_social_success',
+    )
+    required_social_fields_present = (
+        all(key in social_metrics for key in required_social_fields)
+        if social_present
+        else False
+    )
     return {
         "pass": (
             metrics_path.exists()
@@ -292,6 +320,8 @@ def _check_metrics(run_dir: Path, social_metrics: dict[str, Any] | None) -> dict
             and strict_task_success
             and strict_social_success
             and robot_moved
+            and required_social_fields_present
+            and reference_path_ready
         ),
         "metrics_csv_present": metrics_path.exists(),
         "vln_task_metrics_present": strict_task_present,
@@ -305,17 +335,15 @@ def _check_metrics(run_dir: Path, social_metrics: dict[str, Any] | None) -> dict
         "episode_result": episode_result or None,
         "path_length_m": path_length_m,
         "robot_moved": robot_moved,
-        "required_social_fields_present": all(
-            key in social_metrics for key in (
-                'min_human_distance_m',
-                'personal_space_violation_time_sec',
-                'near_miss_count',
-                'human_collision_count',
-                'crowd_freezing_time_sec',
-                'social_success',
-                'strict_social_success',
-            )
-        ) if social_present else False,
+        "required_social_fields_present": required_social_fields_present,
+        "missing_social_fields": [
+            key for key in required_social_fields
+            if not social_present or key not in social_metrics
+        ],
+        "vln_task_schema_version": task_schema_version,
+        "reference_path_required": reference_path_required,
+        "reference_path_available": reference_path_available,
+        "reference_path_ready": reference_path_ready,
     }
 
 

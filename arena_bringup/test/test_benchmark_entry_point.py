@@ -327,8 +327,30 @@ def test_eval_runs_in_the_arena_container():
 
 
 def test_extra_arguments_are_appended_to_the_driver():
-    out = _run(['plan', 'eval', '--', '--scenario-file', 'foo.yaml']).stdout
-    assert '--scenario-file foo.yaml' in out
+    out = _run(['plan', 'eval', '--', '--output-prefix', 'review']).stdout
+    assert '--output-prefix review' in out
+
+
+def test_extra_arguments_preserve_shell_argument_boundaries():
+    out = _run([
+        'plan', 'eval', '--',
+        '--vln-instruction', 'wait near the entrance',
+    ]).stdout
+    assert '--vln-instruction wait\\ near\\ the\\ entrance' in out
+
+
+def test_default_eval_uses_the_current_strict_benchmark_contract():
+    out = _run(['plan', 'eval']).stdout
+    assert '--sim isaac_eval' in out
+    assert '--world grscenes_20_v1' in out
+    assert '--scenario-file default_2' in out
+    assert '--timeout 300' in out
+    assert '--social-eval' in out
+
+
+def test_empty_scenario_disables_the_default_scenario_argument():
+    out = _run(['plan', 'eval', '--scenario', '']).stdout
+    assert '--scenario-file' not in out
 
 
 @pytest.mark.parametrize(
@@ -336,7 +358,8 @@ def test_extra_arguments_are_appended_to_the_driver():
     [
         ('--robot', 'Jackal', 'Jackal'),
         ('--world', 'grscenes_20_v1', 'grscenes_20_v1'),
-        ('--episodes', '7', '--episodes 7'),
+        ('--scenario', 'default_4', '--scenario-file default_4'),
+        ('--episodes', '1', '--episodes 1'),
         ('--timeout', '900', '--timeout 900'),
         ('--device', 'cuda:1', 'cuda:1'),
     ],
@@ -350,6 +373,28 @@ def test_unknown_option_is_rejected_loudly():
     result = _run(['up', '--nonsense'])
     assert result.returncode == 1
     assert '--nonsense' in result.stderr
+
+
+def test_multiple_episodes_are_rejected_to_preserve_one_result_per_episode():
+    result = _run(['plan', 'eval', '--episodes', '2'])
+    assert result.returncode == 1
+    assert 'requires --episodes 1' in result.stderr
+
+
+@pytest.mark.parametrize(
+    'args',
+    [
+        ['--', '--episodes', '2'],
+        ['--', '--sim', 'dummy'],
+        ['--', 'sim:=dummy'],
+        ['--', '--skip-metrics'],
+        ['--', 'robot_launch_file:=robot.launch.py'],
+    ],
+)
+def test_extra_arguments_cannot_override_the_strict_contract(args):
+    result = _run(['plan', 'eval', *args])
+    assert result.returncode == 1
+    assert 'cannot override the strict benchmark contract' in result.stderr
 
 
 # --------------------------------------------------------------------------
@@ -536,14 +581,8 @@ def test_doctor_only_skips_the_gpu_device_check_when_containers_are_down(tmp_pat
     assert 'cannot verify GPU device access yet' in combined, combined
 
 
-def test_run_rechecks_gpu_device_access_after_starting_the_containers():
-    """Without this, a `doctor` that could only SKIP would leave the run unguarded.
-
-    Asserts the executed path, not only the plan text.  The plan is a separate
-    hand-written string, so checking it alone would pass even if the real branch
-    stopped calling the check -- verified: deleting the call left a plan-only
-    assertion green.
-    """
+def test_run_checks_runtime_preconditions_after_starting_the_containers():
+    """Cold starts must reach up, then validate container-local state."""
     out = _run(['plan', 'run']).stdout
     assert 'GPU device access' in out, out
     order = [
@@ -553,27 +592,40 @@ def test_run_rechecks_gpu_device_access_after_starting_the_containers():
     ]
     assert order == sorted(order), f'GPU recheck must sit between up and serve:\n{out}'
 
-    # The real branch: do_run must call check_gpu_devices between do_up and the
-    # model server, and must abort if it fails.  Comments are stripped first --
-    # with them included, the assertion was satisfied by a comment that merely
-    # mentions the function, and deleting the actual call still passed.
+    # The real branch must run the container checks between do_up and the model
+    # server and abort when one fails. Comments are stripped first.
     body = SCRIPT.read_text().split('do_run(){', 1)[1].split('\n}\n', 1)[0]
-    real = body.split('doctor || exit 1', 1)[1]
+    real = body.split('fi', 1)[1]
     real = '\n'.join(
         line for line in real.splitlines() if not line.lstrip().startswith('#')
     )
-    assert 'check_gpu_devices' in real, (
-        'do_run describes a GPU recheck in its plan but never performs one'
+    assert 'check_runtime_preconditions' in real, (
+        'do_run describes runtime checks in its plan but never performs them'
     )
     positions = [
         real.index('do_up'),
-        real.index('check_gpu_devices'),
+        real.index('check_runtime_preconditions'),
         real.index('start the model server'),
     ]
     assert positions == sorted(positions), (
-        f'check_gpu_devices must run after do_up and before the server:\n{real}'
+        f'runtime checks must run after do_up and before the server:\n{real}'
     )
-    guard = real[real.index('check_gpu_devices'):real.index('start the model server')]
-    assert 'CHECK_FAILURES' in guard and 'die' in guard, (
-        f'a failing GPU recheck must abort rather than only print:\n{guard}'
+    guard = real[real.index('check_runtime_preconditions'):real.index('start the model server')]
+    assert 'abort_on_check_failures' in guard, (
+        f'a failing runtime check must abort rather than only print:\n{guard}'
     )
+
+
+def test_run_checks_static_preconditions_before_starting_containers():
+    source = SCRIPT.read_text()
+    body = source.split('do_run(){', 1)[1].split('\n}\n', 1)[0]
+    real = body.split('if [ "$DRY_RUN" = "1" ]', 1)[1].split('fi', 1)[1]
+
+    positions = [
+        real.index('check_static_preconditions'),
+        real.index('do_up'),
+        real.index('check_runtime_preconditions'),
+        real.index('start the model server'),
+    ]
+    assert positions == sorted(positions), real
+    assert 'doctor || exit 1' not in real
