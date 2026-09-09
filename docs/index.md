@@ -31,6 +31,7 @@ commands inside `arena-1`.
 
 ## Pages
 
+- [Installation](installation.md)
 - [Run Current Benchmarks](benchmark/running-benchmarks.md)
 - [Artifacts and Validation](benchmark/outputs-and-metrics.md)
 - [Troubleshooting](benchmark/troubleshooting.md)

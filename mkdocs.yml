@@ -12,6 +12,7 @@ theme:
     - content.code.copy
 nav:
   - Home: index.md
+  - Installation: installation.md
   - Benchmark:
       - Run Current Benchmarks: benchmark/running-benchmarks.md
       - Artifacts and Validation: benchmark/outputs-and-metrics.md
