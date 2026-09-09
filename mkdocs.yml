@@ -1,6 +1,6 @@
-site_name: Arena Benchmark Documentation
-site_description: English documentation for the Arena benchmark stack, Dynamic Social VLN scenarios, evaluation flows, and Isaac/Gazebo workflows.
-site_url: https://social-nav.github.io/arena-benchmark/
+site_name: Arena Benchmark
+site_description: Minimal documentation for the current Docker, Isaac Sim, and InternNav benchmark flow.
+site_url: https://social-nav.github.io/Arena5.0/
 repo_url: https://github.com/Social-Nav/Arena5.0
 repo_name: Social-Nav/Arena5.0
 theme:
@@ -12,25 +12,10 @@ theme:
     - content.code.copy
 nav:
   - Home: index.md
-  - Getting Started: getting-started.md
-  - Node Interfaces:
-      - Overview: nodes/index.md
-      - TaskGenerator: nodes/task_generator.md
-      - InternNavServer: nodes/internnav_server.md
-      - IsaacController: nodes/isaac_controller.md
-      - RaycastObstaclePublisher: nodes/raycast_obstacle_publisher.md
-      - RobotManager: nodes/robot_manager.md
-      - EvalVideoRecorder: nodes/eval_video_recorder.md
-      - DataRecorder: nodes/data_recorder.md
-      - PedestrianMarkerPublisher: nodes/pedestrian_marker_publisher.md
   - Benchmark:
-      - Overview: benchmark/overview.md
-      - Architecture: benchmark/architecture.md
-      - Running Benchmarks and Social VLN Eval: benchmark/running-benchmarks.md
-      - Episodic Data Annotation: benchmark/episodic-data-annotation.md
-      - Outputs, Social Metrics, and Aggregation: benchmark/outputs-and-metrics.md
+      - Run Current Benchmarks: benchmark/running-benchmarks.md
+      - Artifacts and Validation: benchmark/outputs-and-metrics.md
       - Troubleshooting: benchmark/troubleshooting.md
-  - Debugging Runbook: debugging_runbook.md
 markdown_extensions:
   - admonition
   - toc:

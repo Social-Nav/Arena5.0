@@ -43,6 +43,8 @@ the specified file schema.
 
 To be able to use the task generator module in all our Simulators without changes, a unified interface between Simulator and task generator is needed. The interface contains a lot of functions to spawn, publish or move robots or obstacles, and a lot more.
 
-At the moment we provide simulator interfaces for **Flatland** and **Gazebo**. In order to add a new simulator, in which the task generator should be used, a new simulator interface has to be created in `/taks_generator/simulators/` and has to be registrated in the simulator factory.
-
-Your newly created simulator interface should derive the **BaseSimulator** located [here](TODO) and implement all functions. A detailed description of the functions is contained in the **BaseSimulator** itself.
+The maintained Arena5.0 benchmark path uses the `isaac_eval` simulator adapter
+inside the Docker runtime. Simulator adapters implement `BaseSim` under
+`task_generator/simulators/sim/` and are registered in that package's simulator
+registry. Legacy simulator implementations may remain in the source tree, but
+they are not supported benchmark or fallback paths.

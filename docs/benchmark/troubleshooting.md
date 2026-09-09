@@ -1,377 +1,93 @@
 # Troubleshooting
 
-## Isaac crashes while creating ROS services
+## GPU Memory Stays High
 
-### Symptom
-
-Isaac starts, but service creation fails with Python, typesupport, or FastCDR-related crashes.
-
-### Most likely cause
-
-The runtime is loading incompatible host-built Python 3.11 ROS message artifacts instead of the image-bundled bridge messages.
-
-### Action
-
-- ensure the Isaac launch path uses `/opt/isaac_bridge_msgs`
-- rebuild the Isaac image after message definition changes
-- avoid injecting cross-distro `install_py311_msgs` paths into Isaac
-
-## InternNav waits forever for camera input
-
-### Symptom
-
-The model backend never leaves the initial waiting-for-camera state.
-
-### Most likely cause
-
-Isaac camera publishers use `BEST_EFFORT`, while the consumer expects the default `RELIABLE` QoS.
-
-### Action
-
-Use `BEST_EFFORT` subscriptions for RGB, depth, and camera info in the InternNav wrapper server.
-
-## InternNav async eval accidentally uses robot.launch.py
-
-### Symptom
-
-The target run is the current InternNav official async/direct `cmd_vel` eval, but
-the generated launch command or manifest does not include
-`robot_launch_file:=internnav_async_eval.launch.py`; the run then enters the
-normal `robot.launch.py`/Nav2 path or reports local `dual_vln_server` problems.
-
-### Most likely cause
-
-The eval was launched with only `--internnav-external-server`, or from stale docs
-that treated external-server mode as the async launch selector.
-
-### Action
-
-- relaunch with `--internnav-direct-cmd-vel`; this forces external-server mode
-  and appends `robot_launch_file:=internnav_async_eval.launch.py`
-- verify `postprocess_commands.txt` or `manifest.json` contains all of:
-
-```text
-robot_launch_file:=internnav_async_eval.launch.py
-internnav_direct_cmd_vel:=true
-dual_vln_direct_cmd_vel:=true
-internnav_external_server:=true
-dual_vln_external_server:=true
-```
-
-- do not debug a missing local `dual_vln_server` in `arena-1` for async/direct
-  eval; it should not be started there
-
-## Legacy external InternNav service server is not used
-
-### Symptom
-
-The dedicated `internnav` container is running for the legacy Nav2
-service-contract path, but the Arena launch still starts a local
-`dual_vln_server`, or the robot never calls the external service.
-
-### Most likely causes
-
-- `--internnav-external-server` was omitted from `internnav_eval`, so arena-1 may try to use an invalid local model path
-- the target was actually async/direct eval, but `--internnav-direct-cmd-vel` was omitted
-- an older task-generator YAML default overrode the launch argument
-- the containers are not sharing the same ROS domain / host network discovery
-
-### Action
-
-- launch eval with `--internnav-external-server`; the runner forwards both
-  `internnav_external_server:=true` and `dual_vln_external_server:=true`
-- keep `ARENA_INTERNNAV_EXTERNAL_SERVER=1` in the eval environment when validating
-  legacy configs
-- verify the arena-1 container has no local model server process:
+Check before cleaning. Do not reboot the host as a first step.
 
 ```bash
-ps -ef | grep -E "dual_vln_server|internnav_server" | grep -v grep
+nvidia-smi
+docker exec arena-arena_jazzy_ws-isaac-1 ps -eo pid,ppid,stat,comm,args
+docker exec arena-arena_jazzy_ws-arena-1 ps -eo pid,ppid,stat,comm,args
+docker exec arena-arena_jazzy_ws-internnav-1 ps -eo pid,ppid,stat,comm,args
+pgrep -af 'run_isaacsim|isaac-sim|kit/kit|internnav_eval|dual_vln_eval|dual_vln_server|internnav_server|task_generator_node|controller_server|planner_server|bt_navigator' || true
 ```
 
-- verify the model server process exists in `arena-arena_jazzy_ws-internnav-1`, not in `arena-arena_jazzy_ws-arena-1`
+Only clean processes that are confirmed to be old eval/model runs. Prefer
+container-local `pkill -TERM`, wait, then `pkill -KILL`.
 
-- verify the external ROS contract is visible:
+## Social Metrics Are Missing
+
+If `vln_task_metrics.json`, `social_metrics.json`, and
+`artifact_validation.json` are absent, first check `run_manifest.yaml`:
+
+```yaml
+parameters:
+  social_eval: false
+```
+
+When `social_eval` is `false`, those files are not expected. Re-run with
+`--social-eval` for strict benchmark acceptance.
+
+## InternNav Status Or Trace Is Missing
+
+Direct official-client runs need the status topic to match the robot namespace:
 
 ```bash
-ros2 service list | grep /task_generator_node/Ai2_Bot2/get_command
-ros2 topic list | grep /task_generator_node/Ai2_Bot2/internnav/status
+--internnav-status-topic /task_generator_node/Ai2_Bot2/internnav/status
 ```
 
-If those endpoints are visible and the local process is absent, external-server
-suppression is working.
+Relative `internnav/status` is normalized by the current runner, but older run
+scripts may have produced manifests with `internnav_status_present: false` and
+`internnav_trace_present: false`. Re-run after updating the script or pass the
+absolute topic explicitly.
 
-## InternNav container has no CUDA
+## Timing Summary Shows Zero Raw Commands
 
-### Symptom
+In direct official-client mode, `internnav_timing_manager` does not relay
+`internnav/raw_cmd_vel`. These fields can be zero:
 
-The model loads on CPU, `torch.cuda.is_available()` is false, or GPU memory does
-not increase when the external server starts.
+```json
+{
+  "raw_cmd_count": 0,
+  "emitted_cmd_count": 0,
+  "input_publisher_seen": false
+}
+```
 
-### Most likely causes
+Do not treat that alone as model inactivity. Check run-local status/trace,
+`feature_trace.jsonl`, `cmd_vel.csv`, and videos.
 
-- the `internnav` service was started without the feature compose overlay
-- the container does not have `gpus: all`
-- the runtime venv installed CPU-only PyTorch wheels
+## Videos Are Missing Or Empty
 
-### Action
+Confirm the eval used:
 
-- check the active compose services include `internnav`
-- verify `NVIDIA_VISIBLE_DEVICES`, `CUDA_VISIBLE_DEVICES`, and
-  `NVIDIA_DRIVER_CAPABILITIES=compute,utility` in the service environment
-- reinstall the runtime with the CUDA wheel index, for example
-  `ARENA_INTERNNAV_TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124`
-- confirm with `nvidia-smi` from inside the `internnav` container while the model
-  server is running
+```bash
+--save-eval-video
+--internnav-enable-visualization
+--eval-video-debug-overlay-topic /task_generator_node/Ai2_Bot2/internnav/debug_image
+--eval-video-sim-top-down-topic /task_generator_node/Ai2_Bot2/top_down_camera/image
+```
 
-## Nav2 plugin not found on Jazzy
+Then inspect `video_index.json`:
 
-### Symptom
+- `finalization_status` should be `complete`
+- each episode should have non-zero frame counts
+- required paths should point to existing `.mp4` files
 
-Planner or behavior server fails during lifecycle configure with plugin lookup errors.
+## Humans Are Missing
 
-### Most likely cause
+For HuNav social navigation, check:
 
-Plugin names still use the older `/` separator.
+- `human:=hunav`
+- `tm_obstacles:=scenario` when strict social validation is expected
+- `human_states.csv` is non-empty
+- `pedsim_agents_data.csv` is non-empty
+- `artifact_validation.checks.humans.pass` is true
 
-### Action
+The synthetic HuNav robot agent should be filtered from published human states.
 
-On Jazzy, use:
+## Run Directory Has Feature Trace Outside The Run
 
-- `nav2_navfn_planner::NavfnPlanner`
-- `nav2_behaviors::Spin`
-- `nav2_behaviors::BackUp`
-- `nav2_behaviors::Wait`
-
-## Video files exist but are not usable
-
-### Symptom
-
-The run produces metadata files but no valid `.mp4`, or the videos are encoded with the wrong codec.
-
-### Action
-
-- verify `ffmpeg` and `ffprobe` are available
-- inspect `video_recording_error.txt`
-- inspect `video_index.json`
-- confirm the input RGB topic really receives robot camera frames
-- for social-navigation acceptance, extract first/middle/last frames from `ego_observation`, `ego_debug_overlay`, `sim_top_down`, and `map_top_down_follow`; write the review to `frame_analysis/video_frame_analysis.json` and rerun `social_nav_validation`
-
-## Ego debug overlay uses fallback imagery
-
-### Symptom
-
-`ego_debug_overlay.mp4` exists and has frames, but `artifact_validation.json` or
-aggregate output reports `debug_overlay_fallback=true`.
-
-### Most likely cause
-
-The recorder could build an overlay from the ego camera stream, but the model
-debug image stream was unavailable for that episode.  This is not the same as an
-empty video: the video can still be useful for visual review, but it does not
-prove that model-side debug-image publishing is healthy.
-
-### Action
-
-- inspect `video_index.json` and `artifact_validation.json` for the per-video
-  `fallback` flag
-- inspect `debug_overlay_source.status`, `model_frame_count`, and
-  `fallback_frame_count`; `status=model_debug_image` with a small fallback count
-  usually means only startup frames fell back, while
-  `no_post_reset_model_debug_image` means the model stream never arrived after
-  reset
-- inspect `ego_observation.mp4` and `ego_debug_overlay.mp4` together; the
-  fallback overlay should still show action/command diagnostics over the ego view
-- keep the run tagged with `debug_overlay_fallback` in aggregate output
-- debug the model/debug-image publisher separately before claiming full
-  instrumentation coverage
-
-## Social-navigation validation fails with empty humans or odom
-
-### Symptom
-
-`artifact_validation.json` fails `humans`, `metrics`, or `model_control`, and CSV files such as `human_states.csv`, `odom.csv`, or `cmd_vel.csv` contain only headers.
-
-### Most likely causes
-
-- the data recorder subscribed to a robot-local `human_states` topic instead of the task-generator-level HuNav stream
-- the recorder missed the `task_reset` signal because reset was not received with reliable/transient-local QoS
-- `/clock` did not advance long enough during a short Isaac episode, so no samples crossed the configured record period
-- fallback odom/TF continued publishing after real Isaac odom appeared, causing large teleports or mixed odom streams
-
-### Action
-
-- set `human_states_topic` to `/task_generator_node/human_states`
-- set `scenario_reset_topic` to `/task_generator_node/task_reset`
-- use reliable/transient-local QoS for reset-style event subscriptions
-- enable wall-clock fallback recording when `/clock` is present but not advancing
-- disable fallback odom/TF automatically once another publisher is detected on `/task_generator_node/Ai2_Bot2/odom`
-
-## HuNav CSVs move but Isaac pedestrians look static or slide
-
-### Symptom
-
-`human_states.csv` / `pedsim_agents_data.csv` show moving HuNav agents, but
-`sim_top_down.mp4` either shows no visible pedestrian motion or shows static
-meshes sliding across the floor.
-
-### Most likely causes
-
-- the Isaac visible pedestrian bridge is not feeding `NavigatePedestrians` from
-  `/task_generator_node/arena_peds`
-- HuNav names and Isaac stage names do not match, for example `hunav_01` vs
-  `/World/Pedestrians/hunav_1`
-- `PedestrianGoal.velocity` is present but `0.0`, causing the animation graph
-  `Walk` variable to stay at zero
-- a direct-pose workaround disabled `AnimationGraphAPI` or wrote USD poses on
-  the pedestrian top-level prim, `SkelRoot`, or `RL_BoneRoot`
-
-### Action
-
-- keep `Person.character_graph` enabled and let `Person.update()` drive
-  `PathPoints`, `Action="Walk"`, and `Walk>0`
-- convert HuNav `/arena_peds` samples into `PedestrianGoal` targets for
-  `NavigatePedestrians`; do not write world poses to visible pedestrian prims
-- keep numeric suffix normalization in `NavigatePedestrians` so
-  `hunav_01`/`hunav_1` both resolve
-- use a positive walk-speed fallback when the HuNav message velocity is absent
-  or near zero
-- reject patches that call `RemoveAnimationGraphAPICommand`,
-  `XformPrim.set_world_poses`, `XformPrim.set_local_poses`, or direct
-  `person.state.position = ...` from the HuNav replay path
-
-## Legacy metrics report success but strict benchmark metrics fail
-
-### Symptom
-
-`metrics.csv` contains `GOAL_REACHED` or a social report has
-`social_success=true`, while `artifact_validation.json` reports
-`social_nav_ready=false` and aggregate output contains
-`legacy_task_false_positive` or `legacy_social_false_positive`.
-
-### Most likely cause
-
-The legacy base metrics are compatibility outputs and may use stale
-`start_goal.csv` or point-distance social thresholds.  GRScenes benchmark
-acceptance uses `vln_task_metrics.json` and strict social fields instead.  These
-strict metrics check the native scenario goal, timeout status, commanded-stuck
-intervals, static map occupancy, footprint-aware human clearance, and dynamic
-scene validity.
-
-### Action
-
-- open `vln_task_metrics.json` first and inspect:
-  - `strict_task_success`
-  - `strict_task_failure_reasons`
-  - `goal_metrics.navigation_error_m`
-  - `commanded_stuck.commanded_stuck_intervals`
-  - `static_occupancy.first_collision_sample`
-- open `social_metrics.json` and inspect:
-  - `strict_social_success`
-  - `strict_social_failure_reasons`
-  - `min_footprint_clearance_sample`
-  - `footprint_human_collision_events`
-  - `footprint_near_miss_events`
-- use `review_intervals` and the sample `time_sec` fields to jump into
-  `sim_top_down.mp4` and `map_top_down_follow.mp4`
-- do not report benchmark task/social success from `metrics.csv` alone
-
-## External InternNav trace is missing or adapter reports missing `.npy`
-
-### Symptom
-
-The external server publishes status, but `artifact_validation.json` reports `model_control.trace_present=false`, or `internnav_status.json` contains an `adapter_exception` like `No such file or directory: rgb_*.npy`.
-
-### Most likely causes
-
-- the external server was started without a trace path inside the shared output mount
-- real InternNav inference used the default `0.2s` timeout and the parent process deleted temporary IPC arrays before the worker opened them
-- the arena and internnav containers do not share ROS discovery settings
-
-### Action
-
-- start the external server with `ARENA_EVAL_INTERNNAV_TRACE_PATH` pointing at the run directory, for example `outputs/<prefix>/<timestamp>_hospital_1_Ai2_Bot2_internnav/internnav_trace.jsonl`
-- use `--inference-timeout-sec 120.0` for the real InternNav subprocess backend
-- do not delete IPC `.npy` arrays immediately after an inference timeout; the worker may still be reading them
-- keep `ROS_DOMAIN_ID`, `RMW_IMPLEMENTATION`, `ROS_AUTOMATIC_DISCOVERY_RANGE`, `ROS_LOCALHOST_ONLY`, and `FASTDDS_BUILTIN_TRANSPORTS` identical across arena, Isaac, and internnav containers
-
-## InternNav rotates in place or makes little progress
-
-### Symptom
-
-The eval data path is alive and videos are produced, but the robot repeatedly
-turns instead of moving toward the goal.
-
-### Most likely causes
-
-- model output is dominated by turn actions
-- discrete left/right action conversion is inverted for the current robot/sim
-- odom yaw and model/camera frame conventions disagree
-- RGB/depth frames are stale or missing during inference
-- fallback commands are being used for long periods while model inference is slow
-
-### Action
-
-- inspect `internnav_diagnostic_summary.json`
-  - `rotate_heavy_low_progress` means turn commands dominate while goal distance does not improve
-  - `possible_action_or_yaw_sign_mismatch` means turn commands often have the opposite sign from `goal.yaw_error`
-  - `possible_stale_observations` or `missing_camera_inputs` point to camera freshness/QoS issues
-- inspect `internnav_trace.jsonl` for `event_type`, `action.selected`, `action.effective_label`, `command.angular_z`, and `goal.yaw_error`
-- inspect `videos/episode_0000/ego_debug_overlay.mp4` to verify the selected action, converted command, action history, and freshness indicators are readable frame by frame
-- for Isaac + Ai2_Bot2, the eval runner defaults `--internnav-invert-discrete-turns auto`, which enables a scoped turn-sign correction; use `--internnav-invert-discrete-turns true|false` to force the behavior during A/B validation
-- confirm `run_manifest.yaml` records `parameters.internnav_invert_discrete_turns_resolved` and compare it with `action.invert_discrete_turns` / `invert_discrete_turns_values` in the trace and summary
-
-## Ego video shows a synthetic color gradient
-
-### Symptom
-
-The video looks like a fixed test pattern rather than a real robot view.
-
-### Most likely cause
-
-The recorder captured an old fallback Isaac image instead of the real camera stream.
-
-### Action
-
-Make sure the fallback publisher only writes to fallback topics and that the actual `head_camera/*` topics are produced by Isaac render products.
-
-## Metrics generation fails on newer output layouts
-
-### Action
-
-Run metrics through the package entrypoint and point it at the run directory. The current resolver tries to bridge between manifest-based directories and the legacy recorder data layout.
-
-## Strict GRScenes run fails near furniture or pedestrians
-
-### Symptom
-
-The episode launches, videos are complete, HuNav humans move, and InternNav
-commands are present, but the strict result fails with combinations of:
-
-- `episode_timeout`
-- `goal_not_reached`
-- `commanded_stuck`
-- `static_occupancy_collision`
-- `footprint_human_collision`
-- `footprint_near_miss`
-
-### Most likely cause
-
-This is a real benchmark failure, not necessarily a pipeline failure.  Typical
-cases are: the robot gets physically trapped near furniture or a wall, the
-executed odom never reaches the native scenario goal tolerance, or the robot
-passes too close to a moving HuNav pedestrian.
-
-### Action
-
-- confirm the dynamic scene is valid with `dynamic_scene_success`,
-  `moving_human_count`, and `human_motion_total_m`
-- confirm InternNav was active with `internnav_diagnostic_summary.json`
-  event counts and command stats
-- use `goal_metrics.oracle_error_m` to distinguish "never close to goal" from
-  "passed near goal but finished elsewhere"
-- review `static_occupancy.first_collision_sample` and
-  `commanded_stuck.commanded_stuck_intervals` in `sim_top_down.mp4`
-- review `min_footprint_clearance_sample` and social event samples in
-  `sim_top_down.mp4`
-- keep the run in aggregate output as a strict failure unless the evidence points
-  to bad map/scenario metadata rather than robot behavior
+Some benchmark wrappers place `feature_trace.jsonl` under the output prefix root
+instead of the individual run directory. For long sweeps, copy or write that file
+into the run directory so the evidence stays self-contained.

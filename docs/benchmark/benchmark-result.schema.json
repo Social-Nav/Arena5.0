@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://social-nav.github.io/Arena5.0/benchmark/benchmark-result.schema.json",
+  "title": "Arena Benchmark Result",
+  "type": "object",
+  "required": [
+    "schema",
+    "schema_version",
+    "generated_at_utc",
+    "run",
+    "provenance",
+    "verdict",
+    "execution",
+    "metrics",
+    "artifacts",
+    "summary"
+  ],
+  "properties": {
+    "schema": {
+      "const": "arena.benchmark_result"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "generated_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "run": {
+      "type": "object",
+      "required": [
+        "id",
+        "sim",
+        "world",
+        "scenario",
+        "robot",
+        "planner",
+        "human",
+        "episodes_requested",
+        "single_episode"
+      ],
+      "properties": {
+        "id": {"type": "string"},
+        "sim": {"type": "string"},
+        "world": {"type": "string"},
+        "scenario": {"type": "string"},
+        "robot": {"type": "string"},
+        "planner": {"type": "string"},
+        "human": {"type": "string"},
+        "episodes_requested": {"type": "integer", "minimum": 0},
+        "single_episode": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    },
+    "provenance": {"type": "object"},
+    "verdict": {
+      "type": "object",
+      "required": [
+        "status",
+        "valid_run",
+        "benchmark_ready",
+        "execution_pass",
+        "task_success",
+        "social_success",
+        "artifact_validation_pass",
+        "primary_failure",
+        "failure_tags",
+        "diagnostic_tags"
+      ],
+      "properties": {
+        "status": {"enum": ["passed", "failed", "invalid"]},
+        "valid_run": {"type": "boolean"},
+        "benchmark_ready": {"type": "boolean"},
+        "execution_pass": {"type": "boolean"},
+        "task_success": {"type": "boolean"},
+        "social_success": {"type": "boolean"},
+        "artifact_validation_pass": {"type": "boolean"},
+        "primary_failure": {"type": "string"},
+        "failure_tags": {"type": "array", "items": {"type": "string"}},
+        "diagnostic_tags": {"type": "array", "items": {"type": "string"}},
+        "task_failure_reasons": {"type": "array", "items": {"type": "string"}},
+        "social_failure_reasons": {"type": "array", "items": {"type": "string"}},
+        "failed_checks": {"type": "array", "items": {"type": "string"}},
+        "warnings": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": true
+    },
+    "execution": {
+      "type": "object",
+      "required": ["end_reason", "finished_observed", "timed_out"],
+      "properties": {
+        "end_reason": {"type": "string"},
+        "finished_observed": {"type": "boolean"},
+        "timed_out": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    },
+    "metrics": {
+      "type": "object",
+      "required": ["task", "social", "model", "thresholds"],
+      "properties": {
+        "task": {"type": "object"},
+        "social": {"type": "object"},
+        "model": {"type": "object"},
+        "thresholds": {"type": "object"}
+      },
+      "additionalProperties": true
+    },
+    "artifacts": {
+      "type": "object",
+      "required": ["video_pass", "metrics_complete", "files"],
+      "properties": {
+        "video_pass": {"type": "boolean"},
+        "metrics_complete": {"type": "boolean"},
+        "files": {"type": "object"}
+      },
+      "additionalProperties": true
+    },
+    "summary": {"type": "object"}
+  },
+  "additionalProperties": true
+}
