@@ -37,6 +37,7 @@
 
 # Build directory
 build/
+/site/
 
 # Vim
 *.vim
