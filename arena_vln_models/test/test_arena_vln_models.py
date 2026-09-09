@@ -1,4 +1,3 @@
-import threading
 import json
 import sys
 import types
@@ -119,13 +118,6 @@ from arena_vln_models.internnav import (
     available_backends,
     load_internnav_adapter,
     load_internvla_realworld_http_adapter,
-)
-from arena_vln_models.internnav_server import (
-    InternNavServer,
-    _normalize_internnav_adapter_target,
-    _resolve_adapter_target_for_http_adapter,
-    _resolve_float,
-    _resolve_mode_for_http_adapter,
 )
 from arena_vln_models.visualization import image_msg_to_numpy, numpy_to_image_msg, render_debug_overlay
 
@@ -471,34 +463,6 @@ def test_python_adapter_backend_promotes_top_level_llm_trace_fields():
     assert decision.debug['generated_token_ids'] == [11, 22]
 
 
-def test_internnav_server_status_contains_llm_block():
-    published = []
-    server = InternNavServer.__new__(InternNavServer)
-    server._status_publisher = SimpleNamespace(publish=lambda msg: published.append(msg.data))
-    decision = ModelSimDecision(
-        linear_x=0.0,
-        angular_z=0.0,
-        status='internnav_command',
-        degraded=False,
-        debug={
-            'raw_output_text': '215 376',
-            'llm_digits': [215, 376],
-            'digit_groups': [215, 376],
-            'model_generation_output_mode': 'pixel_goal',
-            'pixel_goal': [376, 215],
-        },
-    )
-
-    server._publish_status(decision)
-
-    payload = json.loads(published[-1])
-    assert payload['llm']['raw_output_text'] == '215 376'
-    assert payload['llm']['llm_digits'] == [215, 376]
-    assert payload['llm']['digit_groups'] == [215, 376]
-    assert payload['llm']['output_mode'] == 'pixel_goal'
-    assert payload['debug']['llm_digits'] == [215, 376]
-
-
 def test_discrete_policy_forces_action_mapping_for_ablation():
     backend = PythonAdapterBackend.__new__(PythonAdapterBackend)
     backend._params = {
@@ -571,128 +535,6 @@ def test_trajectory_policy_goal_guided_synthetic_trajectory_not_official_primiti
     assert decision.debug['selected_output_mode'] == 'trajectory'
     assert decision.debug['trajectory_synthetic_source'] == 'goal_guided_symbolic_fallback'
     assert 'official_discrete_primitive' not in decision.debug
-
-
-def test_internnav_server_defaults_empty_adapter_target_for_internnav_mode():
-    adapter_target, source = _normalize_internnav_adapter_target('internnav', '')
-    assert adapter_target == 'arena_vln_models.internnav:load_internvla_realworld_http_adapter'
-    assert source == 'default'
-
-
-def test_internnav_server_normalizes_legacy_native_adapter_target():
-    adapter_target, source = _normalize_internnav_adapter_target(
-        'internnav',
-        'internnav.agent.internvla_n1_agent_realworld.InternVLAN1AsyncAgent',
-    )
-    assert adapter_target == 'arena_vln_models.internnav:load_internvla_realworld_http_adapter'
-    assert source == 'legacy:internnav.agent.internvla_n1_agent_realworld.InternVLAN1AsyncAgent'
-
-
-def test_internnav_server_invalid_float_env_falls_back_to_raw_value(monkeypatch):
-    monkeypatch.setenv('ARENA_EVAL_INTERNNAV_HTTP_TIMEOUT_SEC', 'not-a-float')
-
-    value, source = _resolve_float(4.5, env_names=('ARENA_EVAL_INTERNNAV_HTTP_TIMEOUT_SEC',))
-
-    assert value == 4.5
-    assert source == 'invalid-env:ARENA_EVAL_INTERNNAV_HTTP_TIMEOUT_SEC'
-
-
-def test_internnav_server_http_url_forces_internnav_mode():
-    mode, source = _resolve_mode_for_http_adapter('heuristic', 'http://internnav:5801/eval_dual')
-
-    assert mode == 'internnav'
-    assert source == 'internnav_http_url'
-
-
-def test_internnav_server_http_url_keeps_existing_internnav_mode():
-    mode, source = _resolve_mode_for_http_adapter('internnav', 'http://internnav:5801/eval_dual')
-
-    assert mode == 'internnav'
-    assert source is None
-
-
-def test_internnav_server_http_url_selects_realworld_http_adapter_for_empty_target():
-    adapter_target, source = _resolve_adapter_target_for_http_adapter('', 'http://internnav:5801/eval_dual')
-
-    assert adapter_target == 'arena_vln_models.internnav:load_internvla_realworld_http_adapter'
-    assert source == 'internnav_http_url'
-
-
-def test_internnav_server_http_url_replaces_legacy_local_adapter_target():
-    adapter_target, source = _resolve_adapter_target_for_http_adapter(
-        'internnav.agent.internvla_n1_agent_realworld.InternVLAN1AsyncAgent',
-        'http://internnav:5801/eval_dual',
-    )
-
-    assert adapter_target == 'arena_vln_models.internnav:load_internvla_realworld_http_adapter'
-    assert source == 'internnav_http_url'
-
-
-def test_internnav_instruction_gate_blocks_generic_default_instruction():
-    server = InternNavServer.__new__(InternNavServer)
-    server._params = {'require_route_instruction': True}
-    server.get_parameter = lambda name: SimpleNamespace(value='vln_instruction')
-
-    decision = server._instruction_gate_decision(DualVLNObservation(
-        pose=Pose2D(0.0, 0.0, 0.0),
-        goal=Pose2D(1.0, 0.0, 0.0),
-        instruction='navigate',
-    ))
-
-    assert decision is not None
-    assert decision.status == 'waiting_for_instruction'
-    assert decision.degraded is True
-    assert decision.linear_x == 0.0
-    assert decision.angular_z == 0.0
-    assert decision.debug['instruction_gate'] is True
-
-
-def test_internnav_instruction_gate_allows_route_specific_instruction():
-    server = InternNavServer.__new__(InternNavServer)
-    server._params = {'require_route_instruction': True}
-    server.get_parameter = lambda name: SimpleNamespace(value='vln_instruction')
-
-    decision = server._instruction_gate_decision(DualVLNObservation(
-        pose=Pose2D(0.0, 0.0, 0.0),
-        goal=Pose2D(1.0, 0.0, 0.0),
-        instruction='Turn right and move through the open waiting area toward the corridor.',
-    ))
-
-    assert decision is None
-
-
-def test_internnav_cached_command_preserves_last_model_turn_direction():
-    server = InternNavServer.__new__(InternNavServer)
-    server._state_lock = threading.Lock()
-    server._params = {'camera_stale_after_sec': 2.0}
-    server._latest_rgb_ts = 0.0
-    server._latest_depth_ts = 0.0
-    server._camera_info_ts = 0.0
-    server._last_model_decision = ModelSimDecision(
-        linear_x=0.36,
-        angular_z=0.375,
-        status='internnav_command',
-        degraded=False,
-        debug={
-            'selected_action': 2,
-            'native_action_label': 'turn_left',
-            'effective_action_label': 'turn_left',
-        },
-    )
-
-    cached = server._cached_model_decision_while_computing(DualVLNObservation(
-        pose=Pose2D(0.0, 0.0, 0.0),
-        goal=Pose2D(1.0, 0.0, 0.0),
-        instruction='go forward',
-    ))
-
-    assert cached is not None
-    assert cached.status == 'inference_in_progress_cached_internnav_command'
-    assert cached.linear_x == 0.36
-    assert cached.angular_z == 0.375
-    assert cached.debug['cached_previous_model_command'] is True
-    assert cached.debug['cached_selected_action'] == 2
-    assert 'selected_action' not in cached.debug
 
 
 def test_heuristic_backend_produces_forward_command():

@@ -126,8 +126,8 @@ def test_aggregate_reports_strict_rates_and_diagnostic_warnings(tmp_path):
     assert row["social_success"] is False
     assert row["strict_social_success"] is False
     assert "timeout" in row["failure_tags"]
-    assert "debug_overlay_fallback" in row["failure_tags"]
-    assert "debug_overlay_source_no_post_reset_model_debug_image" in row["failure_tags"]
+    assert "debug_overlay_fallback" in row["diagnostic_tags"]
+    assert "debug_overlay_source_no_post_reset_model_debug_image" in row["diagnostic_tags"]
     assert summary["task_success_rate"] == 0.0
     assert summary["social_success_rate"] == 0.0
     assert summary["strict_task_success_rate"] == 0.0

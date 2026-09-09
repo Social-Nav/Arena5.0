@@ -2,9 +2,8 @@
 """
 Generate a synthetic golden rosbag for node testing.
 
-Creates a rosbag with known test data covering the topics needed by:
-- InternNavServer (heuristic mode): odom, pose, goal_pose, vln_instruction
-- EvalVideoRecorder: task_reset, ego (RGB), odom, goal, scan
+Creates a rosbag with known test data covering the topics needed by
+EvalVideoRecorder: task_reset, ego (RGB), odom, goal, and scan.
 
 Usage (in Docker container):
     cd /opt/arena_ws

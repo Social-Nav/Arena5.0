@@ -373,9 +373,7 @@ check_model_runtime(){
     fi
 }
 
-doctor(){
-    log "checking preconditions"
-    CHECK_FAILURES=0
+check_static_preconditions(){
     echo "host and tooling"
     check_docker_cli
     check_docker_daemon
@@ -388,17 +386,33 @@ doctor(){
     check_feature_set
     echo "ROS 2 / DDS contract"
     check_dds_contract
-    echo "images and containers"
+    echo "images"
     check_images
+}
+
+check_runtime_preconditions(){
+    echo "containers and runtime"
     check_containers
     check_arena_built
     check_gpu_devices
     check_model_runtime
+}
+
+abort_on_check_failures(){
+    local impact="${1:-nothing was started}"
     echo
     if [ "$CHECK_FAILURES" -gt 0 ]; then
         die "$CHECK_FAILURES precondition(s) failed" \
-            "each FAIL above names what to do; nothing was started"
+            "each FAIL above names what to do; $impact"
     fi
+}
+
+doctor(){
+    log "checking preconditions"
+    CHECK_FAILURES=0
+    check_static_preconditions
+    check_runtime_preconditions
+    abort_on_check_failures
     log "all preconditions passed"
     return 0
 }
@@ -465,12 +479,36 @@ do_status(){
 # Node/process verbs
 # ---------------------------------------------------------------------------
 ROBOT="${ARENA_BENCHMARK_ROBOT:-Ai2_Bot2}"
-WORLD="${ARENA_BENCHMARK_WORLD:-hospital_1}"
+WORLD="${ARENA_BENCHMARK_WORLD:-grscenes_20_v1}"
+SCENARIO="${ARENA_BENCHMARK_SCENARIO:-default_2}"
 DEVICE="${ARENA_BENCHMARK_DEVICE:-cuda:0}"
 EPISODES="${ARENA_BENCHMARK_EPISODES:-1}"
-TIMEOUT="${ARENA_BENCHMARK_TIMEOUT:-60}"
+TIMEOUT="${ARENA_BENCHMARK_TIMEOUT:-300}"
 HTTP_PORT="${ARENA_INTERNNAV_HTTP_PORT:-5801}"
 EVAL_EXTRA=()
+
+validate_eval_extra(){
+    local arg
+    for arg in ${EVAL_EXTRA[@]+"${EVAL_EXTRA[@]}"}; do
+        case "$arg" in
+            --sim|--sim=*|sim:=*|--human|--human=*|human:=*|\
+            --world|--world=*|world:=*|--robot|--robot=*|robot:=*|\
+            --scenario-file|--scenario-file=*|scenario_file:=*|\
+            --episodes|--episodes=*|episodes:=*|\
+            --timeout|--timeout=*|timeout:=*|\
+            --local-planner|--local-planner=*|local_planner:=*|\
+            --tm-robots|--tm-robots=*|tm_robots:=*|\
+            --tm-obstacles|--tm-obstacles=*|tm_obstacles:=*|\
+            --internnav-mode|--internnav-mode=*|--dual-vln-mode|--dual-vln-mode=*|\
+            --internnav-external-server|--dual-vln-external-server|\
+            --internnav-official-client|--internnav-direct-cmd-vel|--dual-vln-direct-cmd-vel|\
+            --social-eval|--save-eval-video|--skip-metrics|robot_launch_file:=*)
+                die "'$arg' cannot override the strict benchmark contract" \
+                    "use the benchmark entry point's named options where available"
+                ;;
+        esac
+    done
+}
 
 # Starts the model server and the official InternNav ROS client inside
 # internnav-1.  Delegates entirely to the internnav feature script, which owns
@@ -488,16 +526,30 @@ do_serve(){
 # Built as an argv array rather than a shell string so there is no nested
 # quoting to get wrong, and so the plan output is readable.
 eval_inner_command(){
-    local cmd
-    cmd="source /opt/ros/jazzy/setup.bash && source install/setup.bash"
-    cmd="$cmd && ARENA_INTERNNAV_EXTERNAL_SERVER=1 ros2 run arena_bringup internnav_eval"
-    cmd="$cmd --sim isaac --human hunav --world $WORLD --robot $ROBOT"
-    cmd="$cmd --local-planner dual_vln --episodes $EPISODES --timeout $TIMEOUT"
-    cmd="$cmd --headless 2 --log-level warn --internnav-mode internnav"
-    cmd="$cmd --internnav-device $DEVICE --internnav-direct-cmd-vel --save-eval-video"
-    local extra
-    for extra in ${EVAL_EXTRA[@]+"${EVAL_EXTRA[@]}"}; do cmd="$cmd $extra"; done
-    printf '%s' "$cmd"
+    local quoted
+    local -a eval_args=(
+        ros2 run arena_bringup internnav_eval
+        --sim isaac_eval
+        --human hunav
+        --world "$WORLD"
+        --robot "$ROBOT"
+        --local-planner dual_vln
+        --episodes "$EPISODES"
+        --timeout "$TIMEOUT"
+        --headless 2
+        --log-level warn
+        --internnav-mode internnav
+        --internnav-device "$DEVICE"
+        --internnav-direct-cmd-vel
+        --social-eval
+        --save-eval-video
+    )
+    if [ -n "$SCENARIO" ]; then
+        eval_args+=(--scenario-file "$SCENARIO")
+    fi
+    eval_args+=("${EVAL_EXTRA[@]}")
+    printf -v quoted '%q ' "${eval_args[@]}"
+    printf '%s' "source /opt/ros/jazzy/setup.bash && source install/setup.bash && ARENA_INTERNNAV_EXTERNAL_SERVER=1 ${quoted% }"
 }
 
 do_eval(){
@@ -525,13 +577,13 @@ do_run(){
     local serve_log
     serve_log="$(benchmark_ws_dir)/outputs/.benchmark_serve.log"
     if [ "$DRY_RUN" = "1" ]; then
-        echo "plan for '$name run' (robot=$ROBOT world=$WORLD episodes=$EPISODES device=$DEVICE):"
-        echo "   0. verify every precondition ('$name doctor'); abort on any failure"
+        echo "plan for '$name run' (sim=isaac_eval robot=$ROBOT world=$WORLD scenario=$SCENARIO episodes=$EPISODES device=$DEVICE):"
+        echo "   0. verify host/image/topology preconditions; abort on any failure"
         run_step "start containers ($BENCHMARK_SERVICES) without building" \
             arena_docker_compose up -d --remove-orphans --no-build $BENCHMARK_SERVICES
         run_step_sh "wait for the arena workspace build marker /.built" "<poll docker exec ... test -f /.built>"
-        run_step_sh "re-assert GPU device access inside $BENCHMARK_GPU_SERVICES now that they are up" \
-            "<docker exec ... sh -c ': < /dev/nvidia0' and nvidia-smi -L, per GPU container>"
+        run_step_sh "verify container build, model runtime, and GPU device access" \
+            "<docker exec ... test /.built and /opt/internnav_venv, then open /dev/nvidia0 and run nvidia-smi -L>"
         run_step_sh "start the model server in the background, logging to $serve_log" \
             "setsid bash .../features/internnav/main launch --robot $ROBOT --mode internnav --device $DEVICE </dev/null >>$serve_log 2>&1 &"
         wait_for_model
@@ -541,16 +593,16 @@ do_run(){
         return 0
     fi
 
-    doctor || exit 1
-    do_up
-    # Re-assert GPU device access now that the containers are actually up. When
-    # 'doctor' ran above they may not have been, in which case check_gpu_devices
-    # could only SKIP -- and this is the one precondition whose failure is
-    # invisible until ~10 minutes into the run.
+    log "checking preconditions that do not require running containers"
     CHECK_FAILURES=0
-    check_gpu_devices
-    [ "$CHECK_FAILURES" -eq 0 ] || die "GPU device access is not usable inside the containers" \
-        "the FAIL above names the cause and the fix; no model server was started"
+    check_static_preconditions
+    abort_on_check_failures
+    do_up
+    # Container-local checks must happen after `up`; this keeps a cold checkout
+    # runnable while still catching the otherwise silent GPU cgroup outage.
+    CHECK_FAILURES=0
+    check_runtime_preconditions
+    abort_on_check_failures "containers may be running; no model server or evaluation was started"
     mkdir -p "$(dirname "$serve_log")"
     # Cleanup must be a trap, not a trailing statement: run_step calls die() on
     # failure, which exits, so a failed evaluation would otherwise leave the GPU
@@ -651,7 +703,8 @@ Options
   --yes               Confirm a destructive verb (build, down).
   --robot NAME        Default: $ROBOT
   --world NAME        Default: $WORLD
-  --episodes N        Default: $EPISODES
+  --scenario NAME     Default: $SCENARIO
+  --episodes N        Must be 1. Run independent directories, then aggregate.
   --timeout SEC       Per-episode simulated timeout. Default: $TIMEOUT
   --device DEVICE     Model device. Default: $DEVICE
   --                  Everything after this is appended to internnav_eval.
@@ -689,6 +742,7 @@ while [ $# -gt 0 ]; do
         --yes|-y)   ASSUME_YES=1; shift ;;
         --robot)    ROBOT="$2"; shift 2 ;;
         --world)    WORLD="$2"; shift 2 ;;
+        --scenario) SCENARIO="$2"; shift 2 ;;
         --episodes) EPISODES="$2"; shift 2 ;;
         --timeout)  TIMEOUT="$2"; shift 2 ;;
         --device)   DEVICE="$2"; shift 2 ;;
@@ -697,6 +751,16 @@ while [ $# -gt 0 ]; do
         *)          die "unknown option '$1'" "run '$name --help' for the option list" ;;
     esac
 done
+
+case "$VERB:${PLAN_TARGET:-}" in
+    run:*|eval:*|plan:|plan:run|plan:eval)
+        if [ "$EPISODES" != "1" ]; then
+            die "the strict benchmark entry point requires --episodes 1" \
+                "run independent one-episode evaluations, then aggregate their result directories"
+        fi
+        ;;
+esac
+validate_eval_extra
 
 if [ "$DRY_RUN" = "1" ] && [ "$VERB" != "plan" ]; then
     do_plan "$VERB"

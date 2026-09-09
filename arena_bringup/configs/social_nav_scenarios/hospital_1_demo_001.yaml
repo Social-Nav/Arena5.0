@@ -92,14 +92,28 @@ evaluation:
       - episode_result
       - path_length_m
       - goal_progress_m
+      - navigation_error_m
+      - oracle_error_m
+      - spl
+      - ndtw
+      - sdtw
       - robot_moved
       - timeout
     social:
       - social_success
+      - dynamic_scene_success
+      - moving_human_count
+      - human_motion_time_sec
+      - human_robot_motion_overlap_time_sec
+      - human_robot_interaction_time_sec
       - min_human_distance_m
+      - min_footprint_clearance_m
       - near_miss_count
       - human_collision_count
+      - footprint_near_miss_count
+      - footprint_human_collision_count
       - personal_space_violation_time_sec
+      - footprint_personal_space_violation_time_sec
       - crowd_freezing_time_sec
     diagnostics:
       - internnav_status
@@ -107,6 +121,7 @@ evaluation:
       - command_stats
       - stale_camera_count
       - artifact_validation
+      - real_time_factor
   pass_criteria:
     artifact_validation_overall_pass: true
     humans_present: true
@@ -125,6 +140,7 @@ artifacts_required:
   - metrics.csv
   - social_metrics.json
   - artifact_validation.json
+  - benchmark_result.json
   - internnav_status.json
   - internnav_diagnostic_summary.json
   - videos/episode_0000/ego_observation.mp4
@@ -134,7 +150,7 @@ runner_hint:
   command: >-
     ros2 run arena_bringup social_nav_scenario_eval
     --scenario-config src/Arena/arena_bringup/configs/social_nav_scenarios/hospital_1_demo_001.yaml
-    --output-prefix hospital_1_demo_001 -- --internnav-external-server
+    --output-prefix hospital_1_demo_001 -- --internnav-direct-cmd-vel
   implementation_status: runner_wrapper_available
   notes:
     - social_nav_scenario_eval validates this overlay and translates it into internnav_eval arguments.

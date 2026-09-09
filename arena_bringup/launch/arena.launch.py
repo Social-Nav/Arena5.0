@@ -185,7 +185,7 @@ def generate_launch_description():
                 default_value=launch.substitutions.EnvironmentVariable('ARENA_PYTHON', default_value=''),
             ),
         ),
-        description='Optional Python interpreter used to launch internnav_server'
+        description='Legacy local-wrapper Python interpreter; current benchmark runs use the external InternNav container'
     )
     dual_vln_python_executable = declare_legacy_alias('dual_vln_python_executable', internnav_python_executable)
     internnav_adapter_target = LaunchArgument(
@@ -205,9 +205,8 @@ def generate_launch_description():
     dual_vln_http_url = declare_legacy_alias('dual_vln_http_url', internnav_http_url)
     internnav_http_timeout_sec = LaunchArgument(
         name='internnav_http_timeout_sec',
-        # Keep launch-time float conversion deterministic; internnav_server and
-        # adapter read ARENA_*_HTTP_TIMEOUT_SEC directly and can recover from
-        # invalid env values.
+        # Keep launch-time float conversion deterministic; adapter code reads
+        # ARENA_*_HTTP_TIMEOUT_SEC directly and can recover from invalid values.
         default_value='0.0',
         description='HTTP timeout in seconds for InternVLA realworld /eval_dual adapter'
     )

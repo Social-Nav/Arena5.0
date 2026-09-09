@@ -4,6 +4,7 @@ import json
 import math
 import os
 import re
+import shlex
 import signal
 import shutil
 import subprocess
@@ -13,6 +14,8 @@ from datetime import datetime
 
 import yaml
 from ament_index_python.packages import get_package_share_directory
+
+from arena_bringup.benchmark_result import generate_benchmark_result
 
 
 REALWORLD_HTTP_ADAPTER_TARGET = 'arena_vln_models.internnav:load_internvla_realworld_http_adapter'
@@ -39,6 +42,79 @@ def _write_yaml(path: str, data) -> None:
 def _write_text(path: str, data: str) -> None:
     with open(path, 'w', encoding='utf-8') as f:
         f.write(data)
+
+
+def _git_source_provenance(workspace_root: str) -> dict:
+    workspace_root = os.path.abspath(workspace_root)
+    candidates = (os.path.join(workspace_root, 'src', 'Arena'), workspace_root)
+    repo_dir = next(
+        (candidate for candidate in candidates if os.path.exists(os.path.join(candidate, '.git'))),
+        candidates[0],
+    )
+
+    def git_run(*args: str) -> subprocess.CompletedProcess | None:
+        try:
+            return subprocess.run(
+                ['git', '-C', repo_dir, *args],
+                capture_output=True,
+                check=False,
+                text=True,
+                timeout=5.0,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+
+    def git_output(*args: str) -> str | None:
+        result = git_run(*args)
+        if result is None or result.returncode != 0:
+            return None
+        return result.stdout.strip() or None
+
+    status = git_run(
+        'status', '--porcelain', '--untracked-files=all', '--ignore-submodules=untracked'
+    )
+    return {
+        'git_commit': git_output('rev-parse', 'HEAD'),
+        'git_branch': git_output('branch', '--show-current'),
+        'git_dirty': None if status is None or status.returncode != 0 else bool(status.stdout.strip()),
+        'git_repo': repo_dir,
+        'git_submodules': git_output('submodule', 'status', '--recursive'),
+    }
+
+
+def _persist_benchmark_result(output_dir: str, manifest_path: str, manifest: dict) -> dict | None:
+    result_path = os.path.join(output_dir, 'benchmark_result.json')
+    manifest['artifacts']['benchmark_result_path'] = result_path
+    manifest['artifacts']['benchmark_result_present'] = True
+    manifest['artifacts'].pop('benchmark_result_error', None)
+    _write_yaml(manifest_path, manifest)
+    try:
+        result = generate_benchmark_result(output_dir, result_path)
+    except Exception as exc:
+        manifest['artifacts']['benchmark_result_error'] = f'{type(exc).__name__}: {exc}'
+        manifest['artifacts']['benchmark_result_present'] = False
+        try:
+            os.unlink(result_path)
+        except FileNotFoundError:
+            pass
+        _write_yaml(manifest_path, manifest)
+        return None
+    return result
+
+
+def _finalize_run_result(
+    output_dir: str,
+    manifest_path: str,
+    manifest: dict,
+    evaluator_returncode: int,
+) -> int:
+    manifest['result']['evaluator_returncode'] = evaluator_returncode
+    benchmark_result = _persist_benchmark_result(output_dir, manifest_path, manifest)
+    if benchmark_result is None and evaluator_returncode == 0:
+        evaluator_returncode = BENCHMARK_RESULT_FAILURE_RETURN_CODE
+        manifest['result']['evaluator_returncode'] = evaluator_returncode
+        _write_yaml(manifest_path, manifest)
+    return evaluator_returncode
 
 
 def _copy_if_exists(src: str, dst: str) -> str | None:
@@ -3337,11 +3413,19 @@ def _apply_runtime_defaults(args) -> dict:
             else:
                 adjustments['dual_vln_python_executable_missing'] = configured_python
 
-    if getattr(args, 'dual_vln_status_topic', '') in {
+    dual_vln_status_topic = str(getattr(args, 'dual_vln_status_topic', '') or '').strip()
+    if dual_vln_status_topic in {
         '/task_generator_node/dual_vln/status',
         '/task_generator_node/internnav/status',
     }:
         args.dual_vln_status_topic = f'/task_generator_node/{args.robot}/internnav/status'
+        adjustments['dual_vln_status_topic'] = args.dual_vln_status_topic
+    elif dual_vln_status_topic and not dual_vln_status_topic.startswith('/'):
+        args.dual_vln_status_topic = _robot_topic(
+            getattr(args, 'task_reset_topic', '/task_generator_node/task_reset'),
+            args.robot,
+            dual_vln_status_topic,
+        )
         adjustments['dual_vln_status_topic'] = args.dual_vln_status_topic
 
     if _is_internnav_run(args):
@@ -3551,6 +3635,7 @@ VIDEO_RECORDER_FINALIZATION_OVERHEAD_SEC = 30.0
 # 330s recorder deadline + 30s serialization/exit allowance <= the 390s parent wait.
 VIDEO_RECORDER_FINALIZATION_TIMEOUT_SEC = 390.0
 VIDEO_RECORDER_FAILURE_RETURN_CODE = 86
+BENCHMARK_RESULT_FAILURE_RETURN_CODE = 87
 
 
 def _persist_video_finalization_error(index_path: str, error_path: str, message: str) -> None:
@@ -4055,19 +4140,22 @@ def main() -> int:
     vln_task_metrics_cmd = ['ros2', 'run', 'arena_evaluation', 'vln_task_metrics', '--dir', output_dir]
     social_metrics_cmd = ['ros2', 'run', 'arena_evaluation', 'social_metrics', '--dir', output_dir]
     artifact_validation_cmd = ['ros2', 'run', 'arena_bringup', 'social_nav_validation', '--dir', output_dir]
+    benchmark_result_cmd = ['ros2', 'run', 'arena_bringup', 'benchmark_result', '--dir', output_dir]
     postprocess_commands = [
-        ' '.join(launch_cmd),
-        ' '.join(metrics_cmd),
+        shlex.join(launch_cmd),
+        shlex.join(metrics_cmd),
     ]
     if args.social_eval:
         postprocess_commands.extend([
-            ' '.join(vln_task_metrics_cmd),
-            ' '.join(social_metrics_cmd),
-            ' '.join(artifact_validation_cmd),
+            shlex.join(vln_task_metrics_cmd),
+            shlex.join(social_metrics_cmd),
+            shlex.join(artifact_validation_cmd),
         ])
+    postprocess_commands.append(shlex.join(benchmark_result_cmd))
     _write_text(postprocess_commands_path, '\n'.join(postprocess_commands) + '\n')
 
     manifest = {
+        'schema_version': 2,
         'timestamp': timestamp,
         'result_dir_relative': relative_dir,
         'result_dir_absolute': output_dir,
@@ -4192,6 +4280,7 @@ def main() -> int:
         'runtime_environment': {
             'ros_discovery': resolved_ros_env,
         },
+        'provenance': _git_source_provenance(_workspace_root_from_runtime()),
         'snapshots': snapshot_files,
         'artifacts': {
             'snapshots_dir': snapshots_dir,
@@ -4205,6 +4294,8 @@ def main() -> int:
             'social_metrics_path': os.path.join(output_dir, 'social_metrics.json') if args.social_eval else None,
             'vln_task_metrics_path': os.path.join(output_dir, 'vln_task_metrics.json') if args.social_eval else None,
             'artifact_validation_path': os.path.join(output_dir, 'artifact_validation.json') if args.social_eval else None,
+            'benchmark_result_path': os.path.join(output_dir, 'benchmark_result.json'),
+            'benchmark_result_present': False,
             'postprocess_commands_file': postprocess_commands_path,
             'videos_dir': videos_dir if args.save_eval_video else None,
             'video_index_path': video_index_path if args.save_eval_video else None,
@@ -4234,11 +4325,12 @@ def main() -> int:
                 'social_metrics_returncode': None,
                 'vln_task_metrics_returncode': None,
                 'artifact_validation_returncode': None,
+                'evaluator_returncode': 2,
                 'timed_out': False,
                 'end_reason': 'vln_instruction_manifest_lookup_failed',
             }
         )
-        _write_yaml(manifest_path, manifest)
+        _finalize_run_result(output_dir, manifest_path, manifest, 2)
         print(
             (
                 'GRScenes VLN instruction manifest lookup failed; refusing to run '
@@ -4347,11 +4439,12 @@ def main() -> int:
                 'social_metrics_returncode': None,
                 'vln_task_metrics_returncode': None,
                 'artifact_validation_returncode': None,
+                'evaluator_returncode': 2,
                 'timed_out': False,
                 'end_reason': 'pedestrian_traversal_preflight_failed',
             }
         )
-        _write_yaml(manifest_path, manifest)
+        _finalize_run_result(output_dir, manifest_path, manifest, 2)
         return 2
 
     if args.internnav_external_server and not args.skip_external_server_preflight:
@@ -4373,11 +4466,12 @@ def main() -> int:
                     'social_metrics_returncode': None,
                     'vln_task_metrics_returncode': None,
                     'artifact_validation_returncode': None,
+                    'evaluator_returncode': 2,
                     'timed_out': False,
                     'end_reason': 'external_preflight_failed',
                 }
             )
-            _write_yaml(manifest_path, manifest)
+            _finalize_run_result(output_dir, manifest_path, manifest, 2)
             return 2
         observed_service = str(external_preflight.get('observed_service') or '').strip()
         if observed_service and observed_service != robot_command_service:
@@ -4385,7 +4479,7 @@ def main() -> int:
             robot_command_service = observed_service
             launch_cmd.append(f'dual_vln_command_service:={observed_service}')
             manifest['parameters']['dual_vln_command_service'] = observed_service
-            postprocess_commands[0] = ' '.join(launch_cmd)
+            postprocess_commands[0] = shlex.join(launch_cmd)
             _write_text(postprocess_commands_path, '\n'.join(postprocess_commands) + '\n')
             _write_yaml(manifest_path, manifest)
     elif args.internnav_external_server:
@@ -4693,21 +4787,18 @@ def main() -> int:
 
     if finished_observed and launch_returncode not in (None, 0):
         launch_returncode = 0
+        manifest['result']['launch_returncode'] = 0
 
     if timed_out:
         run_social_postprocess()
         evaluator_returncode = 124 if launch_returncode == 0 else launch_returncode
         manifest['result']['launch_returncode'] = launch_returncode
-        manifest['result']['evaluator_returncode'] = evaluator_returncode
-        _write_yaml(manifest_path, manifest)
-        return evaluator_returncode
+        return _finalize_run_result(output_dir, manifest_path, manifest, evaluator_returncode)
 
     if launch_returncode != 0:
         run_social_postprocess()
         manifest['result']['launch_returncode'] = launch_returncode
-        manifest['result']['evaluator_returncode'] = launch_returncode
-        _write_yaml(manifest_path, manifest)
-        return launch_returncode
+        return _finalize_run_result(output_dir, manifest_path, manifest, launch_returncode)
 
     if args.skip_metrics:
         social_postprocess_returncode = run_social_postprocess()
@@ -4718,9 +4809,7 @@ def main() -> int:
         )
         if evaluator_returncode == VIDEO_RECORDER_FAILURE_RETURN_CODE:
             manifest['result']['end_reason'] = 'video_recorder_failed'
-        manifest['result']['evaluator_returncode'] = evaluator_returncode
-        _write_yaml(manifest_path, manifest)
-        return evaluator_returncode
+        return _finalize_run_result(output_dir, manifest_path, manifest, evaluator_returncode)
 
     metrics_result = subprocess.run(metrics_cmd, env=env)
     metrics_returncode = metrics_result.returncode
@@ -4736,9 +4825,7 @@ def main() -> int:
     )
     if evaluator_returncode == VIDEO_RECORDER_FAILURE_RETURN_CODE:
         manifest['result']['end_reason'] = 'video_recorder_failed'
-    manifest['result']['evaluator_returncode'] = evaluator_returncode
-    _write_yaml(manifest_path, manifest)
-    return evaluator_returncode
+    return _finalize_run_result(output_dir, manifest_path, manifest, evaluator_returncode)
 
 
 if __name__ == '__main__':

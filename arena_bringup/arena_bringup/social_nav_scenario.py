@@ -26,11 +26,21 @@ DEFAULT_TASK_METRICS = [
     'strict_task_success',
     'path_length_m',
     'goal_progress_m',
+    'navigation_error_m',
+    'oracle_error_m',
+    'spl',
+    'ndtw',
+    'sdtw',
     'robot_moved',
     'timeout',
 ]
 DEFAULT_SOCIAL_METRICS = [
     'strict_social_success',
+    'dynamic_scene_success',
+    'moving_human_count',
+    'human_motion_time_sec',
+    'human_robot_motion_overlap_time_sec',
+    'human_robot_interaction_time_sec',
     'min_human_distance_m',
     'min_footprint_clearance_m',
     'near_miss_count',
@@ -38,6 +48,7 @@ DEFAULT_SOCIAL_METRICS = [
     'footprint_near_miss_count',
     'footprint_human_collision_count',
     'personal_space_violation_time_sec',
+    'footprint_personal_space_violation_time_sec',
     'crowd_freezing_time_sec',
 ]
 DEFAULT_DIAGNOSTICS = [
@@ -46,6 +57,7 @@ DEFAULT_DIAGNOSTICS = [
     'command_stats',
     'stale_camera_count',
     'artifact_validation',
+    'real_time_factor',
 ]
 DEFAULT_REQUIRED_ARTIFACTS = [
     'run_manifest.yaml',
@@ -57,6 +69,7 @@ DEFAULT_REQUIRED_ARTIFACTS = [
     'metrics.csv',
     'social_metrics.json',
     'artifact_validation.json',
+    'benchmark_result.json',
 ]
 DEFAULT_SOCIAL_CONSTRAINTS = [
     'human_collision_count == 0',
@@ -398,6 +411,12 @@ class SocialNavScenario:
         repetitions = evaluation.get('repetitions')
         if not isinstance(repetitions, int) or repetitions <= 0:
             self._issue('error', 'evaluation.repetitions', 'repetitions must be a positive integer')
+        elif repetitions != 1:
+            self._issue(
+                'error',
+                'evaluation.repetitions',
+                'strict benchmark runs require one episode per result directory; aggregate independent runs',
+            )
         metrics = evaluation.get('metrics') if isinstance(evaluation.get('metrics'), dict) else {}
         for group in ('task', 'social', 'diagnostics'):
             values = metrics.get(group)
@@ -405,7 +424,7 @@ class SocialNavScenario:
                 self._issue('error', f'evaluation.metrics.{group}', 'metrics group must be a list of strings')
 
         task_metrics = set(metrics.get('task') or [])
-        for spl_like in ('SPL', 'spl', 'soft_spl', 'route_efficiency'):
+        for spl_like in ('soft_spl', 'route_efficiency'):
             if spl_like in task_metrics:
                 self._issue(
                     'warning',
@@ -418,7 +437,14 @@ class SocialNavScenario:
         if not isinstance(artifacts, list) or not all(isinstance(item, str) and item.strip() for item in artifacts):
             self._issue('error', 'artifacts_required', 'artifacts_required must be a non-empty list of paths')
             return
-        for required in ('odom.csv', 'cmd_vel.csv', 'human_states.csv', 'social_metrics.json', 'artifact_validation.json'):
+        for required in (
+            'odom.csv',
+            'cmd_vel.csv',
+            'human_states.csv',
+            'social_metrics.json',
+            'artifact_validation.json',
+            'benchmark_result.json',
+        ):
             if required not in artifacts:
                 self._issue('warning', 'artifacts_required', f'recommended artifact is missing: {required}')
 

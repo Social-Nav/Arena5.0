@@ -1,3 +1,5 @@
+import os
+
 import launch_ros
 from arena_bringup.future import PythonExpression
 from arena_bringup.substitutions import LaunchArgument
@@ -9,7 +11,34 @@ import launch
 import launch.actions
 import launch.launch_description_sources
 import launch.substitutions
-from launch.conditions import UnlessCondition
+
+
+def _requires_missing_local_internnav_server(
+    *,
+    local_planner: str,
+    train_mode: str,
+    internnav_external_server: str,
+    dual_vln_external_server: str,
+    internnav_direct_cmd_vel: str,
+    dual_vln_direct_cmd_vel: str,
+    env_external_server: str,
+) -> bool:
+    enabled = {'1', 'true', 'yes', 'on'}
+    external = any(
+        str(value).strip().lower() in enabled
+        for value in (
+            internnav_external_server,
+            dual_vln_external_server,
+            internnav_direct_cmd_vel,
+            dual_vln_direct_cmd_vel,
+            env_external_server,
+        )
+    )
+    return (
+        str(local_planner).strip() == 'dual_vln'
+        and str(train_mode).strip().lower() != 'true'
+        and not external
+    )
 
 
 def generate_launch_description():
@@ -87,9 +116,8 @@ def generate_launch_description():
     dual_vln_http_url = declare_legacy_alias('dual_vln_http_url', internnav_http_url)
     internnav_http_timeout_sec = LaunchArgument(
         'internnav_http_timeout_sec',
-        # Keep launch-time float conversion deterministic; internnav_server and
-        # adapter read ARENA_*_HTTP_TIMEOUT_SEC directly and can recover from
-        # invalid env values.
+        # Keep launch-time float conversion deterministic; adapter code reads
+        # ARENA_*_HTTP_TIMEOUT_SEC directly and can recover from invalid values.
         default_value='0.0',
     )
     dual_vln_http_timeout_sec = declare_legacy_alias('dual_vln_http_timeout_sec', internnav_http_timeout_sec)
@@ -213,95 +241,25 @@ def generate_launch_description():
         ),
     )
 
-    # Launch the InternNav wrapper when using the dual_vln local planner instance
-    internnav_base_frame = PythonExpression([
-        '(',
-        '"', frame.substitution, '"',
-        ' + ',
-        '("base_footprint" if "', robot.substitution, '".strip().lower() == "linkhou_s2" else "base_link")',
-        ')',
-    ])
-    internnav_odom_frame = PythonExpression([
-        '(',
-        '"', frame.substitution, 'odom"',
-        ')',
-    ])
-    internnav_server_parameters = [
-        {
-            'namespace': namespace.substitution,
-            'mode': dual_vln_mode.substitution,
-            'model_path': dual_vln_model_path.substitution,
-            'device': dual_vln_device.substitution,
-            'goal_topic': 'episode_goal_pose',
-            'instruction_topic': PythonExpression(['"', task_generator_node.substitution, '/vln_instruction"']),
-            'rgb_topic': dual_vln_rgb_topic.substitution,
-            'depth_topic': dual_vln_depth_topic.substitution,
-            'camera_info_topic': dual_vln_camera_info_topic.substitution,
-            'base_frame': internnav_base_frame,
-            'odom_frame': internnav_odom_frame,
-            'global_frame': 'map',
-            'adapter_target': dual_vln_adapter_target.substitution,
-            'internnav_http_url': dual_vln_http_url.substitution,
-            'internnav_http_timeout_sec': launch_ros.parameter_descriptions.ParameterValue(
-                dual_vln_http_timeout_sec.substitution, value_type=float
-            ),
-            'require_real_backend': launch_ros.parameter_descriptions.ParameterValue(
-                dual_vln_require_real_backend.substitution, value_type=bool
-            ),
-            'strict_device': launch_ros.parameter_descriptions.ParameterValue(
-                dual_vln_strict_device.substitution, value_type=bool
-            ),
-            'look_down': launch_ros.parameter_descriptions.ParameterValue(
-                dual_vln_look_down.substitution, value_type=bool
-            ),
-            'model_output_policy': dual_vln_model_output_policy.substitution,
-            'enable_visualization': launch_ros.parameter_descriptions.ParameterValue(
-                dual_vln_enable_visualization.substitution, value_type=bool
-            ),
-            'visualization_topic': dual_vln_visualization_topic.substitution,
-            'action_visualization_topic': dual_vln_action_visualization_topic.substitution,
-            'visualization_rate_hz': launch_ros.parameter_descriptions.ParameterValue(
-                dual_vln_visualization_rate_hz.substitution, value_type=float
-            ),
-            'model_output_topic': dual_vln_model_output_topic.substitution,
-            'inference_rate_hz': launch_ros.parameter_descriptions.ParameterValue(
-                dual_vln_inference_rate_hz.substitution, value_type=float
-            ),
-            'inference_timeout_sec': launch_ros.parameter_descriptions.ParameterValue(
-                dual_vln_inference_timeout_sec.substitution, value_type=float
-            ),
-        }
-    ]
-    internnav_enabled = IfCondition(
-        PythonExpression([
-            "'", local_planner.substitution, "' == 'dual_vln' and '",
-            train_mode.substitution, "' == 'false' and '",
-            internnav_external_server.substitution, "'.lower() != 'true' and '",
-            dual_vln_external_server.substitution, "'.lower() != 'true' and '",
-            internnav_direct_cmd_vel.substitution, "'.lower() != 'true' and '",
-            dual_vln_direct_cmd_vel.substitution, "'.lower() != 'true' and ",
-            "os.environ.get('ARENA_INTERNNAV_EXTERNAL_SERVER', '').strip().lower() not in {'1', 'true', 'yes', 'on'}",
-        ], ['os'])
-    )
-    internnav_server = launch_ros.actions.Node(
-        package='arena_vln_models',
-        # The humble_eval install currently exports only the legacy
-        # dual_vln_server console-script wrapper, even though both wrappers map
-        # to arena_vln_models.internnav_server:main in source.  Launch the
-        # exported entry point so eval does not fail before the simulator even
-        # reaches reset/recording readiness.
-        executable='dual_vln_server',
-        name='internnav_server',
-        output='screen',
-        parameters=internnav_server_parameters,
-        additional_env={
-            # Eval still passes the legacy dual_vln_python_executable launch
-            # argument.  Use the alias here so the model subprocess environment
-            # is populated even when internnav_python_executable itself keeps
-            # its default value.
-            'ARENA_PYTHON': dual_vln_python_executable.substitution,
-        },
-        condition=internnav_enabled,
+    def require_external_internnav(context):
+        if _requires_missing_local_internnav_server(
+            local_planner=local_planner.substitution.perform(context),
+            train_mode=train_mode.substitution.perform(context),
+            internnav_external_server=internnav_external_server.substitution.perform(context),
+            dual_vln_external_server=dual_vln_external_server.substitution.perform(context),
+            internnav_direct_cmd_vel=internnav_direct_cmd_vel.substitution.perform(context),
+            dual_vln_direct_cmd_vel=dual_vln_direct_cmd_vel.substitution.perform(context),
+            env_external_server=os.environ.get('ARENA_INTERNNAV_EXTERNAL_SERVER', ''),
+        ):
+            raise RuntimeError(
+                'dual_vln requires the dedicated internnav-1 service; pass '
+                'internnav_external_server:=true or use the case-specific '
+                'internnav_async_eval.launch.py direct-control path'
+            )
+        return []
+
+    external_internnav_guard = launch.actions.OpaqueFunction(
+        function=require_external_internnav
     )
 
     ld = launch.LaunchDescription([
@@ -316,11 +274,11 @@ def generate_launch_description():
             default_value='1'
         ),
         PushRosNamespace(namespace=namespace.substitution),
+        external_internnav_guard,
         # robot_localization_node,
         nav2_launch,
         # state_pub_launch,
         rosnav_rl_action_server,
-        internnav_server,
         data_recorder,
     ])
     return ld

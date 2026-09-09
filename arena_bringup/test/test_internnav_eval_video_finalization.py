@@ -823,6 +823,30 @@ def test_evaluator_returncode_precedence(lifecycle_rc, postprocess_rc, video_rc,
     ) == expected
 
 
+def test_benchmark_result_failure_changes_a_successful_eval_to_nonzero(tmp_path, monkeypatch):
+    import arena_bringup.internnav_eval as internnav_eval
+
+    manifest = {
+        'artifacts': {},
+        'result': {'end_reason': 'episode_goal_reached'},
+    }
+    manifest_path = tmp_path / 'run_manifest.yaml'
+    monkeypatch.setattr(
+        internnav_eval,
+        'generate_benchmark_result',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError('write failed')),
+    )
+
+    returncode = internnav_eval._finalize_run_result(
+        str(tmp_path), str(manifest_path), manifest, 0
+    )
+
+    assert returncode == internnav_eval.BENCHMARK_RESULT_FAILURE_RETURN_CODE
+    assert manifest['result']['end_reason'] == 'episode_goal_reached'
+    assert manifest['artifacts']['benchmark_result_present'] is False
+    assert 'RuntimeError: write failed' in manifest['artifacts']['benchmark_result_error']
+
+
 def _assert_video_owned_cleanup_once(state):
     assert len(state.finalizer_calls) == 1
     video = state.processes['video']
@@ -929,6 +953,7 @@ def test_main_integrates_video_returncode_into_manifest_artifact_and_return():
     assert "video_artifact_issues.append(f'video_recorder_returncode_{video_returncode}')" in source
     assert source.count('evaluator_returncode = _select_evaluator_returncode(') == 2
     assert "manifest['result']['evaluator_returncode'] = evaluator_returncode" in source
+    assert "manifest['result']['launch_returncode'] = 0" in source
 
 
 def test_parent_persists_finalization_failure_in_index_and_error_file(tmp_path):
