@@ -87,6 +87,12 @@ def test_script_is_syntactically_valid():
     assert result.returncode == 0, result.stderr
 
 
+def test_profile_loader_does_not_assume_project_venv_has_pyyaml():
+    source = SCRIPT.read_text(encoding='utf-8')
+    assert '/usr/bin/python3' in source
+    assert "-c 'import yaml'" in source
+
+
 def test_shebang_is_not_interactive():
     """An interactive shebang takes SIGTTIN when backgrounded.
 
