@@ -80,6 +80,7 @@ def _outer_finalization_namespace():
         '_force_video_recorder_exit_after_signal',
         '_finalize_video_recorder_process',
         '_select_evaluator_returncode',
+        '_pipeline_postprocess_returncode',
     }
     selected = [
         node
@@ -820,6 +821,47 @@ def test_evaluator_returncode_precedence(lifecycle_rc, postprocess_rc, video_rc,
         lifecycle_returncode=lifecycle_rc,
         postprocess_returncode=postprocess_rc,
         video_recorder_returncode=video_rc,
+    ) == expected
+
+
+@pytest.mark.parametrize(
+    ('metrics_rc', 'vln_rc', 'social_rc', 'validation_rc', 'validation', 'expected'),
+    [
+        (0, 0, 0, 0, None, 0),
+        (0, 0, 0, 1, {
+            'checks': {
+                'environment': {'pass': True},
+                'humans': {'pass': True},
+                'model_control': {'pass': True},
+                'videos': {'pass': True},
+                'dynamic_scene': {'pass': True},
+                'metrics': {
+                    'metrics_csv_present': True,
+                    'vln_task_metrics_present': True,
+                    'social_metrics_present': True,
+                    'required_social_fields_present': True,
+                    'reference_path_ready': True,
+                    'strict_task_success': False,
+                },
+            },
+        }, 0),
+        (0, 0, 0, 1, None, 1),
+        (2, 0, 0, 1, None, 2),
+        (0, 3, 0, 1, None, 3),
+        (0, 0, 4, 1, None, 4),
+        (0, 0, 0, 5, None, 5),
+    ],
+)
+def test_pipeline_postprocess_returncode_separates_score_failure(
+    metrics_rc, vln_rc, social_rc, validation_rc, validation, expected
+):
+    namespace = _outer_finalization_namespace()
+    assert namespace['_pipeline_postprocess_returncode'](
+        metrics_returncode=metrics_rc,
+        vln_task_metrics_returncode=vln_rc,
+        social_metrics_returncode=social_rc,
+        artifact_validation_returncode=validation_rc,
+        artifact_validation=validation,
     ) == expected
 
 

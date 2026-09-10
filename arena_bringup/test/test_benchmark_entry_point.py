@@ -671,6 +671,11 @@ def test_doctor_only_skips_the_gpu_device_check_when_containers_are_down(tmp_pat
     result = _run(['doctor'], env=_docker_stub_env(tmp_path, running='false'))
     combined = result.stdout + result.stderr
     assert 'cannot verify GPU device access yet' in combined, combined
+    assert 'containers not running:' in combined, combined
+    assert 'cannot inspect /.built yet' in combined, combined
+    assert 'cannot inspect /opt/venv yet' in combined, combined
+    assert 'cannot inspect the model venv yet' in combined, combined
+    assert 'containers not running:' not in result.stderr, combined
 
 
 def test_run_checks_runtime_preconditions_after_starting_the_containers():
@@ -721,3 +726,9 @@ def test_run_checks_static_preconditions_before_starting_containers():
     ]
     assert positions == sorted(positions), real
     assert 'doctor || exit 1' not in real
+
+
+def test_runtime_check_rejects_a_missing_arena_venv():
+    source = SCRIPT.read_text(encoding='utf-8')
+    assert 'test -x /opt/venv/bin/python3' in source
+    assert 'UV_PROJECT_ENVIRONMENT=.venv-docs' in source

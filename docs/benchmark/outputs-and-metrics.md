@@ -63,6 +63,10 @@ and metric files are complete enough to score. A valid run may still be
 `invalid` run is excluded from model-quality interpretation because its runtime
 or evidence contract failed. `benchmark_ready` is true only when the run is
 valid and all strict task, social, and artifact gates pass.
+Accordingly, the normal benchmark runner exits zero for a complete, scoreable
+run even when `benchmark_ready` is false. Pipeline automation should first
+require `verdict.valid_run: true`; model-release or leaderboard gates may add
+`benchmark_result --require-ready`.
 
 The task metrics use the native scenario goal as the current scoring target.
 Navigation error is final-to-goal distance and oracle error is the closest
@@ -135,18 +139,25 @@ docker exec -e RUN_DIR=/opt/arena_ws/outputs/<prefix>/<run> \
   cd /opt/arena_ws &&
   source /opt/ros/jazzy/setup.bash &&
   source install/setup.bash &&
-  ros2 run arena_bringup benchmark_result --dir "$RUN_DIR" --require-ready
+  ros2 run arena_bringup benchmark_result --dir "$RUN_DIR" --require-valid
 '
 ```
 
-For strict benchmark pass, require:
+`--require-valid` checks the benchmark pipeline: the episode completed, evidence
+is complete, and the run can be scored. It still succeeds when the model missed
+the goal or a social threshold. Use `--require-ready` only when also gating on
+model task/social success.
+
+For a valid, scoreable benchmark run, require:
 
 - launch and metrics return codes are `0`
 - video index exists and all required videos have frames
 - run-local InternNav status/trace evidence exists for direct-client runs
 - `artifact_validation.json` exists
-- `overall_pass` is `true`
-- `failed_checks` is empty
+- `verdict.valid_run` is `true` in `benchmark_result.json`
+
+For a model-quality release gate, additionally require `--require-ready`, which
+checks `overall_pass`, empty `failed_checks`, and strict task/social thresholds.
 
 ## Aggregate Runs
 

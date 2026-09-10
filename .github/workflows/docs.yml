@@ -51,7 +51,9 @@ jobs:
         uses: actions/configure-pages@v6
 
       - name: Build docs
-        run: uv run --frozen --only-group docs mkdocs build --strict
+        env:
+          UV_PROJECT_ENVIRONMENT: .venv-docs
+        run: uv run --python 3.12 --frozen --only-group docs mkdocs build --strict
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5

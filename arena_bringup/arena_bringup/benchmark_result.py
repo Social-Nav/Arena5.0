@@ -226,6 +226,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='Generate one canonical Arena benchmark result.')
     parser.add_argument('--dir', required=True, help='Eval run directory')
     parser.add_argument('--output', default='', help='Output path (default: <dir>/benchmark_result.json)')
+    parser.add_argument('--require-valid', action='store_true', help='Exit non-zero unless the run is complete and scoreable')
     parser.add_argument('--require-ready', action='store_true', help='Exit non-zero unless benchmark_ready is true')
     args = parser.parse_args(argv)
     payload = generate_benchmark_result(args.dir, args.output or None)
@@ -235,7 +236,11 @@ def main(argv: list[str] | None = None) -> int:
         'benchmark_ready': payload['verdict']['benchmark_ready'],
         'primary_failure': payload['verdict']['primary_failure'],
     }, indent=2))
-    return 0 if not args.require_ready or payload['verdict']['benchmark_ready'] else 1
+    if args.require_ready and not payload['verdict']['benchmark_ready']:
+        return 1
+    if args.require_valid and not payload['verdict']['valid_run']:
+        return 1
+    return 0
 
 
 if __name__ == '__main__':  # pragma: no cover
