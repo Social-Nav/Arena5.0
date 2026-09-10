@@ -1,0 +1,77 @@
+schema_version: 1
+id: internnav_grscenes
+description: >-
+  Canonical Docker + Isaac Sim + external InternNav profile for the current
+  single-episode GRScenes social-navigation benchmark.
+
+# Runtime defaults can be overridden by machine-local environment variables or
+# the benchmark entry point's named CLI options. No host path belongs here.
+runtime:
+  ros_domain_id: 1
+  rmw_implementation: rmw_fastrtps_cpp
+  fastdds_builtin_transports: UDPv4
+  ros_localhost_only: 0
+  ros_automatic_discovery_range: SUBNET
+  device: cuda:0
+  http_port: 5801
+
+# Settings owned by the real model server/client in internnav-1. Relative ROS
+# names are resolved below /task_generator_node/<robot>.
+server:
+  mode: internnav
+  model_path: /opt/arena_ws/deps/models/InternVLA-N1-DualVLN
+  rgb_topic: head_camera/image
+  depth_topic: head_camera/depth
+  camera_info_topic: head_camera/camera_info
+  odom_topic: odom
+  raw_cmd_vel_topic: internnav/raw_cmd_vel
+  status_topic: internnav/status
+  visualization_topic: internnav/debug_image
+  action_visualization_topic: internnav/action_image
+  model_output_topic: internnav/model_output
+  model_output_policy: trajectory
+  visualization_enabled: true
+  visualization_rate_hz: 5.0
+  planning_rate_hz: 3.3333333333
+  inference_timeout_sec: 120.0
+
+# Case defaults. A run may replace world/scenario/instruction/timeout/output via
+# --case or named CLI options without changing this shared profile.
+evaluation:
+  simulator: isaac_eval
+  human_simulator: hunav
+  world: grscenes_20_v1
+  scenario: default_2
+  robot: Ai2_Bot2
+  local_planner: dual_vln
+  inter_planner: navigate_to_pose_w_replanning_and_recovery
+  global_planner: navfn
+  episodes: 1
+  timeout_sec: 300
+  timeout_wall_factor: 5.0
+  timeout_wall_sec: 1800.0
+  task_generator_robots: scenario
+  task_generator_obstacles: scenario
+  headless: "2"
+  log_level: warn
+  vln_instruction: navigate
+  social_eval: true
+  launch_timeout_sec: 2400.0
+  shutdown_grace_period_sec: 20.0
+  output_prefix: internnav_eval
+
+internnav:
+  adapter_target: arena_vln_models.internnav:load_internvla_realworld_http_adapter
+  external_server: true
+  direct_cmd_vel: true
+  timing_mode: wall
+  model_latency_sec: 0.3
+  latency_policy: fixed
+
+video:
+  enabled: true
+  fps: 10.0
+  top_down_size_px: 640
+  top_down_window_m: 10.0
+  sim_top_down_topic: top_down_camera/image
+  debug_overlay_topic: internnav/debug_image

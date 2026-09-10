@@ -16,6 +16,15 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 
 from arena_bringup.benchmark_result import generate_benchmark_result
+from arena_bringup.benchmark_profile import (
+    BenchmarkProfileError,
+    default_profile_path,
+    evaluation_defaults,
+    load_profile,
+    manifest_record as benchmark_profile_manifest_record,
+    profile_metadata,
+    validate_machine_environment,
+)
 
 
 REALWORLD_HTTP_ADAPTER_TARGET = 'arena_vln_models.internnav:load_internvla_realworld_http_adapter'
@@ -3739,12 +3748,81 @@ def _select_evaluator_returncode(
     return 0
 
 
-def main() -> int:
+def _profile_bootstrap(argv: list[str] | None = None) -> tuple[list[str], dict, dict]:
+    """Resolve profile defaults before constructing the full CLI parser.
+
+    Precedence is CLI > benchmark profile > legacy argparse defaults.  Case
+    YAML remains a higher-level wrapper which translates its fields into CLI.
+    """
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    bootstrap = argparse.ArgumentParser(add_help=False)
+    bootstrap.add_argument('--benchmark-profile', default='')
+    bootstrap_args, _ = bootstrap.parse_known_args(raw_argv)
+    bringup_share = get_package_share_directory('arena_bringup')
+    profile_path = (
+        os.path.abspath(os.path.expanduser(bootstrap_args.benchmark_profile))
+        if bootstrap_args.benchmark_profile
+        else str(default_profile_path(bringup_share))
+    )
+    try:
+        profile = load_profile(profile_path)
+        machine = validate_machine_environment(profile)
+    except BenchmarkProfileError as exc:
+        bootstrap.error(str(exc))
+    # Device selection is deliberately the one machine-local runtime override.
+    # The profile metadata/hash still describes the immutable source file.
+    profile['runtime']['device'] = machine['device']
+    runtime = profile['runtime']
+    for name, value in {
+        'ROS_DOMAIN_ID': runtime['ros_domain_id'],
+        'RMW_IMPLEMENTATION': runtime['rmw_implementation'],
+        'FASTDDS_BUILTIN_TRANSPORTS': runtime['fastdds_builtin_transports'],
+        'ROS_LOCALHOST_ONLY': runtime['ros_localhost_only'],
+        'ROS_AUTOMATIC_DISCOVERY_RANGE': runtime['ros_automatic_discovery_range'],
+    }.items():
+        os.environ.setdefault(name, str(value))
+    return raw_argv, profile, profile_metadata(profile_path, profile)
+
+
+def _resolved_profile_parameters(args) -> dict:
+    return {
+        'sim': args.sim,
+        'human': args.human,
+        'world': args.world,
+        'scenario': args.scenario_file,
+        'robot': args.robot,
+        'local_planner': args.local_planner,
+        'inter_planner': args.inter_planner,
+        'global_planner': args.global_planner,
+        'episodes': args.episodes,
+        'timeout_sec': args.timeout,
+        'device': args.dual_vln_device,
+        'mode': args.dual_vln_mode,
+        'external_server': args.internnav_external_server,
+        'direct_cmd_vel': args.internnav_direct_cmd_vel,
+        'social_eval': args.social_eval,
+        'save_eval_video': args.save_eval_video,
+        'output_prefix': args.output_prefix,
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv, benchmark_profile, benchmark_profile_metadata = _profile_bootstrap(argv)
     parser = argparse.ArgumentParser(
         description=(
             'Run a reproducible Arena InternNav eval from arena-1. '
             'Real InternNav model inference is always external and must be served by internnav-1.'
         )
+    )
+    parser.add_argument(
+        '--benchmark-profile',
+        default=benchmark_profile_metadata['path'],
+        help='Versioned benchmark profile YAML. CLI values override profile values.',
+    )
+    parser.add_argument(
+        '--print-effective-config',
+        action='store_true',
+        help='Print resolved profile/core parameters as JSON and exit without launching.',
     )
     parser.add_argument('--sim', default='isaac_eval')
     parser.add_argument('--human', default='hunav')
@@ -3787,7 +3865,11 @@ def main() -> int:
     parser.add_argument('--scenario-file', default='')
     parser.add_argument('--scenario-config-id', default='')
     parser.add_argument('--scenario-config-path', default='')
-    parser.add_argument('--social-eval', action='store_true', help='Enable stricter social-navigation metrics and artifact validation expectations.')
+    parser.add_argument(
+        '--social-eval',
+        action=argparse.BooleanOptionalAction,
+        help='Enable or disable stricter social-navigation metrics and artifact validation expectations.',
+    )
     parser.add_argument('--headless', default='2')
     parser.add_argument('--log-level', default='warn')
     parser.add_argument('--vln-instruction', default='navigate')
@@ -3859,12 +3941,17 @@ def main() -> int:
         help='Select how InternNav outputs are converted: trajectory prefers output_trajectory->cmd_vel; discrete forces action ids; raw keeps legacy precedence.',
     )
     parser.add_argument('--internnav-look-down', '--dual-vln-look-down', dest='dual_vln_look_down', action='store_true')
-    parser.add_argument('--internnav-enable-visualization', '--dual-vln-enable-visualization', dest='dual_vln_enable_visualization', action='store_true')
+    parser.add_argument(
+        '--internnav-enable-visualization',
+        '--dual-vln-enable-visualization',
+        dest='dual_vln_enable_visualization',
+        action=argparse.BooleanOptionalAction,
+    )
     parser.add_argument(
         '--internnav-external-server',
         '--dual-vln-external-server',
         dest='internnav_external_server',
-        action='store_true',
+        action=argparse.BooleanOptionalAction,
         help='Use the dedicated internnav-1 model server. This is the required/default mode for real InternNav eval.',
     )
     parser.add_argument(
@@ -3872,7 +3959,7 @@ def main() -> int:
         '--internnav-direct-cmd-vel',
         '--dual-vln-direct-cmd-vel',
         dest='internnav_direct_cmd_vel',
-        action='store_true',
+        action=argparse.BooleanOptionalAction,
         help='Use upstream InternNav realworld ROS2 client publishing cmd_vel directly; skip Arena get_command/status wrapper checks.',
     )
     parser.add_argument('--internnav-command-service', '--dual-vln-command-service', dest='dual_vln_command_service', default='')
@@ -3911,7 +3998,7 @@ def main() -> int:
         default='internnav/raw_cmd_vel',
         help='Raw official-client command topic consumed by internnav_timing_manager.',
     )
-    parser.add_argument('--save-eval-video', action='store_true')
+    parser.add_argument('--save-eval-video', action=argparse.BooleanOptionalAction)
     parser.add_argument('--eval-video-fps', type=float, default=10.0)
     parser.add_argument('--eval-video-top-down-size-px', type=int, default=640)
     parser.add_argument('--eval-video-top-down-window-m', type=float, default=10.0)
@@ -3944,7 +4031,10 @@ def main() -> int:
     )
     parser.add_argument('--skip-metrics', action='store_true')
     parser.add_argument('extra_launch_args', nargs='*', help='Additional KEY:=VALUE launch arguments')
-    args = parser.parse_args()
+    # Apply the profile after declaring all arguments: explicit ``default=``
+    # values on add_argument would otherwise replace parser-level defaults.
+    parser.set_defaults(**evaluation_defaults(benchmark_profile))
+    args = parser.parse_args(raw_argv)
     runtime_adjustments = _apply_runtime_defaults(args)
     if args.internnav_direct_cmd_vel:
         args.internnav_external_server = True
@@ -3971,6 +4061,23 @@ def main() -> int:
                 'value': normalized_scenario_file,
             }
             args.scenario_file = normalized_scenario_file
+    if args.print_effective_config:
+        print(json.dumps({
+            'benchmark_profile': benchmark_profile_metadata,
+            'precedence': 'cli_or_case > machine_local_paths_or_device > benchmark_profile > legacy_code_defaults',
+            'resolved_parameters': _resolved_profile_parameters(args),
+            'runtime_environment': {
+                name: os.environ.get(name)
+                for name in (
+                    'ROS_DOMAIN_ID',
+                    'RMW_IMPLEMENTATION',
+                    'FASTDDS_BUILTIN_TRANSPORTS',
+                    'ROS_LOCALHOST_ONLY',
+                    'ROS_AUTOMATIC_DISCOVERY_RANGE',
+                )
+            },
+        }, indent=2, sort_keys=True))
+        return 0
     manifest_binding_failure = (
         str(getattr(args, 'world', '') or '').strip().startswith('grscenes_')
         and not str(getattr(args, 'vln_instruction_file', '') or '').strip()
@@ -4036,6 +4143,7 @@ def main() -> int:
     for label, src in {
         'task_generator': os.path.join(bringup_share, 'configs', 'task_generator.yaml'),
         'internnav_controller': os.path.join(sim_setup_share, 'configs', 'nav2', 'controllers', 'dual_vln', 'controller_config.yaml'),
+        'benchmark_profile': benchmark_profile_metadata['path'],
     }.items():
         copied = _copy_if_exists(src, os.path.join(snapshots_dir, os.path.basename(src)))
         if copied is not None:
@@ -4163,6 +4271,11 @@ def main() -> int:
         'launch_command': launch_cmd,
         'metrics_command': None if args.skip_metrics else metrics_cmd,
         'postprocess_commands_file': postprocess_commands_path,
+        'benchmark_profile': benchmark_profile_manifest_record(
+            benchmark_profile_metadata,
+            _resolved_profile_parameters(args),
+            snapshot_path=snapshot_files.get('benchmark_profile'),
+        ),
         'parameters': {
             'sim': args.sim,
             'human': args.human,

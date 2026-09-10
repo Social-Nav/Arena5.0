@@ -46,14 +46,6 @@ BENCHMARK_SERVICES="arena isaac internnav"
 # "no messages arriving", which is indistinguishable from several other faults.
 # A top-level entry point is the right place to assert it.
 # ---------------------------------------------------------------------------
-: "${ROS_DOMAIN_ID:=1}"
-: "${RMW_IMPLEMENTATION:=rmw_fastrtps_cpp}"
-: "${FASTDDS_BUILTIN_TRANSPORTS:=UDPv4}"
-: "${ROS_LOCALHOST_ONLY:=0}"
-: "${ROS_AUTOMATIC_DISCOVERY_RANGE:=SUBNET}"
-export ROS_DOMAIN_ID RMW_IMPLEMENTATION FASTDDS_BUILTIN_TRANSPORTS
-export ROS_LOCALHOST_ONLY ROS_AUTOMATIC_DISCOVERY_RANGE
-
 # ---------------------------------------------------------------------------
 # Paths and identity
 # ---------------------------------------------------------------------------
@@ -69,6 +61,63 @@ benchmark_ws_dir(){
 benchmark_arena_dir(){ echo "${ARENA_DIR:-$(benchmark_ws_dir)/src/Arena}"; }
 benchmark_project(){ echo "${ARENA_PROJECT_NAME:-arena-$(basename "$(benchmark_ws_dir)")}"; }
 benchmark_container(){ echo "$(benchmark_project)-$1-1"; }
+benchmark_script_arena_dir(){
+    cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../../../.." && pwd
+}
+benchmark_default_profile(){
+    echo "$(benchmark_script_arena_dir)/arena_bringup/configs/benchmark/profiles/internnav_grscenes.yaml"
+}
+
+# Read --profile before parsing the rest of the command.  The loader validates
+# the tracked YAML and emits shell-quoted PROFILE_* assignments only.
+PROFILE_PATH="${ARENA_BENCHMARK_PROFILE:-$(benchmark_default_profile)}"
+profile_scan=("$@")
+for ((profile_i = 0; profile_i < ${#profile_scan[@]}; profile_i++)); do
+    case "${profile_scan[$profile_i]}" in
+        --) break ;;
+        --profile)
+            profile_i=$((profile_i + 1))
+            [ "$profile_i" -lt "${#profile_scan[@]}" ] \
+                || { echo "[benchmark] FATAL: --profile requires a path" >&2; exit 1; }
+            PROFILE_PATH="${profile_scan[$profile_i]}"
+            ;;
+        --profile=*) PROFILE_PATH="${profile_scan[$profile_i]#--profile=}" ;;
+    esac
+done
+unset profile_scan profile_i
+
+profile_loader="$(benchmark_script_arena_dir)/arena_bringup/arena_bringup/benchmark_profile.py"
+profile_python="$(benchmark_script_arena_dir)/.venv/bin/python"
+if [ ! -x "$profile_python" ]; then
+    profile_python=python3
+fi
+profile_assignments="$(
+    "$profile_python" "$profile_loader" shell --profile "$PROFILE_PATH"
+)" || {
+    echo "[benchmark] FATAL: benchmark profile validation failed: $PROFILE_PATH" >&2
+    exit 1
+}
+eval "$profile_assignments"
+for contract_name in ROS_DOMAIN_ID RMW_IMPLEMENTATION FASTDDS_BUILTIN_TRANSPORTS ROS_LOCALHOST_ONLY ROS_AUTOMATIC_DISCOVERY_RANGE; do
+    profile_name="PROFILE_RUNTIME_$contract_name"
+    if [ -n "${!contract_name:-}" ] && [ "${!contract_name}" != "${!profile_name}" ]; then
+        echo "[benchmark] FATAL: ambient $contract_name=${!contract_name} conflicts with profile value ${!profile_name}" >&2
+        exit 1
+    fi
+done
+unset profile_loader profile_python profile_assignments contract_name profile_name
+PROFILE_PATH="$PROFILE_PATH"
+
+# The DDS contract is benchmark semantics, so it comes from the tracked profile
+# rather than ambient shell state. Machine-local paths and the selected GPU may
+# still be supplied separately.
+ROS_DOMAIN_ID="$PROFILE_RUNTIME_ROS_DOMAIN_ID"
+RMW_IMPLEMENTATION="$PROFILE_RUNTIME_RMW_IMPLEMENTATION"
+FASTDDS_BUILTIN_TRANSPORTS="$PROFILE_RUNTIME_FASTDDS_BUILTIN_TRANSPORTS"
+ROS_LOCALHOST_ONLY="$PROFILE_RUNTIME_ROS_LOCALHOST_ONLY"
+ROS_AUTOMATIC_DISCOVERY_RANGE="$PROFILE_RUNTIME_ROS_AUTOMATIC_DISCOVERY_RANGE"
+export ROS_DOMAIN_ID RMW_IMPLEMENTATION FASTDDS_BUILTIN_TRANSPORTS
+export ROS_LOCALHOST_ONLY ROS_AUTOMATIC_DISCOVERY_RANGE
 
 # Same guarded-definition idiom as features/internnav/main: reuse the caller's
 # wrapper when sourced through `arena`, otherwise stand alone from the host.
@@ -478,13 +527,13 @@ do_status(){
 # ---------------------------------------------------------------------------
 # Node/process verbs
 # ---------------------------------------------------------------------------
-ROBOT="${ARENA_BENCHMARK_ROBOT:-Ai2_Bot2}"
-WORLD="${ARENA_BENCHMARK_WORLD:-grscenes_20_v1}"
-SCENARIO="${ARENA_BENCHMARK_SCENARIO:-default_2}"
-DEVICE="${ARENA_BENCHMARK_DEVICE:-cuda:0}"
-EPISODES="${ARENA_BENCHMARK_EPISODES:-1}"
-TIMEOUT="${ARENA_BENCHMARK_TIMEOUT:-300}"
-HTTP_PORT="${ARENA_INTERNNAV_HTTP_PORT:-5801}"
+ROBOT="$PROFILE_EVALUATION_ROBOT"
+WORLD="$PROFILE_EVALUATION_WORLD"
+SCENARIO="$PROFILE_EVALUATION_SCENARIO"
+DEVICE="${ARENA_BENCHMARK_DEVICE:-$PROFILE_RUNTIME_DEVICE}"
+EPISODES="$PROFILE_EVALUATION_EPISODES"
+TIMEOUT="$PROFILE_EVALUATION_TIMEOUT_SEC"
+HTTP_PORT="${ARENA_INTERNNAV_HTTP_PORT:-$PROFILE_RUNTIME_HTTP_PORT}"
 EVAL_EXTRA=()
 
 validate_eval_extra(){
@@ -500,9 +549,9 @@ validate_eval_extra(){
             --tm-robots|--tm-robots=*|tm_robots:=*|\
             --tm-obstacles|--tm-obstacles=*|tm_obstacles:=*|\
             --internnav-mode|--internnav-mode=*|--dual-vln-mode|--dual-vln-mode=*|\
-            --internnav-external-server|--dual-vln-external-server|\
-            --internnav-official-client|--internnav-direct-cmd-vel|--dual-vln-direct-cmd-vel|\
-            --social-eval|--save-eval-video|--skip-metrics|robot_launch_file:=*)
+            --internnav-external-server|--no-internnav-external-server|--dual-vln-external-server|--no-dual-vln-external-server|\
+            --internnav-official-client|--no-internnav-official-client|--internnav-direct-cmd-vel|--no-internnav-direct-cmd-vel|--dual-vln-direct-cmd-vel|--no-dual-vln-direct-cmd-vel|\
+            --social-eval|--no-social-eval|--save-eval-video|--no-save-eval-video|--skip-metrics|robot_launch_file:=*)
                 die "'$arg' cannot override the strict benchmark contract" \
                     "use the benchmark entry point's named options where available"
                 ;;
@@ -515,8 +564,52 @@ validate_eval_extra(){
 # the /health readiness gate and the container lifetime trap.
 do_serve(){
     run_step "start the InternNav model server and ROS client in internnav-1" \
+        env \
+            "ARENA_INTERNNAV_MODEL_PATH=$PROFILE_SERVER_MODEL_PATH" \
+            "ARENA_INTERNNAV_RGB_TOPIC=$PROFILE_SERVER_RGB_TOPIC" \
+            "ARENA_INTERNNAV_DEPTH_TOPIC=$PROFILE_SERVER_DEPTH_TOPIC" \
+            "ARENA_INTERNNAV_CAMERA_INFO_TOPIC=$PROFILE_SERVER_CAMERA_INFO_TOPIC" \
+            "ARENA_INTERNNAV_ODOM_TOPIC=$PROFILE_SERVER_ODOM_TOPIC" \
+            "ARENA_INTERNNAV_RAW_CMD_VEL_TOPIC=$PROFILE_SERVER_RAW_CMD_VEL_TOPIC" \
+            "ARENA_INTERNNAV_STATUS_TOPIC=$PROFILE_SERVER_STATUS_TOPIC" \
+            "ARENA_INTERNNAV_VISUALIZATION_TOPIC=$PROFILE_SERVER_VISUALIZATION_TOPIC" \
+            "ARENA_INTERNNAV_ACTION_VISUALIZATION_TOPIC=$PROFILE_SERVER_ACTION_VISUALIZATION_TOPIC" \
+            "ARENA_INTERNNAV_MODEL_OUTPUT_TOPIC=$PROFILE_SERVER_MODEL_OUTPUT_TOPIC" \
+            "ARENA_INTERNNAV_MODEL_OUTPUT_POLICY=$PROFILE_SERVER_MODEL_OUTPUT_POLICY" \
+            "ARENA_INTERNNAV_ENABLE_VISUALIZATION=$PROFILE_SERVER_VISUALIZATION_ENABLED" \
+            "ARENA_INTERNNAV_VISUALIZATION_RATE_HZ=$PROFILE_SERVER_VISUALIZATION_RATE_HZ" \
+            "ARENA_INTERNNAV_PLANNING_RATE_HZ=$PROFILE_SERVER_PLANNING_RATE_HZ" \
+            "ARENA_INTERNNAV_INFERENCE_TIMEOUT_SEC=$PROFILE_SERVER_INFERENCE_TIMEOUT_SEC" \
+            "ARENA_INTERNNAV_HTTP_PORT=$HTTP_PORT" \
+            "ARENA_INTERNNAV_TIMING_MODE=$PROFILE_INTERNNAV_TIMING_MODE" \
         bash "$(benchmark_arena_dir)/_meta/docker/features/internnav/main" launch \
-            --robot "$ROBOT" --mode internnav --device "$DEVICE"
+            --robot "$ROBOT" --mode "$PROFILE_SERVER_MODE" --device "$DEVICE"
+}
+
+start_server_background(){
+    local serve_log="$1"
+    setsid env \
+        "ARENA_INTERNNAV_MODEL_PATH=$PROFILE_SERVER_MODEL_PATH" \
+        "ARENA_INTERNNAV_RGB_TOPIC=$PROFILE_SERVER_RGB_TOPIC" \
+        "ARENA_INTERNNAV_DEPTH_TOPIC=$PROFILE_SERVER_DEPTH_TOPIC" \
+        "ARENA_INTERNNAV_CAMERA_INFO_TOPIC=$PROFILE_SERVER_CAMERA_INFO_TOPIC" \
+        "ARENA_INTERNNAV_ODOM_TOPIC=$PROFILE_SERVER_ODOM_TOPIC" \
+        "ARENA_INTERNNAV_RAW_CMD_VEL_TOPIC=$PROFILE_SERVER_RAW_CMD_VEL_TOPIC" \
+        "ARENA_INTERNNAV_STATUS_TOPIC=$PROFILE_SERVER_STATUS_TOPIC" \
+        "ARENA_INTERNNAV_VISUALIZATION_TOPIC=$PROFILE_SERVER_VISUALIZATION_TOPIC" \
+        "ARENA_INTERNNAV_ACTION_VISUALIZATION_TOPIC=$PROFILE_SERVER_ACTION_VISUALIZATION_TOPIC" \
+        "ARENA_INTERNNAV_MODEL_OUTPUT_TOPIC=$PROFILE_SERVER_MODEL_OUTPUT_TOPIC" \
+        "ARENA_INTERNNAV_MODEL_OUTPUT_POLICY=$PROFILE_SERVER_MODEL_OUTPUT_POLICY" \
+        "ARENA_INTERNNAV_ENABLE_VISUALIZATION=$PROFILE_SERVER_VISUALIZATION_ENABLED" \
+        "ARENA_INTERNNAV_VISUALIZATION_RATE_HZ=$PROFILE_SERVER_VISUALIZATION_RATE_HZ" \
+        "ARENA_INTERNNAV_PLANNING_RATE_HZ=$PROFILE_SERVER_PLANNING_RATE_HZ" \
+        "ARENA_INTERNNAV_INFERENCE_TIMEOUT_SEC=$PROFILE_SERVER_INFERENCE_TIMEOUT_SEC" \
+        "ARENA_INTERNNAV_HTTP_PORT=$HTTP_PORT" \
+        "ARENA_INTERNNAV_TIMING_MODE=$PROFILE_INTERNNAV_TIMING_MODE" \
+        bash "$(benchmark_arena_dir)/_meta/docker/features/internnav/main" launch \
+            --robot "$ROBOT" --mode "$PROFILE_SERVER_MODE" --device "$DEVICE" \
+        </dev/null >>"$serve_log" 2>&1 &
+    echo $! > "$serve_log.pid"
 }
 
 # Runs the evaluation inside arena-1.  This is the command documented in
@@ -529,20 +622,12 @@ eval_inner_command(){
     local quoted
     local -a eval_args=(
         ros2 run arena_bringup internnav_eval
-        --sim isaac_eval
-        --human hunav
+        --benchmark-profile "$PROFILE_PATH"
         --world "$WORLD"
         --robot "$ROBOT"
-        --local-planner dual_vln
         --episodes "$EPISODES"
         --timeout "$TIMEOUT"
-        --headless 2
-        --log-level warn
-        --internnav-mode internnav
         --internnav-device "$DEVICE"
-        --internnav-direct-cmd-vel
-        --social-eval
-        --save-eval-video
     )
     if [ -n "$SCENARIO" ]; then
         eval_args+=(--scenario-file "$SCENARIO")
@@ -577,7 +662,8 @@ do_run(){
     local serve_log
     serve_log="$(benchmark_ws_dir)/outputs/.benchmark_serve.log"
     if [ "$DRY_RUN" = "1" ]; then
-        echo "plan for '$name run' (sim=isaac_eval robot=$ROBOT world=$WORLD scenario=$SCENARIO episodes=$EPISODES device=$DEVICE):"
+        echo "profile $PROFILE_ID schema=$PROFILE_SCHEMA_VERSION sha256=$PROFILE_SHA256"
+        echo "plan for '$name run' (sim=$PROFILE_EVALUATION_SIMULATOR robot=$ROBOT world=$WORLD scenario=$SCENARIO episodes=$EPISODES device=$DEVICE):"
         echo "   0. verify host/image/topology preconditions; abort on any failure"
         run_step "start containers ($BENCHMARK_SERVICES) without building" \
             arena_docker_compose up -d --remove-orphans --no-build $BENCHMARK_SERVICES
@@ -585,7 +671,7 @@ do_run(){
         run_step_sh "verify container build, model runtime, and GPU device access" \
             "<docker exec ... test /.built and /opt/internnav_venv, then open /dev/nvidia0 and run nvidia-smi -L>"
         run_step_sh "start the model server in the background, logging to $serve_log" \
-            "setsid bash .../features/internnav/main launch --robot $ROBOT --mode internnav --device $DEVICE </dev/null >>$serve_log 2>&1 &"
+            "setsid env <profile server settings> bash .../features/internnav/main launch --robot $ROBOT --mode $PROFILE_SERVER_MODE --device $DEVICE </dev/null >>$serve_log 2>&1 &"
         wait_for_model
         do_eval
         run_step_sh "stop the model server (registered as an EXIT/INT/TERM trap, so it also runs if the evaluation fails)" \
@@ -619,8 +705,8 @@ do_run(){
     trap benchmark_stop_server EXIT INT TERM
     # setsid + </dev/null because the internnav feature script is an interactive
     # shell and would otherwise stop on SIGTTIN when backgrounded.
-    run_step_sh "start the model server in the background, logging to $serve_log" \
-        "setsid bash '$(benchmark_arena_dir)/_meta/docker/features/internnav/main' launch --robot '$ROBOT' --mode internnav --device '$DEVICE' </dev/null >>'$serve_log' 2>&1 & echo \$! > '$serve_log.pid'"
+    run_step "start the model server in the background, logging to $serve_log" \
+        start_server_background "$serve_log"
     wait_for_model
     do_eval
     log "evaluation finished; artifacts are under $(benchmark_ws_dir)/outputs"
@@ -652,6 +738,28 @@ do_plan(){
     return 0
 }
 
+do_config(){
+    echo "profile_id=$PROFILE_ID"
+    echo "profile_schema_version=$PROFILE_SCHEMA_VERSION"
+    echo "profile_path=$PROFILE_PATH"
+    echo "profile_sha256=$PROFILE_SHA256"
+    echo "precedence=CLI/case override > machine-local paths/device > benchmark profile > legacy code defaults"
+    echo "robot=$ROBOT"
+    echo "world=$WORLD"
+    echo "scenario=$SCENARIO"
+    echo "episodes=$EPISODES"
+    echo "timeout_sec=$TIMEOUT"
+    echo "device=$DEVICE"
+    echo "simulator=$PROFILE_EVALUATION_SIMULATOR"
+    echo "external_server=$PROFILE_INTERNNAV_EXTERNAL_SERVER"
+    echo "direct_cmd_vel=$PROFILE_INTERNNAV_DIRECT_CMD_VEL"
+    echo "social_eval=$PROFILE_EVALUATION_SOCIAL_EVAL"
+    echo "save_eval_video=$PROFILE_VIDEO_ENABLED"
+    echo "ros_domain_id=$ROS_DOMAIN_ID"
+    echo "rmw_implementation=$RMW_IMPLEMENTATION"
+    echo "fastdds_builtin_transports=$FASTDDS_BUILTIN_TRANSPORTS"
+}
+
 # ---------------------------------------------------------------------------
 help(){
     cat <<EOF
@@ -677,6 +785,8 @@ Getting from a clean checkout to a finished evaluation:
 After the first time, only the last step is needed.
 
 Verbs
+  config      Validate the profile and print the effective case/runtime values.
+              Changes nothing and does not contact Docker.
   doctor      Check every precondition and report PASS/FAIL for each, then stop.
               Changes nothing. Exits non-zero if any check fails.   [seconds]
   plan VERB   Print the exact commands VERB would run, in order, and exit
@@ -701,6 +811,9 @@ Verbs
 Options
   --dry-run           Print what would happen and exit. Same as 'plan'.
   --yes               Confirm a destructive verb (build, down).
+  --profile PATH      Versioned benchmark profile YAML.
+  --case W/S          Override world and scenario together, for example
+                      grscenes_15_v1/default_1.
   --robot NAME        Default: $ROBOT
   --world NAME        Default: $WORLD
   --scenario NAME     Default: $SCENARIO
@@ -740,6 +853,15 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --dry-run)  DRY_RUN=1; shift ;;
         --yes|-y)   ASSUME_YES=1; shift ;;
+        --profile)  shift 2 ;; # already resolved and validated before dispatch
+        --profile=*) shift ;;  # already resolved and validated before dispatch
+        --case)
+            case "$2" in
+                */*) WORLD="${2%%/*}"; SCENARIO="${2#*/}" ;;
+                *) die "--case expects WORLD/SCENARIO, got '$2'" ;;
+            esac
+            shift 2
+            ;;
         --robot)    ROBOT="$2"; shift 2 ;;
         --world)    WORLD="$2"; shift 2 ;;
         --scenario) SCENARIO="$2"; shift 2 ;;
@@ -769,6 +891,7 @@ fi
 
 case "$VERB" in
     help|--help|-h) help; exit 0 ;;
+    config)  do_config; exit $? ;;
     doctor)  doctor; exit $? ;;
     plan)    do_plan "${PLAN_TARGET:-run}"; exit $? ;;
     status)  do_status; exit $? ;;
