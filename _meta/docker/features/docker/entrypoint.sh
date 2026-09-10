@@ -32,11 +32,11 @@ if [ ! -f /.built ]; then
         git -C /opt/arena_ws/src/Arena submodule update --init
         if [ -f /opt/arena_ws/src/Arena/arena_robots/.gitmodules ]; then
             git -C /opt/arena_ws/src/Arena/arena_robots submodule sync
+            # Reproduce the exact dependency revisions recorded by the
+            # arena_robots superproject.  --remote makes a clean bootstrap
+            # depend on mutable (and sometimes deleted) branch names.
             git -C /opt/arena_ws/src/Arena/arena_robots \
-                -c submodule.deps/jackal.branch=noetic-devel \
-                -c submodule.deps/turtlebot4.branch=jazzy \
-                -c submodule.deps/robot_usds.branch=feature/Social-Nav \
-                submodule update --init --remote \
+                submodule update --init \
                 deps/jackal \
                 deps/turtlebot4 \
                 deps/robot_usds

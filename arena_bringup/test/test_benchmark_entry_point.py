@@ -551,6 +551,20 @@ def test_the_delegate_scripts_exist():
         assert (REPO_ROOT / rel).is_file(), f'missing dependency: {rel}'
 
 
+@pytest.mark.parametrize(
+    'path',
+    [
+        REPO_ROOT / '_meta/docker/features/docker/entrypoint.sh',
+        REPO_ROOT / '_meta/tools/pull',
+    ],
+)
+def test_bootstrap_uses_pinned_nested_submodule_revisions(path):
+    source = path.read_text(encoding='utf-8')
+    assert 'submodule update --init' in source
+    assert 'submodule update --init --remote' not in source
+    assert 'feature/Social-Nav' not in source
+
+
 def test_entry_point_adds_no_lines_to_existing_files():
     """This lane wraps; it must not have edited the machinery it calls."""
     result = subprocess.run(
