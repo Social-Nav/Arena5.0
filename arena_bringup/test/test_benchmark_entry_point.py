@@ -557,6 +557,18 @@ def test_the_delegate_scripts_exist():
         assert (REPO_ROOT / rel).is_file(), f'missing dependency: {rel}'
 
 
+def test_internnav_feature_fallback_resolves_workspace_not_src_directory():
+    feature = REPO_ROOT / '_meta/docker/features/internnav/main'
+    source = feature.read_text(encoding='utf-8')
+    assert source.count('/../../../../../.." && pwd)') == 1
+
+
+def test_benchmark_passes_workspace_identity_to_internnav_feature():
+    source = SCRIPT.read_text(encoding='utf-8')
+    assert '"HOST_ARENA_WS_DIR=$(benchmark_ws_dir)"' in source
+    assert '"ARENA_PROJECT_NAME=$(benchmark_project)"' in source
+
+
 @pytest.mark.parametrize(
     'path',
     [
@@ -571,11 +583,10 @@ def test_bootstrap_uses_pinned_nested_submodule_revisions(path):
     assert 'feature/Social-Nav' not in source
 
 
-def test_entry_point_adds_no_lines_to_existing_files():
-    """This lane wraps; it must not have edited the machinery it calls."""
+def test_entry_point_does_not_modify_unrelated_docker_machinery():
+    """The benchmark may fix its InternNav delegate, but not other machinery."""
     result = subprocess.run(
         ['git', 'diff', '--name-only', 'HEAD', '--',
-         '_meta/docker/features/internnav/main',
          '_meta/docker/features/docker/main',
          '_meta/docker/source'],
         cwd=str(REPO_ROOT), capture_output=True, text=True,

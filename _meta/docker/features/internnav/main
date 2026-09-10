@@ -5,7 +5,9 @@ name="internnav"
 if ! declare -F arena_docker_compose >/dev/null 2>&1; then
     arena_docker_compose(){
         local ws_dir arena_dir project image host_uid host_gid
-        ws_dir="${HOST_ARENA_WS_DIR:-${ARENA_WS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../../../../.." && pwd)}}"
+        # This file is <ws>/src/Arena/_meta/docker/features/internnav/main.
+        # Six parent traversals reach <ws>; five incorrectly resolve to <ws>/src.
+        ws_dir="${HOST_ARENA_WS_DIR:-${ARENA_WS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../../../../../.." && pwd)}}"
         arena_dir="${ARENA_DIR:-$ws_dir/src/Arena}"
         project="${ARENA_PROJECT_NAME:-arena-$(basename "$ws_dir")}"
         image="${ARENA_IMAGE:-arena:dev}"

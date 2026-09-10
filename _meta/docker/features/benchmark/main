@@ -577,6 +577,9 @@ validate_eval_extra(){
 do_serve(){
     run_step "start the InternNav model server and ROS client in internnav-1" \
         env \
+            "HOST_ARENA_WS_DIR=$(benchmark_ws_dir)" \
+            "ARENA_PROJECT_NAME=$(benchmark_project)" \
+            "ARENA_IMAGE=${ARENA_IMAGE:-arena:dev}" \
             "ARENA_INTERNNAV_MODEL_PATH=$PROFILE_SERVER_MODEL_PATH" \
             "ARENA_INTERNNAV_RGB_TOPIC=$PROFILE_SERVER_RGB_TOPIC" \
             "ARENA_INTERNNAV_DEPTH_TOPIC=$PROFILE_SERVER_DEPTH_TOPIC" \
@@ -601,6 +604,9 @@ do_serve(){
 start_server_background(){
     local serve_log="$1"
     setsid env \
+        "HOST_ARENA_WS_DIR=$(benchmark_ws_dir)" \
+        "ARENA_PROJECT_NAME=$(benchmark_project)" \
+        "ARENA_IMAGE=${ARENA_IMAGE:-arena:dev}" \
         "ARENA_INTERNNAV_MODEL_PATH=$PROFILE_SERVER_MODEL_PATH" \
         "ARENA_INTERNNAV_RGB_TOPIC=$PROFILE_SERVER_RGB_TOPIC" \
         "ARENA_INTERNNAV_DEPTH_TOPIC=$PROFILE_SERVER_DEPTH_TOPIC" \
