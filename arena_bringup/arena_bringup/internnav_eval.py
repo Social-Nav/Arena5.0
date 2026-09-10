@@ -3748,6 +3748,56 @@ def _select_evaluator_returncode(
     return 0
 
 
+def _pipeline_postprocess_returncode(
+    *,
+    metrics_returncode,
+    vln_task_metrics_returncode,
+    social_metrics_returncode,
+    artifact_validation_returncode,
+    artifact_validation,
+) -> int:
+    """Return a pipeline error code without conflating model score failures.
+
+    ``social_nav_validation`` intentionally returns 1 when the evaluated model
+    misses the task or a social threshold.  That is a valid benchmark result,
+    not a failure to execute the pipeline.  The generated canonical result
+    preserves that score verdict.
+    """
+    for returncode in (
+        metrics_returncode,
+        vln_task_metrics_returncode,
+        social_metrics_returncode,
+    ):
+        if returncode not in (None, 0):
+            return int(returncode)
+    if artifact_validation_returncode in (None, 0):
+        return 0
+    if artifact_validation_returncode != 1:
+        return int(artifact_validation_returncode)
+
+    checks = artifact_validation.get('checks', {}) if isinstance(artifact_validation, dict) else {}
+    required_runtime_checks = ('environment', 'humans', 'model_control', 'videos', 'dynamic_scene')
+    if not all(
+        bool((checks.get(name) or {}).get('pass'))
+        for name in required_runtime_checks
+    ):
+        return 1
+    metrics = checks.get('metrics', {}) if isinstance(checks.get('metrics'), dict) else {}
+    required_metric_evidence = (
+        'metrics_csv_present',
+        'vln_task_metrics_present',
+        'social_metrics_present',
+        'required_social_fields_present',
+        'reference_path_ready',
+    )
+    if not all(bool(metrics.get(name)) for name in required_metric_evidence):
+        return 1
+    # The remaining validation failures are score outcomes (task/social
+    # thresholds), which must be recorded without turning execution into an
+    # infrastructure error.
+    return 0
+
+
 def _profile_bootstrap(argv: list[str] | None = None) -> tuple[list[str], dict, dict]:
     """Resolve profile defaults before constructing the full CLI parser.
 
@@ -4713,11 +4763,13 @@ def main(argv: list[str] | None = None) -> int:
             manifest['artifacts']['social_metrics_present'] = os.path.exists(os.path.join(output_dir, 'social_metrics.json'))
             manifest['artifacts']['artifact_validation_present'] = os.path.exists(os.path.join(output_dir, 'artifact_validation.json'))
             _write_yaml(manifest_path, manifest)
-            if vln_task_metrics_returncode != 0:
-                return vln_task_metrics_returncode
-            if social_metrics_returncode != 0:
-                return social_metrics_returncode
-            return artifact_validation_returncode or 0
+            return _pipeline_postprocess_returncode(
+                metrics_returncode=None,
+                vln_task_metrics_returncode=vln_task_metrics_returncode,
+                social_metrics_returncode=social_metrics_returncode,
+                artifact_validation_returncode=artifact_validation_returncode,
+                artifact_validation=_read_json_if_exists(os.path.join(output_dir, 'artifact_validation.json')),
+            )
 
         while True:
             launch_returncode = launch_proc.poll()
@@ -4930,7 +4982,13 @@ def main(argv: list[str] | None = None) -> int:
     if metrics_returncode != 0 and manifest['result']['end_reason'] == 'finished':
         manifest['result']['end_reason'] = 'metrics_failed'
     social_postprocess_returncode = run_social_postprocess()
-    postprocess_returncode = metrics_returncode or social_postprocess_returncode
+    postprocess_returncode = _pipeline_postprocess_returncode(
+        metrics_returncode=metrics_returncode,
+        vln_task_metrics_returncode=vln_task_metrics_returncode,
+        social_metrics_returncode=social_metrics_returncode,
+        artifact_validation_returncode=artifact_validation_returncode,
+        artifact_validation=_read_json_if_exists(os.path.join(output_dir, 'artifact_validation.json')),
+    )
     evaluator_returncode = _select_evaluator_returncode(
         lifecycle_returncode=launch_returncode,
         postprocess_returncode=postprocess_returncode,

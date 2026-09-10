@@ -77,7 +77,8 @@ Build the same site that GitHub Actions publishes:
 
 ```bash
 cd /home/ubuntu/arena_jazzy_ws/src/Arena
-uv run --frozen --only-group docs mkdocs build --strict
+UV_PROJECT_ENVIRONMENT=.venv-docs \
+  uv run --python 3.12 --frozen --only-group docs mkdocs build --strict
 ```
 
 The published site is <https://social-nav.github.io/Arena5.0/>. Pushes that

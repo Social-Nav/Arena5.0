@@ -7,6 +7,7 @@ import yaml
 from arena_bringup.benchmark_result import (
     BENCHMARK_RESULT_SCHEMA,
     generate_benchmark_result,
+    main as benchmark_result_main,
 )
 from arena_bringup.social_nav_metrics_aggregate import (
     aggregate_summary,
@@ -249,6 +250,14 @@ def test_valid_task_failure_is_distinct_from_invalid_run(tmp_path):
     assert result['verdict']['benchmark_ready'] is False
     assert result['verdict']['status'] == 'failed'
     assert result['verdict']['primary_failure'] == 'task_failure'
+    assert benchmark_result_main([
+        '--dir', str(run_dir),
+        '--require-valid',
+    ]) == 0
+    assert benchmark_result_main([
+        '--dir', str(run_dir),
+        '--require-ready',
+    ]) == 1
 
 
 def test_aggregate_summary_has_counts_rates_and_groups(tmp_path):

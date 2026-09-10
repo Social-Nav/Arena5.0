@@ -43,9 +43,19 @@ src/Arena/_meta/docker/features/benchmark/main plan run
 src/Arena/_meta/docker/features/benchmark/main run
 ```
 
+On a cold checkout, `doctor` reports container-local checks as `SKIP` when a
+service is stopped. This is expected: `run` starts all three services and repeats
+those checks as hard gates before loading the model or launching the evaluator.
+
 The default case is `isaac_eval`, `grscenes_20_v1/default_2`, `Ai2_Bot2`, one
 episode with a 300-second simulation timeout, external InternNav direct control,
 social evaluation, and video capture.
+The command succeeds when the evaluation and artifact pipeline completes. A
+model-level `TIMEOUT`, `goal_not_reached`, collision, or social-threshold failure
+is still a valid scored benchmark result and is recorded in
+`benchmark_result.json`; it does not make the pipeline command fail. Use the
+explicit `benchmark_result --require-ready` check below when CI should also gate
+on the model meeting every task and social threshold.
 The entry point is intentionally fixed to `isaac_eval`. Use `--case
 WORLD/SCENARIO`, or the individual `--world`, `--scenario`, `--robot`, and
 `--timeout` options, to change the core case. Strict runs
@@ -191,15 +201,20 @@ docker exec -e RUN_DIR="$CONTAINER_RUN_DIR" \
   ros2 run arena_evaluation metrics --dir "$RUN_DIR" &&
   ros2 run arena_evaluation vln_task_metrics --dir "$RUN_DIR" &&
   ros2 run arena_evaluation social_metrics --dir "$RUN_DIR" &&
-  ros2 run arena_bringup social_nav_validation --dir "$RUN_DIR"; validation_rc=$?
-  ros2 run arena_bringup benchmark_result --dir "$RUN_DIR"
-  exit $validation_rc
+  ros2 run arena_bringup social_nav_validation --dir "$RUN_DIR" || validation_rc=$?
+  test "${validation_rc:-0}" -le 1 &&
+  ros2 run arena_bringup benchmark_result --dir "$RUN_DIR" --require-valid
 '
 ```
+
+`social_nav_validation` exits `1` for a valid run whose model missed task or
+social thresholds; the command above deliberately preserves that verdict in the
+artifacts and then uses `--require-valid` to gate pipeline completeness.
 
 ## Build This Documentation
 
 ```bash
 cd /home/ubuntu/arena_jazzy_ws/src/Arena
-uv run --frozen --only-group docs mkdocs build --strict
+UV_PROJECT_ENVIRONMENT=.venv-docs \
+  uv run --python 3.12 --frozen --only-group docs mkdocs build --strict
 ```

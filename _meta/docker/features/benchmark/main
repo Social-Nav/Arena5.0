@@ -205,6 +205,7 @@ run_step_sh(){
 # Preconditions
 # ---------------------------------------------------------------------------
 CHECK_FAILURES=0
+ALLOW_STOPPED_CONTAINERS=0
 check_report(){
     local status="$1" label="$2"; shift 2
     printf '  [%-4s] %s\n' "$status" "$label"
@@ -342,6 +343,9 @@ check_containers(){
     done
     if [ -z "$down" ]; then
         check_report PASS "containers running: $BENCHMARK_SERVICES"
+    elif [ "$ALLOW_STOPPED_CONTAINERS" = "1" ]; then
+        check_report SKIP "containers not running:$down" \
+            "this is valid before '$name run'; run starts them and repeats every runtime check"
     else
         check_report FAIL "containers not running:$down" \
             "run '$name up' to start them"
@@ -349,14 +353,39 @@ check_containers(){
 }
 
 check_arena_built(){
-    local cname
+    local cname state
     cname="$(benchmark_container arena)"
+    state="$(docker inspect -f '{{.State.Running}}' "$cname" 2>/dev/null)"
+    if [ "$state" != "true" ] && [ "$ALLOW_STOPPED_CONTAINERS" = "1" ]; then
+        check_report SKIP "arena: not running, cannot inspect /.built yet" \
+            "'$name run' starts the container and repeats this check before evaluation"
+        return 0
+    fi
     if docker exec "$cname" test -f /.built >/dev/null 2>&1; then
         check_report PASS "arena container reports /.built"
     else
         check_report FAIL "arena container has not finished building its workspace" \
             "the /.built marker is absent inside $cname" \
             "this is the same marker _meta/docker/source waits for"
+    fi
+}
+
+check_arena_venv(){
+    local cname state
+    cname="$(benchmark_container arena)"
+    state="$(docker inspect -f '{{.State.Running}}' "$cname" 2>/dev/null)"
+    if [ "$state" != "true" ] && [ "$ALLOW_STOPPED_CONTAINERS" = "1" ]; then
+        check_report SKIP "arena: not running, cannot inspect /opt/venv yet" \
+            "'$name run' starts the container and repeats this check before evaluation"
+        return 0
+    fi
+    if docker exec "$cname" test -x /opt/venv/bin/python3 >/dev/null 2>&1; then
+        check_report PASS "arena runtime venv executable at /opt/venv/bin/python3"
+    else
+        check_report FAIL "arena runtime venv is missing /opt/venv/bin/python3" \
+            "the venv is bind-mounted from src/Arena/.venv; do not reuse it for docs" \
+            "build docs with UV_PROJECT_ENVIRONMENT=.venv-docs" \
+            "then recreate the runtime venv through the Arena container setup"
     fi
 }
 
@@ -424,8 +453,14 @@ check_gpu_devices(){
 }
 
 check_model_runtime(){
-    local cname
+    local cname state
     cname="$(benchmark_container internnav)"
+    state="$(docker inspect -f '{{.State.Running}}' "$cname" 2>/dev/null)"
+    if [ "$state" != "true" ] && [ "$ALLOW_STOPPED_CONTAINERS" = "1" ]; then
+        check_report SKIP "internnav: not running, cannot inspect the model venv yet" \
+            "'$name run' starts the container and repeats this check before loading the model"
+        return 0
+    fi
     if docker exec "$cname" test -x /opt/internnav_venv/bin/python >/dev/null 2>&1; then
         check_report PASS "internnav model venv provisioned"
     else
@@ -455,6 +490,7 @@ check_runtime_preconditions(){
     echo "containers and runtime"
     check_containers
     check_arena_built
+    check_arena_venv
     check_gpu_devices
     check_model_runtime
 }
@@ -471,8 +507,10 @@ abort_on_check_failures(){
 doctor(){
     log "checking preconditions"
     CHECK_FAILURES=0
+    ALLOW_STOPPED_CONTAINERS=1
     check_static_preconditions
     check_runtime_preconditions
+    ALLOW_STOPPED_CONTAINERS=0
     abort_on_check_failures
     log "all preconditions passed"
     return 0
