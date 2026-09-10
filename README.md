@@ -25,6 +25,7 @@ when evaluation exits.
 
 ```bash
 cd /home/ubuntu/arena_jazzy_ws
+src/Arena/_meta/docker/features/benchmark/main config
 src/Arena/_meta/docker/features/benchmark/main doctor
 src/Arena/_meta/docker/features/benchmark/main plan run
 src/Arena/_meta/docker/features/benchmark/main run
@@ -39,11 +40,15 @@ Common overrides:
 
 ```bash
 src/Arena/_meta/docker/features/benchmark/main run \
-  --world grscenes_20_v1 \
-  --scenario default_4 \
+  --case grscenes_20_v1/default_4 \
   --timeout 300 \
   -- --output-prefix review/default_4
 ```
+
+Cross-machine settings are versioned in
+`arena_bringup/configs/benchmark/profiles/internnav_grscenes.yaml`; host paths
+and credentials remain in the workspace `.env`. CLI case options override the
+profile without changing it.
 
 See the [benchmark runbook](docs/benchmark/running-benchmarks.md) for build,
 manual launch, cleanup, and postprocessing commands.

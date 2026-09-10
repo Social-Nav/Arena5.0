@@ -21,6 +21,12 @@ Important files include:
 | `odom.csv` | Robot odometry stream. |
 | `video_index.json` | Video paths, frame counts, codec metadata, and finalization status. |
 
+`run_manifest.yaml` records the versioned benchmark profile under
+`benchmark_profile`: profile id, schema version, source path, SHA-256, copied
+snapshot, precedence rule, and the resolved core parameters. This preserves exact
+configuration provenance even though the normal launch command is intentionally
+short.
+
 ## Canonical Result
 
 Use `benchmark_result.json` as the stable machine-readable interface. Detailed

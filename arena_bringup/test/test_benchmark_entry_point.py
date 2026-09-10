@@ -138,6 +138,15 @@ def test_help_names_the_three_containers():
         assert container in out
 
 
+def test_config_prints_profile_identity_and_effective_values():
+    result = _run(['config'])
+    assert result.returncode == 0, result.stderr
+    assert 'profile_id=internnav_grscenes' in result.stdout
+    assert 'profile_sha256=' in result.stdout
+    assert 'world=grscenes_20_v1' in result.stdout
+    assert 'precedence=CLI/case override > machine-local paths/device > benchmark profile > legacy code defaults' in result.stdout
+
+
 def test_help_states_the_cost_of_the_slow_paths():
     """Requirement: say what each verb costs before someone runs it."""
     out = _run(['help']).stdout
@@ -292,12 +301,22 @@ def test_eval_forwards_the_rmw_and_domain():
     assert 'ROS_DOMAIN_ID=1' in out
 
 
+def test_ambient_dds_drift_is_rejected_before_docker(tmp_path):
+    result = _run(
+        ['plan', 'eval'],
+        env={**_docker_free_env(tmp_path), 'ROS_DOMAIN_ID': '7'},
+    )
+    assert result.returncode != 0
+    assert 'conflicts with profile value 1' in result.stderr
+    assert 'PLAN MODE CALLED DOCKER' not in result.stderr
+
+
 def test_doctor_fails_when_the_transport_is_wrong(tmp_path):
     result = _run(['doctor'], env={'FASTDDS_BUILTIN_TRANSPORTS': 'SHM'})
     assert result.returncode != 0
     combined = result.stdout + result.stderr
     assert 'FASTDDS_BUILTIN_TRANSPORTS' in combined
-    assert 'FAIL' in combined
+    assert 'conflicts with profile value UDPv4' in combined
 
 
 # --------------------------------------------------------------------------
@@ -305,10 +324,9 @@ def test_doctor_fails_when_the_transport_is_wrong(tmp_path):
 # --------------------------------------------------------------------------
 
 def test_eval_selects_the_async_direct_cmdvel_launch_path():
-    """--internnav-direct-cmd-vel is what makes the generated launch command
-    use internnav_async_eval.launch.py. Losing it silently changes the run."""
-    out = _run(['plan', 'eval']).stdout
-    assert '--internnav-direct-cmd-vel' in out
+    """The tracked profile selects the async direct-cmd-vel launch path."""
+    out = _run(['config']).stdout
+    assert 'direct_cmd_vel=true' in out
 
 
 def test_eval_calls_the_existing_driver_rather_than_reimplementing_it():
@@ -317,8 +335,8 @@ def test_eval_calls_the_existing_driver_rather_than_reimplementing_it():
 
 
 def test_eval_requests_video_artifacts():
-    out = _run(['plan', 'eval']).stdout
-    assert '--save-eval-video' in out
+    out = _run(['config']).stdout
+    assert 'save_eval_video=true' in out
 
 
 def test_eval_runs_in_the_arena_container():
@@ -341,11 +359,54 @@ def test_extra_arguments_preserve_shell_argument_boundaries():
 
 def test_default_eval_uses_the_current_strict_benchmark_contract():
     out = _run(['plan', 'eval']).stdout
-    assert '--sim isaac_eval' in out
+    assert '--benchmark-profile ' in out
+    assert 'internnav_grscenes.yaml' in out
     assert '--world grscenes_20_v1' in out
     assert '--scenario-file default_2' in out
     assert '--timeout 300' in out
-    assert '--social-eval' in out
+    assert '--internnav-device cuda:0' in out
+
+
+def test_server_and_eval_share_profile_timing_mode():
+    serve = _run(['plan', 'serve']).stdout
+    config = _run(['config']).stdout
+    assert 'ARENA_INTERNNAV_TIMING_MODE=wall' in serve
+    assert 'direct_cmd_vel=true' in config
+
+
+def test_case_option_overrides_world_and_scenario_together():
+    out = _run(['plan', 'eval', '--case', 'grscenes_15_v1/default_1']).stdout
+    assert '--world grscenes_15_v1' in out
+    assert '--scenario-file default_1' in out
+
+
+def test_case_option_rejects_missing_scenario():
+    result = _run(['plan', 'eval', '--case', 'grscenes_15_v1'])
+    assert result.returncode == 1
+    assert 'WORLD/SCENARIO' in result.stderr
+
+
+def test_custom_profile_is_validated_and_used(tmp_path):
+    source = REPO_ROOT / 'arena_bringup/configs/benchmark/profiles/internnav_grscenes.yaml'
+    data = __import__('yaml').safe_load(source.read_text())
+    data['id'] = 'test_profile'
+    data['evaluation']['world'] = 'grscenes_15_v1'
+    data['evaluation']['scenario'] = 'default_1'
+    profile = tmp_path / 'profile.yaml'
+    profile.write_text(__import__('yaml').safe_dump(data))
+    result = _run(['plan', 'eval', '--profile', str(profile)])
+    assert result.returncode == 0, result.stderr
+    assert '--world grscenes_15_v1' in result.stdout
+    assert '--scenario-file default_1' in result.stdout
+
+
+def test_invalid_profile_fails_before_docker(tmp_path):
+    profile = tmp_path / 'profile.yaml'
+    profile.write_text('schema_version: 1\nid: broken\n')
+    result = _run(['plan', 'eval', '--profile', str(profile)], env=_docker_free_env(tmp_path))
+    assert result.returncode != 0
+    assert 'profile validation failed' in result.stderr
+    assert 'PLAN MODE CALLED DOCKER' not in result.stderr
 
 
 def test_empty_scenario_disables_the_default_scenario_argument():
@@ -595,7 +656,7 @@ def test_run_checks_runtime_preconditions_after_starting_the_containers():
     # The real branch must run the container checks between do_up and the model
     # server and abort when one fails. Comments are stripped first.
     body = SCRIPT.read_text().split('do_run(){', 1)[1].split('\n}\n', 1)[0]
-    real = body.split('fi', 1)[1]
+    real = body.split('\n    fi\n', 1)[1]
     real = '\n'.join(
         line for line in real.splitlines() if not line.lstrip().startswith('#')
     )
@@ -619,7 +680,7 @@ def test_run_checks_runtime_preconditions_after_starting_the_containers():
 def test_run_checks_static_preconditions_before_starting_containers():
     source = SCRIPT.read_text()
     body = source.split('do_run(){', 1)[1].split('\n}\n', 1)[0]
-    real = body.split('if [ "$DRY_RUN" = "1" ]', 1)[1].split('fi', 1)[1]
+    real = body.split('if [ "$DRY_RUN" = "1" ]', 1)[1].split('\n    fi\n', 1)[1]
 
     positions = [
         real.index('check_static_preconditions'),
