@@ -87,9 +87,21 @@ done
 unset profile_scan profile_i
 
 profile_loader="$(benchmark_script_arena_dir)/arena_bringup/arena_bringup/benchmark_profile.py"
-profile_python="$(benchmark_script_arena_dir)/.venv/bin/python"
-if [ ! -x "$profile_python" ]; then
-    profile_python=python3
+profile_python=""
+for profile_python_candidate in \
+    python3 \
+    /usr/bin/python3 \
+    "$(benchmark_script_arena_dir)/.venv/bin/python"
+do
+    if command -v "$profile_python_candidate" >/dev/null 2>&1 \
+        && "$profile_python_candidate" -c 'import yaml' >/dev/null 2>&1; then
+        profile_python="$profile_python_candidate"
+        break
+    fi
+done
+if [ -z "$profile_python" ]; then
+    echo "[benchmark] FATAL: profile loader requires Python 3 with PyYAML" >&2
+    exit 1
 fi
 profile_assignments="$(
     "$profile_python" "$profile_loader" shell --profile "$PROFILE_PATH"
@@ -105,7 +117,7 @@ for contract_name in ROS_DOMAIN_ID RMW_IMPLEMENTATION FASTDDS_BUILTIN_TRANSPORTS
         exit 1
     fi
 done
-unset profile_loader profile_python profile_assignments contract_name profile_name
+unset profile_loader profile_python profile_python_candidate profile_assignments contract_name profile_name
 PROFILE_PATH="$PROFILE_PATH"
 
 # The DDS contract is benchmark semantics, so it comes from the tracked profile
