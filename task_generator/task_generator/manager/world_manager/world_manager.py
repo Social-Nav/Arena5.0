@@ -340,7 +340,10 @@ class WorldManager(NodeInterface):
             WorldOccupancy.not_full(occupancy).astype(
                 np.uint8) * np.iinfo(np.uint8).max,
             filt,
-            mode="full",
+            # Keep output indices aligned with the occupancy grid.  "full"
+            # adds a safe_dist-wide border, whose indices were previously
+            # converted as though they belonged to the original map.
+            mode="same",
             boundary="fill",
             fillvalue=int(WorldOccupancy.FULL)
         )

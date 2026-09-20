@@ -53,6 +53,7 @@ services:
     build:
       context: .
       dockerfile: src/Arena/_meta/docker/features/isaac/Dockerfile
+    network_mode: host
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
       - "/tmp/.X11-unix:/tmp/.X11-unix:rw"
