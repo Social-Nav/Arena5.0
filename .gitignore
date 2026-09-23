@@ -88,6 +88,7 @@ __pycache__/
 
 # local-only notes (kept on disk, not shared)
 /docs/实现细节.md
+/docs/推送记录.md
 # Superseded by the Chinese 场景与社交配置说明.md, which is the tracked version.
 /docs/scenario_and_social_config.md
 /docs/social_mpc_upstream_params/
