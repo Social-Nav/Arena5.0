@@ -291,4 +291,6 @@ def test_git_source_provenance_accepts_repository_root():
     assert provenance['git_repo'] == str(repo_root)
     assert len(provenance['git_commit']) == 40
     assert provenance['git_branch']
-    assert provenance['git_dirty'] is True
+    # A release checkout is expected to be clean; development checkouts may be
+    # dirty. The provenance contract is the boolean field, not either state.
+    assert isinstance(provenance['git_dirty'], bool)
