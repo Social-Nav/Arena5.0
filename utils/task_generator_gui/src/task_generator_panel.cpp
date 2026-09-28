@@ -430,7 +430,9 @@ namespace task_generator_gui
     }
     void TaskGeneratorPanel::resetScenarioButtonActivated()
     {
+        // Button-driven reset: push the current params, THEN reset exactly once.
         setParams();
+        doResetTask();
     }
     void TaskGeneratorPanel::spawnRobotButtonActivated()
     {

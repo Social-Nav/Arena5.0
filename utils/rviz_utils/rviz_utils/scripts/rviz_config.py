@@ -119,10 +119,9 @@ class ConfigFileGenerator(Node):
                 self.get_logger().info(f"Added MarkerArray display for pedestrians: {topic_name}")
 
             elif topic_type == 'people_msgs/msg/People':
-                # Add raw people display as fallback
-                display = Utils.Displays.pedestrians_raw(topic_name)
-                pedestrian_group['Displays'].append(display)
-                self.get_logger().info(f"Added raw People display: {topic_name}")
+                # No display: a Marker display cannot render People, and subscribing with the
+                # wrong type breaks `ros2 topic echo`. Pedestrians come from arena_peds markers.
+                self.get_logger().info(f"Found People topic: {topic_name} (no display)")
 
             elif topic_type == 'hunav_msgs/msg/Agents':
                 # Could add custom agent display here if needed

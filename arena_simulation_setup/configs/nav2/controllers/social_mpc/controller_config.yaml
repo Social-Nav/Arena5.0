@@ -1,0 +1,69 @@
+# Social-profile overrides (passive/neutral/aggressive) and scenario params: docs/场景与社交配置说明.md
+controller_plugins:
+  - FollowPath
+controller_plugins_dict:
+  FollowPath:
+    # RotationShim wraps social_mpc: rotates in place past angular_dist_threshold, then hands
+    # path-following to the MPC. Keeps sharp turns from becoming slow arcs.
+    plugin: "nav2_rotation_shim_controller::RotationShimController"
+    primary_controller: "nav2_social_mpc_controller::SocialMPCController"
+    angular_dist_threshold: 1.5708         # 90°, start in-place rotate
+    angular_disengage_threshold: 0.1745    # 10°, hand back to MPC
+    forward_sampling_distance: 0.5
+    rotate_to_heading_angular_vel: 0.8     # coast after cutoff is w^2/(2*max_angular_accel) = 5.7°,
+                                           # still inside the 10° gate
+    max_angular_accel: 3.2
+    # Rotation is simulated this far ahead and rejected if it would collide.
+    simulate_ahead_time: 1.0
+    rotate_to_goal_heading: false
+    closed_loop: true
+    # ---- social_mpc params, inline in the same FollowPath namespace ----
+    transform_tolerance: 1.0
+    trajectorizer:
+      omnidirectional: false
+      desired_linear_vel: 0.35   # cruise TARGET the optimizer tracks
+      lookahead_dist: 0.3
+      max_angular_vel: 1.5       # reference shaping only; the enforced bound is optimizer.max_angular_velocity
+      rotate_to_heading_min_angle: 3.14   # disables the trajectorizer's in-place-rotate branch (RotationShim owns it)
+      base_frame: "${frame:-}${robot_base_frame:-base_link}"
+      time_step: 0.05
+      max_time: 1.2             # MUST equal optimizer.control_horizon * time_step (24 * 0.05).
+                                # DistanceCost aims every horizon step at this reference's LAST
+                                # point, so a longer reference forces overspeed. Optimizer warns
+                                # and self-corrects on drift. Not the solver budget.
+    optimizer:
+      linear_solver_type: "DENSE_SCHUR"
+      param_tol: 1.0e-9
+      fn_tol: 1.0e-5
+      gradient_tol: 1.0e-8
+      max_iterations: 50
+      solver_time_budget: 0.05    # Ceres wall-clock cap per solve = one control period
+      max_angular_velocity: 1.4   # hard bound on emitted |wz|. Stay <= velocity_smoother max_velocity[2]
+      min_linear_velocity: -0.1   # a little reverse so the robot can back out when obstacle cost pins vx=0
+      max_linear_velocity: 0.8    # hard CEILING on vx only; nothing tracks it. Cruise speed is
+                                  # trajectorizer.desired_linear_vel. Must stay <= velocity_smoother
+                                  # max_velocity[0] (0.8) or the smoother clips the MPC output.
+      control_horizon: 24
+      parameter_block_length: 6
+      discretization: 1
+      debug_optimizer: false
+      current_path_weight: 1.0
+      current_cmds_weight: 0.3
+      weights:
+        distance_weight: 50.0
+        social_weight: 700.0
+        proxemics_weight: 150.0   # HEIGHT of the personal-space bubble; too high => refuses to pass in corridors
+        proxemics_d0: 1.0         # RANGE (effective ~1.5*d0); d0 >= 2 tends to freeze indoors
+        proxemics_alpha: 3.0      # peak scaling; use proxemics_weight for strength
+        velocity_weight: 40.0     # 8->40: distance term's gradient vanishes near a short path end, so
+                                  # block[0] solved to vx~0 and the robot never started. Lower toward 20 if it overshoots.
+        angle_weight: 60.0        # 180->60: at 180 the align term out-weighed "move forward" and pinned vx=0 in corridors
+        agent_angle_weight: 0.0
+        velocity_feasibility_weight: 5.0
+        goal_align_weight: 8.0
+        obstacle_weight: 0.05     # 0.1->0.05: at 0.1 a narrow-corridor centreline out-weighed the velocity
+                                  # term and the robot crept. Raise back toward 0.1 if it hugs walls.
+        social_clear_distance: 2.0
+        social_safety_distance: 0.9
+        social_mid_gain: 1.0
+        social_near_gain: 6.0

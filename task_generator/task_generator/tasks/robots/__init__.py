@@ -25,9 +25,14 @@ class TM_Robots(TaskMode):
     """
 
     _last_reset: int
+    _last_clock_seen: int | None = None  # for clock-jump/rewind detection (B2)
+    # A single is_done poll is 0.5 s apart; any sim-clock step larger than this (s)
+    # between polls is treated as a pause/unpause jump, not real elapsed episode time.
+    _TIMEOUT_REBASELINE_STEP: int = 5
 
     async def reset(self, **kwargs):
         self._last_reset = self._PROPS.clock.clock.sec
+        self._last_clock_seen = self._last_reset
         self._last_reset_wall = time.monotonic()
         self._last_done_reason = DONE_REASON_RUNNING
 
@@ -88,8 +93,15 @@ class TM_Robots(TaskMode):
             bool: True if all robots are done, False otherwise.
 
         """
+        now = self._PROPS.clock.clock.sec
+        if self._last_clock_seen is not None:
+            step = now - self._last_clock_seen
+            if step < 0 or step > self._TIMEOUT_REBASELINE_STEP:
+                self._last_reset = now
+        self._last_clock_seen = now
+
         timeout_sec = self.node.conf.Robot.TIMEOUT.value
-        sim_elapsed = self._PROPS.clock.clock.sec - self._last_reset
+        sim_elapsed = now - self._last_reset
         wall_elapsed = time.monotonic() - getattr(self, '_last_reset_wall', time.monotonic())
         wall_timeout_sec = self.node.rosparam[float].get('timeout_wall_sec', 0.0)
         if wall_timeout_sec <= 0.0:
@@ -117,4 +129,10 @@ class TM_Robots(TaskMode):
             if DONE_REASON_MODEL_STOP in done_reasons
             else DONE_REASON_GOAL_REACHED
         )
+        reached = ', '.join(self._PROPS.robots.keys())
+        get_logger = getattr(self.node, 'get_logger', None)
+        if callable(get_logger):
+            get_logger().debug(
+                f"[Reset-reason] {self._last_done_reason}: [{reached}] after {sim_elapsed}s"
+            )
         return True

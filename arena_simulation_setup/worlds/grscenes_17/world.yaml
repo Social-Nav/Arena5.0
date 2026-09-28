@@ -1,0 +1,38 @@
+# GRScenes Test Configuration
+# This world uses a pre-built USD scene from GRScenes dataset
+#
+# Scene bounds (in cm): X[-503, 732], Y[-905, 144], Z[-4, 267]
+# Scene size: ~12.4m x 10.5m x 2.7m
+# NOTE: GRScenes uses centimeters, so we scale by 0.01 to convert to meters
+
+world_type: "usd"
+
+usd_scene:
+  # Path to the GRScenes USD file
+  path: "/data/scenes/commercial_scenes/scenes/MVSYCXYKTKJ66AABAAAAADA8_usd/start_result_navigation.usd"
+  scale: 0.01  # Convert cm to meters
+  position: [0.0, 0.0, 0.0]
+  orientation: [0.0, 0.0, 0.0, 1.0]  # quaternion [x, y, z, w]
+
+# Spawn points for robots and pedestrians
+# Scene center after scaling: X~1.14m, Y~-3.8m
+# Using positions within navigable floor area
+# spawn_points:
+#   robot:
+#     - position: [1.0, -4.0, 0.05]  # Near center of scene
+#       orientation: [0.0, 0.0, 0.0, 1.0]
+#   pedestrian:
+#     - position: [3.0, -3.0, 0.05]
+#     - position: [-1.0, -5.0, 0.05]
+#     - position: [2.0, -6.0, 0.05]
+
+# # Interactive objects configuration
+# interactive_objects:
+#   auto_load: true
+#   filter: {}
+
+# Scene metadata
+metadata:
+  scene_id: "test"
+  scene_type: "commercial"
+  source: "GRScenes-100"

@@ -1,0 +1,42 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [2.88511, -2.95043, -166.75948]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.74
+  desired_velocity: 0.96
+  waypoints:
+  - [2.562, -3.02646, -180.0]
+  - [2.08683, -3.02646, 86.98721]
+  - [2.10584, -2.66533, 59.53446]
+  - [2.2959, -2.34222, 127.56859]
+  - [2.10584, -2.09514, 105.94539]
+  - [1.95378, -1.56295, 141.34019]
+  - [1.76372, -1.4109, 174.55967]
+  - [1.36458, -1.37288, 180.0]
+  - [0.90842, -1.37288, 180.0]
+  - [0.41425, -1.37288, 180.0]
+- name: hunav_2
+  model: male_adult_medical_01
+  pose: [-1.67648, -0.08043, 25.20112]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.82
+  desired_velocity: 1.05
+  waypoints:
+  - [-1.35337, 0.07162, -15.52411]
+  - [-1.01125, -0.02341, 4.76364]
+  - [-0.55509, 0.0146, -2.29061]
+  - [-0.07992, -0.00441, -3.17983]
+  - [0.60431, -0.04242, 41.98721]
+  - [0.79438, 0.12864, -17.65013]
+  - [1.21253, -0.00441, 171.25383]
+  - [0.96544, 0.03361, 171.25383]
+robot:
+  name: robot
+  pose: [-0.97324, -3.19752, 68.19859]
+  waypoints:
+  - [0.31922, 0.03361, 68.19859]
+  behavior: delivers stock through the main open aisle while avoiding the shelf edges
+    and shoppers

@@ -1,6 +1,8 @@
 observation_sources_string: "scan" # massive bullshit, costmaps still need string param
 observation_sources:
   - scan
+collision_monitor_sources:
+  - scan
 observation_sources_dict:
   scan:
     topic: /front/scan
@@ -8,18 +10,20 @@ observation_sources_dict:
     clearing: True
     marking: True
     data_type: "LaserScan"
+    observation_persistence: 0.0
 
 polygons:
-  - StopPolygon
+  - SlowPolygon
 polygons_dict:
-  StopPolygon:
-    type: "polygon"
-    points: [0.1, 0.1, 0.1, -0.1, -0.1, -0.1, -0.1, 0.1]
-    action_type: "stop"
-    max_points: 3
+  SlowPolygon:
+    type: "circle"
+    radius: 0.4
+    action_type: "slowdown"
+    slowdown_ratio: 0.75
+    min_points: 4
     visualize: True
-    polygon_pub_topic: "polygon_stop"
-    enabled: True
+    polygon_pub_topic: "polygon_slow"
+    enabled: False   # disabled: collision_monitor no longer gates velocity. Obstacle avoidance is left to the controller + local costmap (obstacle_layer/social_layer). collision_monitor now just passes cmd_vel_smoothed -> cmd_vel unchanged.
 
 planner_plugins:
   - GridBased

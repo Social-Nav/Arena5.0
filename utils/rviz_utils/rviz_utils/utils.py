@@ -305,22 +305,6 @@ class Utils:
 
         @classmethod
         def pedestrians_raw(cls, topic, queue_size=20):
-            """
-            Alternative: Display raw people topic as simple markers
-            Fallback if MarkerArray conversion node is not available
-            """
-            return {
-                "Class": "rviz_default_plugins/Marker",
-                "Name": "Pedestrians (Raw)",
-                "Enabled": True,
-                "Topic": {
-                    "Value": topic,
-                    "Depth": queue_size,
-                    "History Policy": "Keep Last",
-                    "Reliability Policy": "Best Effort",
-                    "Durability Policy": "Volatile",
-                },
-                "Color": "50; 150; 255",  # Light blue for pedestrians
-                "Alpha": 0.8,
-                "Value": True,
-            }
+            """Removed: a Marker display cannot render People messages, and subscribing
+            with the wrong type makes `ros2 topic echo /people` fail on type conflict."""
+            raise NotImplementedError("use pedestrians() on the arena_peds MarkerArray topic")

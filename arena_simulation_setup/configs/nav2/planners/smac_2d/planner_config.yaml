@@ -8,11 +8,11 @@ planner_plugins_dict:
     allow_unknown: true
     max_iterations: 1000000
     max_on_approach_iterations: 1000
-    max_planning_time: 2.0
+    max_planning_time: 0.5
     cost_travel_multiplier: 2.0
     use_final_approach_orientation: false
     smoother:
       max_iterations: 1000
-      w_smooth: 0.3
-      w_data: 0.2
+      w_smooth: 0.3   # ↑ from 0.1: favour smoothness over hugging the raw grid path
+      w_data: 0.2     # ↓ from 0.4: allow the smoother to pull further off the jagged A* path
       tolerance: 1.0e-10

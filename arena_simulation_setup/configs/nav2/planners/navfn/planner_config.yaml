@@ -4,4 +4,4 @@ planner_plugins_dict:
     plugin: 'nav2_navfn_planner::NavfnPlanner'
     use_astar: true
     allow_unknown: true
-    tolerance: 0.5
+    tolerance: 1.0

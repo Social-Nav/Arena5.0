@@ -1,0 +1,42 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: biped_demo_meters
+  pose: [0.5794, -0.37382, 4.30447]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.82
+  desired_velocity: 1.02
+  waypoints:
+  - [2.21917, -0.2504, 0.0]
+  - [2.62471, -0.2504, 0.0]
+  - [3.62973, -0.2504, -2.663]
+  - [5.14607, -0.32093, 91.1233]
+  - [5.11081, 1.47753, 21.80141]
+  - [5.99241, 1.83017, 88.63607]
+  - [6.06293, 4.79233, 96.2773]
+  - [5.86898, 6.55553, 98.56089]
+  - [5.62214, 8.1953, 98.56089]
+- name: hunav_2
+  model: female_adult_business_02
+  pose: [1.93706, 4.66891, 174.17366]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.74
+  desired_velocity: 0.96
+  waypoints:
+  - [1.0731, 4.75707, 93.6745]
+  - [0.94967, 6.67895, 102.36249]
+  - [0.66756, 7.96608, 96.95296]
+  - [0.5794, 8.68899, 30.17352]
+  - [1.33757, 9.12979, -30.96376]
+  - [2.21917, 8.60083, 21.80141]
+  - [3.10077, 8.95347, 45.0]
+  - [3.62973, 9.48243, 97.6668]
+  - [3.5063, 10.39929, -3.75173]
+  - [4.58185, 10.32876, -3.75173]
+robot:
+  name: robot
+  pose: [4.98739, 6.23815, 32.67527]
+  waypoints:
+  - [7.54402, 7.87792, 32.67527]
+  behavior: travels through the open central-lower classroom area for a delivery task

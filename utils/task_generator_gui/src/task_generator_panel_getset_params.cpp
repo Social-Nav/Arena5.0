@@ -539,10 +539,21 @@ namespace task_generator_gui
         setTMObstaclesParamsRequest();
         setTMRobotsParamsRequest();
 
-        auto reset_task_request = std::make_shared<std_srvs::srv::Empty::Request>();
-        sendRequest<std_srvs::srv::Empty>(reset_task_client, reset_task_request, "reset_task");
+        // NOTE: reset_task is intentionally NOT called here. setParams() runs on the
+        // refresh path (it ends with getParams(), which rebuilds the comboboxes and
+        // re-fires their currentTextChanged handlers -> setParams()), so resetting here
+        // created a self-triggering reset loop. Reset is now button-driven only, via
+        // doResetTask() from resetScenarioButtonActivated().
 
         getParams();
+    }
+
+    void TaskGeneratorPanel::doResetTask()
+    {
+        // Explicit, one-shot task reset — only ever called from the "Reset Scenario"
+        // button handler, never from the param-refresh path.
+        auto reset_task_request = std::make_shared<std_srvs::srv::Empty::Request>();
+        sendRequest<std_srvs::srv::Empty>(reset_task_client, reset_task_request, "reset_task");
     }
 
     void TaskGeneratorPanel::setRobot()

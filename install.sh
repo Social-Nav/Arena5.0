@@ -2,7 +2,8 @@
 set -e
 
 export ARENA_REPO=${ARENA_REPO:-https://github.com/Social-Nav/Arena5.0.git}
-export ARENA_BRANCH=${ARENA_BRANCH:-feat/internnav-eval-progress}
+export ARENA_BRANCH=${ARENA_BRANCH:-main}
+export ARENA_BRANCH=${ARENA_BRANCH:-feature/social_yielding}
 export ARENA_ROS_DISTRO=${ARENA_ROS_DISTRO:-jazzy}
 
 declare -a ARENA_OPTIONAL_FEATURES=()

@@ -27,13 +27,19 @@ class PositionH(Position):
 
 
 class Goals(list[Position]):
+    # NOTE on z: a scenario waypoint is written [x, y, heading_deg], but Position.parse maps a
+    # 3-element list to (x, y, z) -- so the heading lands in z (e.g. 83.66 -> 83.66 m up).
+    # Per-waypoint headings are meaningless under SFM anyway (orientation is emergent from
+    # velocity toward the next goal; hunav.py re-derives it via atan2 and overwrites it), so the
+    # value is intentionally dropped and z is forced flat. Without this, as_poses() below would
+    # carry the bogus altitude into agent_msg.goals.
     @classmethod
     def parse(cls, obj: dict) -> "Goals":
         waypoints = [
             Position(
                 x=waypoint.get('x', 0.),
                 y=waypoint.get('y', 0.),
-                z=waypoint.get('z', 0.),
+                z=0.,
             )
             for waypoint in (obj.get(wpname) for wpname in obj['goals'])
             if waypoint is not None
@@ -165,6 +171,7 @@ class HunavDynamicObstacle:
         default=GoalTraversal.ONCE,
         converter=parse_goal_traversal,
     )
+    goal_desired_velocities: list[float] = attrs.field(factory=list)
 
     _default: typing.ClassVar["HunavDynamicObstacle"]
 
@@ -198,10 +205,26 @@ class HunavDynamicObstacle:
                 Position(
                     x=waypoint.x,
                     y=waypoint.y,
+                    z=0.,   # drop waypoint.z: it holds the scenario's heading, see Goals.parse
                 )
                 for waypoint
                 in obj.waypoints
             ])
+
+        desired_velocity = float(
+            extra.get('desired_velocity', cls._default.desired_velocity)
+        )
+        configured_goal_velocities = extra.get('waypoint_desired_velocities') or []
+        goal_desired_velocities = [
+            desired_velocity if velocity is None else float(velocity)
+            for velocity in configured_goal_velocities
+        ]
+        if len(goal_desired_velocities) < len(waypoints):
+            goal_desired_velocities.extend(
+                [desired_velocity] * (len(waypoints) - len(goal_desired_velocities))
+            )
+        elif len(goal_desired_velocities) > len(waypoints):
+            goal_desired_velocities = goal_desired_velocities[:len(waypoints)]
 
         if 'behavior' in extra:
             behavior = cls.Behavior.parse(extra['behavior'])
@@ -240,11 +263,17 @@ class HunavDynamicObstacle:
                 z=extra.get('position', {}).get('z', cls._default.init_pose.z),
                 h=extra.get('position', {}).get('h', cls._default.init_pose.h),
             ),
-            yaw=yaw,
+            # Initial heading, in RADIANS. The scenario writes it as the 3rd element of `pose`
+            # in degrees; DynamicObstacle.parse converts it, so obj.pose.orientation already
+            # holds radians here. Was hardcoded 0.0, which made every pedestrian spawn facing
+            # +x regardless of the scenario. `extra['position']['h']` keeps priority as the
+            # explicit override (same precedence as x/y/z above).
+            yaw=extra.get('position', {}).get('h', yaw),
             model=obj.model,
             goals=waypoints,
+            goal_desired_velocities=goal_desired_velocities,
             velocity=extra.get('velocity', cls._default.velocity),
-            desired_velocity=extra.get('desired_velocity', cls._default.desired_velocity),
+            desired_velocity=desired_velocity,
             radius=extra.get('radius', cls._default.radius),
             linear_vel=extra.get('linear_vel', cls._default.linear_vel),
             angular_vel=extra.get('angular_vel', cls._default.angular_vel),
@@ -302,6 +331,15 @@ class HunavDynamicObstacle:
             transmitted, wire_cyclic_goals = expand_goal_sequence(
                 list(self.goals), self.goal_traversal
             )
+            # Keep pedestrian spawning functional while an existing workspace still has the
+            # pre-segment-speed hunav_msgs build installed. In that case HuNav falls back to the
+            # top-level desired_velocity exactly as it did before; rebuilding hunav_msgs and
+            # hunav_agent_manager enables the per-goal values.
+            if hasattr(agent_msg, 'goal_desired_velocities'):
+                velocities = list(self.goal_desired_velocities)
+                if self.goal_traversal is GoalTraversal.RECIPROCATE and len(velocities) > 2:
+                    velocities.extend(velocities[-2:0:-1])
+                agent_msg.goal_desired_velocities = velocities[:len(transmitted)]
         else:
             # Pre-existing fallback for an agent with no authored waypoints.
             # These Positions serialise to exactly the Poses the previous literal
@@ -348,6 +386,9 @@ class HunavDynamicObstacle:
             extra=obj.get('extra', cls._default.extra),
             model=obj.get('model', cls._default.model),
             goals=waypoints,
+            goal_desired_velocities=[
+                obj.get('max_vel', cls._default.desired_velocity)
+            ] * len(waypoints),
             init_pose=PositionH(
                 x=obj.get('init_pose', {}).get('x', cls._default.init_pose.x),
                 y=obj.get('init_pose', {}).get('y', cls._default.init_pose.y),
@@ -418,6 +459,7 @@ HunavDynamicObstacle._default = HunavDynamicObstacle(
     model=PedestrianIdentifier(''),
     extra={},
     goals=Goals(),
+    goal_desired_velocities=[],
     id=0,
     type=1,
     skin=0,

@@ -1,0 +1,43 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [-1.35337, 0.07162, -15.52411]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.78
+  desired_velocity: 0.98
+  waypoints:
+  - [-1.01125, -0.02341, 4.76364]
+  - [-0.55509, 0.0146, -2.29061]
+  - [-0.07992, -0.00441, -3.17983]
+  - [0.60431, -0.04242, -95.71059]
+  - [0.54729, -0.61262, -97.59464]
+  - [0.50928, -0.89772, 180.0]
+  - [-0.19396, -0.89772, 180.0]
+- name: hunav_2
+  model: male_adult_construction_03
+  pose: [0.31922, -3.34957, 175.23636]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.92
+  desired_velocity: 1.12
+  waypoints:
+  - [-0.36502, -3.29255, 171.11934]
+  - [-0.97324, -3.19752, -168.31063]
+  - [-1.52443, -3.31156, -178.09084]
+  - [-2.09463, -3.33057, 176.05482]
+  - [-2.64582, -3.29255, -180.0]
+  - [-3.08297, -3.29255, -180.0]
+  - [-3.48211, -3.29255, 130.6013]
+  - [-3.59615, -3.15951, 93.57633]
+  - [-3.61516, -2.8554, 30.96376]
+  - [-3.33006, -2.68434, 90.0]
+  - [-3.33006, -2.51328, 90.0]
+  - [-3.33006, -1.94308, 90.0]
+robot:
+  name: robot
+  pose: [0.16716, -1.9811, 62.12805]
+  waypoints:
+  - [1.21253, -0.00441, 62.12805]
+  behavior: navigates through the central open aisle for a short delivery task while
+    avoiding shelf edges

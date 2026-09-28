@@ -48,7 +48,17 @@ source_fn(){
 launch(){
     arena_docker_compose up -d --remove-orphans --no-recreate isaac
     trap 'arena_docker_compose stop isaac || true' EXIT INT TERM
-    arena_docker_compose exec -T isaac bash -c "source /opt/arena_ws/install/local_setup.bash && export PYTHONPATH=\"\$PYTHONPATH:/opt/ros/jazzy/lib/python3.12/site-packages:/isaac-sim/exts/isaacsim.ros2.bridge/jazzy/rclpy\" && ARENA_ISAAC_HEADLESS=\"\${ARENA_ISAAC_HEADLESS:-1}\" ARENA_ISAAC_RENDERER=\"\${ARENA_ISAAC_RENDERER:-RayTracedLighting}\" python3-arena /opt/arena_ws/build/arena_isaac/arena_isaac/run_isaacsim.py \$*" || return $?
+    # Quote each argument before splicing it into the `bash -c` string. With a bare $*
+    # the arguments are joined by spaces and every quote is lost, so an empty value passed
+    # as --flag "" collapses to nothing and argparse reports "expected one argument".
+    # Note the caller (arena feature, _meta/tools/source) must quote too -- both layers
+    # splice into a -c string, so either one dropping quotes loses the value.
+    local _args=""
+    local _a
+    for _a in "$@"; do
+        _args+=" $(printf '%q' "$_a")"
+    done
+    arena_docker_compose exec -T isaac bash -c "source /opt/arena_ws/install/local_setup.bash && export PYTHONPATH=\"\$PYTHONPATH:/opt/ros/jazzy/lib/python3.12/site-packages:/isaac-sim/exts/isaacsim.ros2.bridge/jazzy/rclpy\" && ARENA_ISAAC_HEADLESS=\"\${ARENA_ISAAC_HEADLESS:-1}\" ARENA_ISAAC_RENDERER=\"\${ARENA_ISAAC_RENDERER:-RayTracedLighting}\" python3-arena /opt/arena_ws/build/arena_isaac/arena_isaac/run_isaacsim.py$_args" || return $?
 }
 
 # === MAIN SCRIPT ===

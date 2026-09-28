@@ -22,5 +22,21 @@ def generate_launch_description():
             parameters=[
                 use_sim_time.param(bool)
             ]
-        )
+        ),
+
+        # Bridge: arena_people_msgs/Pedestrians → people_msgs/People
+        Node(
+            package='arena_hunav_sim_bridge',
+            executable='arena_peds_to_people_bridge',
+            name='arena_peds_to_people_bridge',
+            output='screen',
+            parameters=[
+                use_sim_time.param(bool),
+                {'input_topic': 'arena_peds'},
+                {'output_topic': '/people'},
+            ],
+            remappings=[
+                ('arena_peds', [namespace.substitution, '/arena_peds']),
+            ],
+        ),
     ])

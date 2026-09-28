@@ -6,25 +6,25 @@ controller_plugins_dict:
     plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
 
     # --- 速度 ---
-    desired_linear_vel: 0.65
+    desired_linear_vel: ${max_vel_x:-0.65}
     min_approach_linear_velocity: 0.05
-    max_angular_vel: 1.5
-    rotate_to_heading_angular_vel: 1.5
+    max_angular_vel: 2.5                # 行进中过弯角速度（保守，避免抖动）
+    rotate_to_heading_angular_vel: 20.0  # 原地旋转专用（拉满，缩短干等时间）
 
-    # --- Lookahead（速度自适应） ---
+    # --- Lookahead（速度自适应）：在平滑与避障间折中 ---
     use_velocity_scaled_lookahead_dist: true
-    lookahead_time: 1.5        # lookahead_dist = vel * lookahead_time
-    min_lookahead_dist: 0.4
-    max_lookahead_dist: 1.2
+    lookahead_time: 1.6
+    min_lookahead_dist: 0.5
+    max_lookahead_dist: 1.4
 
     # --- 先转再走（大角度原地旋转）---
     use_rotate_to_heading: true
-    rotate_to_heading_min_angle: 0.5   # ~28°，超过此偏差先原地转
+    rotate_to_heading_min_angle: 0.6   # ~34°，降回阈值让大转向真正进入旋转模式
 
     # --- 曲率降速（防止高速转弯上墙）---
     use_regulated_linear_velocity_scaling: true
-    regulated_linear_scaling_min_radius: 0.6  # 转弯半径<0.6m 开始限速
-    regulated_linear_scaling_min_speed: 0.20
+    regulated_linear_scaling_min_radius: 0.9   # 提早降速：r<0.9m 就开始减速，过弯更平滑
+    regulated_linear_scaling_min_speed: 0.15
 
     # --- 障碍物降速 ---
     use_cost_regulated_linear_velocity_scaling: true

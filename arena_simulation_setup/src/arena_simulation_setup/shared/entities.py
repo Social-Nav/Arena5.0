@@ -20,6 +20,7 @@ from arena_simulation_setup.utils.cattrs import (
     converter,
 )
 from arena_simulation_setup.utils.geometry import Pose, Position, Scale
+from arena_simulation_setup.shared.dynamic_waypoints import normalize_dynamic_waypoints
 
 
 @attrs.define(kw_only=True)
@@ -75,9 +76,47 @@ class Obstacle(Entity):
 
 @attrs.define
 class DynamicObstacle(Entity):
+    # Overrides Entity.pose to read the [x, y, yaw] form's yaw as DEGREES, matching how
+    # scenario.yaml writes pedestrian headings (values across the shipped scenarios span
+    # -180..+278, so they cannot be radians). Mirrors what RobotGoal already does for the
+    # robot's own pose in tree/World/Scenario.py.
+    #
+    # This converter only fires for RAW values, i.e. direct construction such as
+    # CustomDynamicObstacle.parse's `cls(**known_values)`. The scenario-file path goes through
+    # `parse` below, because cattrs structures the field into a Pose (via Pose.parse, radians)
+    # before any attrs converter runs.
+    #
+    # NOT applied to Entity/Obstacle: static + interactive obstacles share that field and no
+    # scenario currently defines any, so widening it is a separate, untested change.
+    pose: Pose = attrs.field(converter=Pose.converter_deg)
     model: PedestrianIdentifier = attrs.field(converter=PedestrianIdentifier.converter)
     waypoints: list[Position] = attrs.field(factory=list)
     velocity: float = attrs.field(converter=float, default=1.0)  # m/s
+
+    @classmethod
+    def parse(cls, value: dict) -> Self:
+        if isinstance(value, dict):
+            value = {**value}
+            key = 'pose' if 'pose' in value else 'pos'
+            raw = value.get(key)
+            converted = Pose.xy_yaw_deg_to_rad(raw)
+            if converted is not raw:
+                value[key] = converted
+
+            # Keep the historic [x, y, heading_deg] waypoint form, while also accepting
+            # per-segment speed annotations. Position still receives three values; HuNav
+            # intentionally drops the third (heading) because pedestrian yaw follows motion.
+            # The parallel speed list is kept in ``extra`` by Named.parse and consumed by the
+            # HuNav adapter. A missing value means "use the pedestrian's top-level
+            # desired_velocity".
+            normalized_waypoints, waypoint_velocities = normalize_dynamic_waypoints(
+                value.get('waypoints')
+            )
+
+            if normalized_waypoints:
+                value['waypoints'] = normalized_waypoints
+                value['waypoint_desired_velocities'] = waypoint_velocities
+        return super().parse(value)
 
 
 @attrs.define

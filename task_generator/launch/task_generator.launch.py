@@ -315,6 +315,14 @@ def generate_launch_description():
         name="pedestrian_goal_traversal",
         default_value="",
     )
+    social_yielding = LaunchArgument(
+        name="social_yielding",
+        # TRI-STATE string, not a bool: "auto" = not specified (defer to the scenario file),
+        # "true"/"false" = explicit override that beats the scenario. A bool cannot express this,
+        # since a default of false is indistinguishable from a user passing false.
+        default_value="auto",
+        choices=["auto", "true", "false"],
+    )
 
     map_server_node = launch.actions.IncludeLaunchDescription(
         launch.launch_description_sources.PythonLaunchDescriptionSource(
@@ -463,6 +471,9 @@ def generate_launch_description():
                 **expected_human_count.param(int),
                 **episode_start_delay_sec.param(float),
                 **pedestrian_goal_traversal.str_param,
+                # str, not bool: carries the tri-state ("auto"/"true"/"false") through to
+                # tasks/robots/scenario.py, which resolves the precedence.
+                **social_yielding.str_param,
             },
             {"use_sim_time": False},
             parameter_file.substitution,

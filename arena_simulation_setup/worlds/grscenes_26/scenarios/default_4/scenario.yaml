@@ -1,0 +1,42 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [-2.21342, 0.57608, -85.10091]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.82
+  desired_velocity: 1.02
+  waypoints:
+  - [-2.16087, -0.03697, -104.93142]
+  - [-2.23094, -0.29971, -20.85445]
+  - [-1.8631, -0.43984, 5.90614]
+  - [-1.35514, -0.38729, -4.76364]
+  - [-0.93476, -0.42232, 0.0]
+  - [-0.56693, -0.42232, -12.72435]
+  - [-0.02394, -0.54493, -70.34618]
+  - [0.06364, -0.79016, -84.95755]
+  - [0.11619, -1.3857, -84.95755]
+- name: hunav_2
+  model: male_adult_construction_03
+  pose: [1.09708, -2.78697, 177.87891]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.1
+  waypoints:
+  - [0.62415, -2.76945, 69.77514]
+  - [0.74676, -2.43665, 138.36646]
+  - [0.27383, -2.01627, 81.11934]
+  - [0.36141, -1.45576, 90.0]
+  - [0.36141, -0.96532, 90.0]
+  - [0.36141, -0.57997, 87.27369]
+  - [0.39644, 0.1557, 96.70984]
+  - [0.36141, 0.45347, 98.1301]
+  - [0.27383, 1.06653, 98.1301]
+robot:
+  name: robot
+  pose: [0.06364, -0.79016, 84.35175]
+  waypoints:
+  - [0.37893, 2.39773, 84.35175]
+  behavior: delivers items along the wide central-right passage while avoiding narrow
+    shelf gaps

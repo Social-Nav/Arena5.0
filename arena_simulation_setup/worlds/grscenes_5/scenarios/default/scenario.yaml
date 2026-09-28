@@ -2,39 +2,49 @@
 
 dynamic:
 - name: hunav_1
-  model: female_adult_business_02
-  pose: [-3.71374, -2.76407, 104.98163]
-  behavior_tree: ./BTRegularNav.xml
-  velocity: 0.82
-  desired_velocity: 1.02
-  waypoints:
-  - [-3.93816, -1.92543, 158.1986]
-  - [-4.64687, -1.64195, 92.77917]
-  - [-4.76499, 0.79128, 174.69908]
-  - [-5.91073, 0.89759, 148.2764]
-  - [-6.56038, 1.29919, 123.52447]
-  - [-7.1864, 2.24413, 90.0]
-  - [-7.1864, 3.50799, 94.08562]
-  - [-7.2809, 4.83091, 26.56505]
-  - [-6.73756, 5.10258, 73.92643]
-  - [-6.33596, 6.49637, 87.99045]
-  - [-6.28871, 7.84292, 172.56859]
-  - [-7.10372, 7.94922, 172.56859]
-- name: hunav_2
   model: male_adult_medical_01
-  pose: [-11.34415, 7.7248, 83.65981]
-  behavior_tree: ./BTRegularNav.xml
-  velocity: 0.76
-  desired_velocity: 0.95
+  pose: [-7.10372, 7.94922, 160.44175]
+  behavior_tree: BTScaredNav.xml   # Scared: flees away from the robot when it comes near. Resolved from arena_simulation_setup/configs/hunav/behavior_trees/ (verified present)
+  behavior:
+    type: 4        # BEH_SCARED (1=regular 2=impassive 3=surprised 4=scared 5=curious 6=threatening)
+    duration: 5.0  # seconds to keep fleeing after the robot is no longer near
+    once: false    # can be scared multiple times
+    dist: 5.0      # meters - distance at which the robot is noticed and fleeing starts
+    vel: 1.2       # runaway_vel: speed while fleeing the robot (faster than normal walk)
+    social_force_factor: 3.0  # scary_force_factor: strength of the repulsion away from the robot
+  velocity: 0.9
+  desired_velocity: 0.9
   waypoints:
-  - [-11.21422, 8.89417, 4.3987]
-  - [-10.60001, 8.94141, 102.67232]
+  - [-8.00142, 8.26814, 165.47458]
+  - [-10.60001, 8.94141, -175.6013]
+  - [-11.21422, 8.89417, 85.37343]
   - [-11.04886, 10.93761, -36.29263]
   - [-10.2929, 10.38245, -7.05231]
-  - [-9.14716, 10.24071, -14.23729]
-  - [-8.35577, 10.03991, 3.77228]
-  - [-7.2809, 10.11078, 3.77228]
-
-robots:
-- start: [-7.1864, 3.50799, 99.71574]
-  goal: [-8.00142, 8.26814, 99.71574]
+  - [-9.14716, 10.24071, -3.98253]
+  - [-7.2809, 10.11078, -3.98253]
+- name: hunav_2
+  model: female_adult_business_02
+  pose: [-14.62783, 10.40608, -90.0]
+  behavior_tree: BTScaredNav.xml   # Scared: flees away from the robot when it comes near
+  behavior:
+    type: 4        # BEH_SCARED
+    duration: 5.0
+    once: false
+    dist: 3.5
+    vel: 1.2
+    social_force_factor: 3.0
+  velocity: 0.68
+  desired_velocity: 0.4
+  waypoints:
+  - [-14.62783, 10.38245, -1.0e-05]
+  - [-13.97818, 10.38245, -21.59531]
+  - [-13.41122, 10.15803, -1.0e-05]
+  - [-12.56077, 10.15803, 103.32453]
+  - [-12.66707, 10.60688, 103.32453]
+robot:
+  name: robot
+  pose: [-6.53676, 11.61088, -86.20395]
+  waypoints:
+  - [-7.16278, -1.27578, -86.20395]
+  behavior: moves along the main corridor for a delivery task while avoiding door
+    areas

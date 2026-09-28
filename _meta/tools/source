@@ -41,6 +41,31 @@ export ARENA_ENFORCE_CLEAN_INSTALL="${ARENA_ENFORCE_CLEAN_INSTALL:-1}"
 export ARENA_ROS_DISTRO="${ARENA_ROS_DISTRO:-jazzy}"
 
 export FASTRTPS_DEFAULT_PROFILES_FILE=${FASTRTPS_DEFAULT_PROFILES_FILE:-~/.ros/fastdds.xml}
+# ~/.ros is on the container's ephemeral layer and is wiped whenever the container is
+# recreated; regenerate the UDP-only FastDDS profile (SHM disabled: /dev/shm is tiny and
+# arena<->isaac live in separate network namespaces) if it went missing.
+if [ ! -f "$FASTRTPS_DEFAULT_PROFILES_FILE" ]; then
+    mkdir -p "$(dirname "$FASTRTPS_DEFAULT_PROFILES_FILE")"
+    cat > "$FASTRTPS_DEFAULT_PROFILES_FILE" <<'FASTDDS_PROFILE_XML'
+<?xml version="1.0" encoding="UTF-8" ?>
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+    <transport_descriptors>
+        <transport_descriptor>
+            <transport_id>UdpTransport</transport_id>
+            <type>UDPv4</type>
+        </transport_descriptor>
+    </transport_descriptors>
+    <participant profile_name="udp_transport_profile" is_default_profile="true">
+        <rtps>
+            <userTransports>
+                <transport_id>UdpTransport</transport_id>
+            </userTransports>
+            <useBuiltinTransports>false</useBuiltinTransports>
+        </rtps>
+    </participant>
+</profiles>
+FASTDDS_PROFILE_XML
+fi
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-1}
 export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
 export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/opt/ros/${ARENA_ROS_DISTRO}/lib/"
@@ -191,7 +216,16 @@ if [ -z ${ARENA_SOURCED+x} ] ; then
                     result=1
                 elif feature_path="$(resolve_arena_feature "$1")"; then
                     shift
-                    ($SHELL -c "source '$SOURCE_FILE' > /dev/null 2>&1 && $shell '$feature_path' $*")
+                    # Quote each argument before splicing it into the -c string. A bare $*
+                    # joins them with spaces and drops every quote, so an empty value passed
+                    # as --flag "" disappears entirely and the flag arrives with nothing
+                    # after it -- argparse then reports "expected one argument". Empty
+                    # values and values containing spaces must both survive.
+                    feature_args=""
+                    for feature_arg in "$@"; do
+                        feature_args+=" $(printf '%q' "$feature_arg")"
+                    done
+                    ($SHELL -c "source '$SOURCE_FILE' > /dev/null 2>&1 && $shell '$feature_path'$feature_args")
                     result=$?
                 else
                     echo "Unknown feature '$1'" >&2

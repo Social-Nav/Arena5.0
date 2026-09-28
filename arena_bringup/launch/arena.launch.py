@@ -49,13 +49,13 @@ def generate_launch_description():
     )
     local_planner = LaunchArgument(
         name='local_planner',
-        default_value='dwb',
-        description='local planner type [teb, dwa, mpc, rlca, arena, rosnav, cohan]'
+        default_value='social_mpc',
+        description='local planner type [teb, dwa, mpc, rlca, arena, rosnav, cohan, social_mpc]'
     )
     global_planner = LaunchArgument(
         name='global_planner',
         default_value='navfn',
-        description='global planner type [navfn]'
+        description='global planner type [navfn, smac_2d, smac_hybrid, smac_state_lattice]'
     )
     sim = LaunchArgument(
         name='sim',
@@ -429,6 +429,28 @@ def generate_launch_description():
             'comparable with once-mode runs.'
         )
     )
+    save_snapshots = LaunchArgument(
+        name='save_snapshots',
+        default_value='false',
+        choices=['true', 'false'],
+        description='Keep the yielding snapshot dirs (head/back/topdown PNGs + depth npy) after '
+                    'the replan has read them. NOT a "skip capture" switch: the replan pipeline '
+                    'reads the snapshot back off disk, so yielding cannot work without it being '
+                    'written. Default false deletes each dir once its replan is done; true keeps '
+                    'them for debugging. With world:= set they land in '
+                    'social_gen/traj_data/grscenes/<world>/snapshots/, beside data/ and videos/.',
+    )
+    social_yielding = LaunchArgument(
+        name='social_yielding',
+        default_value='auto',
+        choices=['auto', 'true', 'false'],
+        description='Enable state for the proactive-yielding pipeline (trigger + orchestrator, '
+                    'which always launch but stay inert until enabled). OVERRIDE: an explicit '
+                    'true/false here wins over the scenario file. `auto` (the default) means "not '
+                    'specified" and defers to the scenario file\'s robots[].social_yielding, then '
+                    'false. Tri-state because a plain boolean cannot distinguish "not passed" from '
+                    '"passed false".',
+    )
 
     def create_task_generators(
         context: launch.LaunchContext,
@@ -587,6 +609,7 @@ def generate_launch_description():
                     **robot_launch_file.dict,
                     **debug.dict,
                     **save_data.dict,
+                    **social_yielding.dict,
                     'namespace': namespace,
                     'headless': headlessness,
                     'reference': str(reference),
@@ -617,6 +640,7 @@ def generate_launch_description():
         launch_arguments={
             **use_sim_time.dict,
             'simulator': sim.substitution,
+            **robot.dict,
             **world.dict,
             **save_data.dict,
             'headless': PythonExpression([headless.substitution, '>0']),
@@ -650,6 +674,33 @@ def generate_launch_description():
             condition=launch.conditions.IfCondition(
                 PythonExpression(['"', train_config.substitution, '" != ""'])
             ),
+        ),
+        # Always launch both yielding nodes; they stay INERT (no polling) until enabled at reset.
+        # Enable resolution: the launch arg if explicitly true/false, else scenario.yaml's
+        # `robot.social_yielding`, else false (task_generator resolves + publishes it).
+        # Both yielding nodes read ARENA_ROBOT to build their namespace and base frame.
+        launch.actions.SetEnvironmentVariable(
+            name='ARENA_ROBOT',
+            value=robot.substitution,
+        ),
+        # Read by the orchestrator (SAVE_SNAPSHOTS) to decide whether each snapshot dir
+        # survives its replan. Passed as an env var, not a ROS param, to match how
+        # ARENA_ROBOT already reaches these two plain-python nodes.
+        launch.actions.SetEnvironmentVariable(
+            name='ARENA_SAVE_SNAPSHOTS',
+            value=save_snapshots.substitution,
+        ),
+        launch.actions.ExecuteProcess(
+            cmd=['bash', '-c',
+                 'source /opt/arena_ws/src/Arena/_meta/tools/source && '
+                 'python3 /opt/arena_ws/src/Arena/arena_isaac/arena_isaac/arena_isaac/social_yielding/proactive_yielding_trigger.py'],
+            output='screen',
+        ),
+        launch.actions.ExecuteProcess(
+            cmd=['bash', '-c',
+                 'source /opt/arena_ws/src/Arena/_meta/tools/source && '
+                 'python3 /opt/arena_ws/src/Arena/arena_isaac/arena_isaac/arena_isaac/social_yielding/social_yielding_orchestrator.py'],
+            output='screen',
         ),
     ])
     return ld

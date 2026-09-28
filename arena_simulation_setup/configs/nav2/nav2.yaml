@@ -47,12 +47,21 @@ bt_navigator:
     enable_groot_monitoring: True
     groot_zmq_publisher_port: 1666
     bt_loop_duration: 100
+    default_server_timeout: 1000  # ms — how long a BT action node waits for the server to ACK a goal.
+                                  # Jazzy default is 20ms (too short: planner busy computing prev plan -> ACK
+                                  # times out -> pipeline fails -> FollowPath halted -> velocity drops).
+                                  # NOTE: action_server_timeout/retry_*/enable_groot_monitoring below are
+                                  # legacy Humble params and are IGNORED on Jazzy.
     groot_zmq_server_port: 1667
     action_server_timeout: 0.0
     retry_max: 5
     retry_timeout: 0.0
     wait_for_service_timeout: -1
-    
+    navigators: ["navigate_to_pose", "navigate_through_poses"]
+    navigate_to_pose:
+      plugin: "nav2_bt_navigator::NavigateToPoseNavigator"
+    navigate_through_poses:
+      plugin: "nav2_bt_navigator::NavigateThroughPosesNavigator"
     default_nav_to_pose_bt_xml: ${default_nav_to_pose_bt_xml}
     default_nav_through_poses_bt_xml: ${default_nav_through_poses_bt_xml}
 
@@ -63,27 +72,26 @@ bt_navigator_rclcpp_node:
 controller_server:
   ros__parameters:
     use_sim_time: True
-    controller_frequency: 20.0
-    costmap_update_timeout: 2.0
+    controller_frequency: 10.0
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.5
     min_theta_velocity_threshold: 0.001
     progress_checker_plugin: "progress_checker"
     goal_checker_plugin: "goal_checker"
-    always_reset_odom: true
-    require_costmap_update_before_planning: false
+    always_reset_odom: false
+    require_costmap_update_before_planning: true
     
     # Progress checker parameters
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      required_movement_radius: 0.1
-      movement_time_allowance: 60.0
+      required_movement_radius: 0.25   # lowered 0.5->0.25: MORE lenient stuck-detection (robot need only travel 0.25m within the 20s window to reset the watchdog). Translation-only (rotation counts as 0). To make recovery fire LESS during slow turns, lower movement_time_allowance instead.
+      movement_time_allowance: 20.0
     
     # Goal checker parameters
     goal_checker:
       plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance: 0.25
-      yaw_goal_tolerance: 3.14
+      yaw_goal_tolerance: 6.2832   # 2*pi = 360deg => heading NOT checked at goal (arrive at position only)
       stateful: True
 
     controller_plugins: ${controller_plugins}
@@ -129,41 +137,54 @@ docking_server:
 local_costmap:
   local_costmap:
     ros__parameters:
-      update_frequency: 20.0
+      update_frequency: 10.0   # 20->10: lighter costmap CPU load (helps costmap-timeout); still == controller_frequency
       publish_frequency: 10.0
       global_frame: ${frame:-}${robot_odom_frame:-odom}
       robot_base_frame: ${frame:-}${robot_base_frame:-base_link}
       use_sim_time: True
-      transform_tolerance: 0.5
+      transform_tolerance: 1.0
       rolling_window: true
-      width: 15
-      height: 15
-      resolution: 0.1
-      footprint: ${footprint}
+      width: 5      # 10->5 m rolling window; with resolution 0.05 this is still 100x100 cells (same CPU as before)
+      height: 5
+      resolution: 0.05   # 0.1->0.05: finer near-robot precision; cell count unchanged (5/0.05 == 10/0.1 == 100)
+      robot_radius: 0.25
       footprint_padding: 0.05
-      # dual_vln currently relies on the global route + model/heuristic control;
-      # Isaac fallback scans can be published before all TF/costmap timestamps
-      # settle, which makes the voxel layer repeatedly reject sensor origins and
-      # delays controller startup.  Keep the local costmap lightweight for this
-      # eval path.
-      plugins: ["static_layer", "inflation_layer"]
+      # social_layer REMOVED here (2026-08-03). It was a third redundant pedestrian channel in the
+      # LOCAL costmap and measurably dead weight:
+      #   - obstacle_layer already marks peds LETHAL (254) within obstacle_max_range 2.0 m, and
+      #     inflation_layer spreads that to 0.55 m. Computing max(social, inflation) point by point,
+      #     the social gaussian NEVER won for aggressive (r 0.26-0.41 < 0.55) and won only in the
+      #     0.55-0.81 m moving-front lobe for passive -- where its cost 71 reaches the MPC as
+      #     (0.05*71)^2 ~= 12.6 against a velocity term of ~64. Invisible either way.
+      #   - The MPC has its OWN pedestrian critics (proxemics + social_work) reading /people
+      #     directly. Those are velocity/angle aware and 4th-power, i.e. strictly more expressive
+      #     than an isotropic gaussian, and they are what the profiles actually tune.
+      # Keeping it only re-introduced the freeze risk we already fought (high ped cost pinning
+      # vx=0 in corridors). The GLOBAL costmap keeps its social_layer -- there obstacle_layer is
+      # disabled, so it is the ONLY thing that tells navfn a pedestrian exists.
+      plugins: ["obstacle_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.45
-      voxel_layer:
-        plugin: "nav2_costmap_2d::VoxelLayer"
+        inflation_radius: 0.55
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
-        publish_voxel_map: True
-        origin_z: 0.0
-        z_resolution: 0.05
-        z_voxels: 16
-        max_obstacle_height: 2.0
-        mark_threshold: 0
         observation_sources: ${observation_sources_string}
         ${**observation_sources_dict}: ''
+      # voxel_layer (备用，切换时把 plugins 改回 ["voxel_layer", "inflation_layer"]):
+      # voxel_layer:
+      #   plugin: "nav2_costmap_2d::VoxelLayer"
+      #   enabled: True
+      #   publish_voxel_map: True
+      #   origin_z: 0.0
+      #   z_resolution: 0.05
+      #   z_voxels: 16
+      #   max_obstacle_height: 2.0
+      #   mark_threshold: 0
+      #   observation_sources: ${observation_sources_string}
+      #   ${**observation_sources_dict}: ''
       static_layer:
-        plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
         map_topic: ${task_generator_node}/map
       always_send_full_costmap: True
@@ -182,38 +203,68 @@ global_costmap:
       global_frame: map
       robot_base_frame: ${frame:-}${robot_base_frame:-base_link}
       use_sim_time: True
-      transform_tolerance: 0.5
-      footprint: ${footprint}
-      resolution: 0.05
-      # The global costmap must cover the whole static-map/scenario coordinate
-      # envelope. hospital_1 extends into positive coordinates while uploaded
-      # GRScenes trajectories can start around x=-16, y=-11.  Keep one generous
-      # fixed window so NavFn does not reject valid reset poses as out of bounds.
-      width: 50
-      height: 55
-      origin_x: -17.0
-      origin_y: -12.0
+      transform_tolerance: 1.0
+      robot_radius: 0.25   # 与 local 统一(原为 0.28 瘦半径)
+      footprint_padding: 0.05   # 与 local 统一 -> 有效内接半径 0.30
+      resolution: 0.10
+      width: 40
+      height: 40
+      origin_x: -20.0
+      origin_y: -20.0
       track_unknown_space: true
       rolling_window: false
-      # For VLN evaluation the global planner is used only to provide a coarse
-      # route/subgoal.  Keep the global costmap permissive and map-only; local
-      # safety remains in the local costmap / controller.  The inflated global
-      # map can mark valid hospital_1 reset poses as occupied and prevents NavFn
-      # from ever handing control to dual_vln.
-      plugins: ["static_layer"]
-      obstacle_layer:
-        plugin: "nav2_costmap_2d::ObstacleLayer"
-        enabled: True
-        observation_sources: ${observation_sources_string}
-        ${**observation_sources_dict}: ''
+      # social_layer added to GLOBAL so navfn plans paths that steer AROUND pedestrians'
+      # personal space (its intended use — the plugin's velocity-stretched ellipse only really
+      # matters for global planning). Ordered before inflation so it maxes onto static and
+      # inflation still runs last. amplitude kept LOW (see below) to avoid no-plan/freeze.
+      plugins: ["static_layer", "social_layer", "inflation_layer"] #"obstacle_layer",
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
         map_topic: ${task_generator_node}/map
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: ${observation_sources_string_global}
+        ${**observation_sources_dict}: ''
+      social_layer:
+        plugin: "nav2_social_costmap_plugin::SocialLayer"
+        enabled: True
+        people_topic: "/people"
+        # Radius in any direction: r = sqrt(2*var*ln(A/cutoff)) -- amplitude affects SIZE too, so
+        # raising it silently inflates the footprint. At a 1.05 m/s ped: forward 1.07 m, lateral
+        # 0.47 m, aspect 2.30, standing 0.43 m.
+        #
+        # amplitude 254 = LETHAL_OBSTACLE. Being >= 253 INSCRIBED means navfn treats a ped as an
+        # impassable wall (narrow corridor -> possible no-path -> social_yielding spam) and
+        # inflation_layer re-inflates these cells. Revert to 160.0 if either shows up. Never 255:
+        # that is NO_INFORMATION, not a cost.
+        amplitude: 254.0
+        cutoff: 20.0
+        # ALONG motion, and the ONLY one the velocity factor stretches.
+        covariance_front_height: 0.1105
+        # LATERAL. front_height/front_width is the tip ratio; equal values give a circle.
+        # Below ~0.03 the footprint aliases into a jagged sliver at global res 0.10.
+        covariance_front_width: 0.043
+        covariance_rear_height: 0.043
+        covariance_rear_width: 0.043
+        # Standing ped: isotropic circle, r 0.61 m. Its own independent branch -- a still ped
+        # uses ONLY this value, so it can be sized without touching the moving shape.
+        covariance_when_still: 0.0736
+        use_vel_factor: True
+        # The blunt/pointy knob: front_height is scaled by (1 + speed*factor). 2.0->1.0 drops the
+        # stretch at 1.05 m/s from 3.10x to 2.05x.
+        speed_factor_multiplier: 1.0
+        use_passing: True
+        # Right-hand-passing lobe. Must stay <= covariance_rear_height: updateCosts derives the
+        # paint box from rear_height only, so a larger right lobe is silently clipped.
+        covariance_right_height: 0.043
+        covariance_right_width: 0.043
+        publish_occgrid: False
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.45
+        inflation_radius: 0.55
       always_send_full_costmap: True
   global_costmap_client:
     ros__parameters:
@@ -248,47 +299,22 @@ planner_server_rclcpp_node:
   ros__parameters:
     use_sim_time: True
 
-recoveries_server:
-  ros__parameters:
-    costmap_topic: local_costmap/costmap_raw
-    footprint_topic: local_costmap/published_footprint
-    cycle_frequency: 10.0
-    recovery_plugins: ["spin", "back_up", "wait"]
-    spin:
-      plugin: "nav2_behaviors::Spin"
-    back_up:
-      plugin: "nav2_behaviors::BackUp"
-    wait:
-      plugin: "nav2_behaviors::Wait"
-    global_frame: map
-    local_frame: ${frame:-}${robot_odom_frame:-odom}
-    robot_base_frame: ${frame:-}${robot_base_frame:-base_link}
-    transform_timeout: 0.0
-    use_sim_time: true
-    simulate_ahead_time: 2.0
-    max_rotational_vel: 1.0
-    min_rotational_vel: 0.1
-    rotational_acc_lim: 3.2
-
+# NOTE: the running node is nav2_behaviors/behavior_server (Jazzy). This section used to be
+# named `recoveries_server` (legacy), so ROS 2 never matched it to the behavior_server node and
+# the node fell back to defaults incl. local_frame=odom (UNPREFIXED). The robot's TF is namespaced
+# (Ai2_Bot2/odom, Ai2_Bot2/base_link), so spin/backup could not look up the pose
+# ("target frame 'odom' does not exist") and every recovery aborted -> robot froze. Renamed to match
+# the node + added the namespaced local_frame. behavior_plugins left at their defaults (spin/backup/
+# drive_on_heading/wait/assisted_teleop), which were already the ones running.
 behavior_server:
   ros__parameters:
     costmap_topic: local_costmap/costmap_raw
     footprint_topic: local_costmap/published_footprint
     cycle_frequency: 10.0
-    behavior_plugins: ["spin", "backup", "wait"]
-    spin:
-      plugin: "nav2_behaviors::Spin"
-    backup:
-      plugin: "nav2_behaviors::BackUp"
-    wait:
-      plugin: "nav2_behaviors::Wait"
-    global_frame: map
-    # Nav2 Jazzy behavior_server uses local_frame for local behaviors and
-    # defaults it to plain "odom" when unset. Arena namespaces robot TF frames,
-    # so keep this aligned with the local costmap/Isaac odom graph.
     local_frame: ${frame:-}${robot_odom_frame:-odom}
+    global_frame: ${frame:-}${robot_odom_frame:-odom}
     robot_base_frame: ${frame:-}${robot_base_frame:-base_link}
-    transform_timeout: 0.0
+    transform_tolerance: 1.0
     use_sim_time: true
     simulate_ahead_time: 2.0
     max_rotational_vel: 1.0
@@ -301,20 +327,20 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [0.22, 0.0, 0.8]
-    min_velocity: [-0.22, 0.0, -0.8]
-    max_accel: [0.8, 0.0, 1.2]
-    max_decel: [-0.8, 0.0, -1.2]
+    max_velocity: ${velocity_smoother_max_velocity:-[0.15, 0.0, 0.5]}
+    min_velocity: ${velocity_smoother_min_velocity:-[-0.15, 0.0, -0.5]}
+    max_accel: ${velocity_smoother_max_accel:-[0.8, 0.0, 1.2]}
+    max_decel: ${velocity_smoother_max_decel:-[-0.8, 0.0, -1.2]}
     odom_topic: ${namespace}/odom
     odom_duration: 0.1
-    deadband_velocity: [0.0, 0.0, 0.0]
+    deadband_velocity: [0.03, 0.0, 0.05]
     velocity_timeout: 0.2
 
 collision_monitor:
   ros__parameters:
     enabled: true
 
-    observation_sources: ${observation_sources}
+    observation_sources: ${collision_monitor_sources}
     ${**observation_sources_dict}: ''
     polygons: ${polygons}
     ${**polygons_dict}: ''
@@ -331,21 +357,21 @@ collision_monitor:
 
     # 3) Timers & lifecycles
     use_sim_time:         true
-    source_timeout:       0.2
+    source_timeout:       0.5
     stop_pub_timeout:     0.2
-    transform_tolerance:  0.2
+    transform_tolerance:  1.0
     base_shift_correction: true
 
 
-    # 4) QoS overrides 
-    allow_parameter_qos_overrides: true
-    qos_overrides:
-      /tf_static:
-        subscription:
-          durability: transient_local
-          reliability: reliable
-          history: keep_last
-          depth: 1
+    # # 4) QoS overrides
+    # allow_parameter_qos_overrides: true
+    # qos_overrides:
+    #   /tf_static:
+    #     subscription:
+    #       durability: transient_local
+    #       reliability: reliable
+    #       history: keep_last
+    #       depth: 1
     #   /tf:
     #     subscription:
     #       durability: volatile

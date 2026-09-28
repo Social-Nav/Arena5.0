@@ -28,6 +28,11 @@ def generate_launch_description():
         choices=['true', 'false'],
         description='Enable VLN dataset logging'
     )
+    robot = LaunchArgument(
+        name='robot',
+        default_value='jackal',
+        description='robot model name (forwarded to the Isaac process)',
+    )
 
     # TODO temporary
     world = LaunchArgument(
@@ -66,6 +71,10 @@ def generate_launch_description():
             launch_arguments={
                 'use_sim_time': use_sim_time.substitution,
                 'save_data': save_data.substitution,
+                'robot': robot.substitution,
+                # Reaches the logger as --world; picks the dataset dir under
+                # social_gen/traj_data/grscenes/.
+                'world': world.substitution,
                 # 'headless': headless.substitution
             }.items(),
         )

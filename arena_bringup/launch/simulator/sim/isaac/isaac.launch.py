@@ -23,6 +23,11 @@ def generate_launch_description():
         default_value='jackal',
         description='robot model name (used for nav topic namespace)',
     )
+    world = LaunchArgument(
+        name='world',
+        default_value='',
+        description='World used to select social_gen/traj_data/grscenes/<world> outputs.',
+    )
 
     isaac_pythonpath = ':'.join([
         '/opt/isaac_bridge_msgs/arena_people_msgs/lib/python3.11/site-packages',
@@ -107,9 +112,9 @@ def generate_launch_description():
         'export ARENA_DISABLE_ISAAC_ODOM_GRAPH="${ARENA_DISABLE_ISAAC_ODOM_GRAPH:-0}"; '
         'export ARENA_SPAWN_USD_ROBOT_ENABLE_ISAAC_ODOM_GRAPH="${ARENA_SPAWN_USD_ROBOT_ENABLE_ISAAC_ODOM_GRAPH:-1}"; '
         'python3 /opt/arena_ws/src/Arena/arena_isaac/arena_isaac/arena_isaac/run_isaacsim.py '
-        '--save-data "$ARENA_SAVE_DATA" --robot "$ARENA_ROBOT" 2>&1 | tee /tmp/isaac_sim.log'
+        '--save-data "$ARENA_SAVE_DATA" --robot "$ARENA_ROBOT" '
+        '--world "$ARENA_WORLD" 2>&1 | tee /tmp/isaac_sim.log'
     )
-
     return LaunchDescription([
         *ld,
         launch.actions.SetEnvironmentVariable(
@@ -123,6 +128,10 @@ def generate_launch_description():
         launch.actions.SetEnvironmentVariable(
             name='ARENA_ROBOT',
             value=robot.substitution,
+        ),
+        launch.actions.SetEnvironmentVariable(
+            name='ARENA_WORLD',
+            value=world.substitution,
         ),
         launch.actions.SetEnvironmentVariable(
             name='ROS_DOMAIN_ID',

@@ -129,20 +129,23 @@ class IsaacSimulator(BaseSim, NodeInterface):
         await self.node.do_launch(launch.LaunchDescription([tf_node]))
         self._map_world_tfs.add(robot_name)
 
-    async def _publish_sensor_frame_tfs(self, robot_name: str, sensor_frame_transforms: list) -> None:
+    async def _publish_sensor_frame_tfs(self, robot_name: str, sensor_frame_transforms: list, scale: float = 1.0) -> None:
         """Publish static TFs for sensor frames defined in model_params.yaml.
 
         Each entry in sensor_frame_transforms should have:
           parent, child, x, y, z, qx, qy, qz, qw
+
+        `scale` applies to translation only (x/y/z), so a robot whose USD is
+        scaled by `s` has its sensor mounts move proportionally.
         """
         ns = Namespace(robot_name)
         nodes = []
         for i, tf in enumerate(sensor_frame_transforms):
             parent = str(ns(tf.get('parent', 'base_footprint')))
             child = str(ns(tf.get('child', 'sensor')))
-            x   = str(tf.get('x',  0.0))
-            y   = str(tf.get('y',  0.0))
-            z   = str(tf.get('z',  0.0))
+            x   = str(float(tf.get('x',  0.0)) * scale)
+            y   = str(float(tf.get('y',  0.0)) * scale)
+            z   = str(float(tf.get('z',  0.0)) * scale)
             qx  = str(tf.get('qx', 0.0))
             qy  = str(tf.get('qy', 0.0))
             qz  = str(tf.get('qz', 0.0))
@@ -197,8 +200,23 @@ class IsaacSimulator(BaseSim, NodeInterface):
                         return False
 
                     self._logger.info(f"Spawned USD robot '{robot.name}' via SpawnUsdRobot")
+
+                    s = robot_params.scale
+                    if s != 1.0:
+                        rescale_req = EditPrims.Request(
+                            prims=[Prim(name=fq_name, scale=Scale(x=s, y=s, z=s))],
+                            scale=True,
+                        )
+                        rescale_res = await self._clients.EditPrims.call_timeout(rescale_req)
+                        if rescale_res is None or not (rescale_res.ret and rescale_res.ret[0]):
+                            self._logger.warning(
+                                f"Failed to rescale robot '{robot.name}' to {s}x; visual size unchanged"
+                            )
+                        else:
+                            self._logger.info(f"Rescaled robot '{robot.name}' to {s}x")
+
                     await self._ensure_map_to_world_tf(robot.name)
-                    await self._publish_sensor_frame_tfs(robot.name, robot_params.sensor_frame_transforms)
+                    await self._publish_sensor_frame_tfs(robot.name, robot_params.sensor_frame_transforms, scale=s)
                     return True
 
                 if model.type == ModelType.URDF:
@@ -550,23 +568,26 @@ class IsaacSimulator(BaseSim, NodeInterface):
         # TODO implement targeted pedestrian models
         async def impl(pedestrian: DynamicObstacle) -> Pedestrian | None:
             available_models: dict[str, str] = {
-                "F_Business_02": "F_Business_02",
-                "F_Medical_01": "F_Medical_01",
-                "M_Medical_01": "M_Medical_01",
-                "biped_demo_meters": "biped_demo",
+                # "F_Business_02",
+                # "F_Medical_01",
+                # "M_Medical_01",
+                # "biped_demo",
+                # "female_adult_police_01_new",
+                # "female_adult_police_02",
+                # "female_adult_police_03_new",
+                # "male_adult_construction_01_new",
+                # "male_adult_construction_03",
+                # "male_adult_construction_05_new",
+                # "male_adult_police_04",
                 "female_adult_business_02": "original_female_adult_business_02",
                 "female_adult_medical_01": "original_female_adult_medical_01",
                 "female_adult_police_01": "original_female_adult_police_01",
-                "female_adult_police_01_new": "female_adult_police_01_new",
                 "female_adult_police_02": "original_female_adult_police_02",
                 "female_adult_police_03": "original_female_adult_police_03",
-                "female_adult_police_03_new": "female_adult_police_03_new",
                 "male_adult_construction_01": "original_male_adult_construction_01",
-                "male_adult_construction_01_new": "male_adult_construction_01_new",
                 "male_adult_construction_02": "original_male_adult_construction_02",
                 "male_adult_construction_03": "original_male_adult_construction_03",
                 "male_adult_construction_05": "original_male_adult_construction_05",
-                "male_adult_construction_05_new": "male_adult_construction_05_new",
                 "male_adult_medical_01": "original_male_adult_medical_01",
                 "male_adult_police_04": "original_male_adult_police_04",
             }
@@ -622,9 +643,18 @@ class IsaacSimulator(BaseSim, NodeInterface):
 
         req = NavigatePedestrians.Request()
         req.goals = goals
-        await self._clients.NavigatePedestrians.call_fire_and_forget(req)
+        res = await self._clients.NavigatePedestrians.call_timeout(req)
 
-        return tuple(True for _ in goals)
+        # Return one truthful flag PER GOAL, aligned with `goals` so the caller can name which
+        # pedestrian failed. The old expression was `zip(goals, res.ret)` with `a and b` -- but
+        # `a` is a PedestrianGoal, which is always truthy, so the result only ever reflected
+        # res.ret. Worse, on timeout `res and res.ret or ()` collapsed to an empty tuple and zip
+        # truncated to length 0, turning a whole-batch failure into "nothing happened".
+        if res is None or not res.ret:
+            return tuple(False for _ in goals)
+        ret = tuple(res.ret)
+        # Pad rather than truncate: a short reply must not silently hide the missing entries.
+        return tuple(bool(ret[i]) if i < len(ret) else False for i in range(len(goals)))
 
     async def _delete_entity(self, name: str) -> bool:
         self._logger.debug(f"Attempting to delete prim {name}")

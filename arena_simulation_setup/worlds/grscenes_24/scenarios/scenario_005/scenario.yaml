@@ -1,0 +1,68 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [0.45598, 0.15513, 65.43283]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.82
+  desired_velocity: 1.08
+  waypoints:
+  - [1.0202, 1.38937, 73.07249]
+  - [1.14362, 1.7949, 41.28471]
+  - [1.86653, 2.42965, 85.42608]
+  - [1.93706, 3.31125, 90.0]
+  - [1.93706, 4.66891, 87.85241]
+  - [1.98996, 6.07947, 87.85241]
+- name: hunav_2
+  model: male_adult_medical_01
+  pose: [6.06293, 4.79233, 97.94347]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.76
+  desired_velocity: 1.0
+  waypoints:
+  - [5.95714, 5.55051, 144.65989]
+  - [4.98739, 6.23815, -173.23383]
+  - [3.9471, 6.11473, 104.53445]
+  - [3.82368, 6.59079, 161.56505]
+  - [2.71287, 6.96106, -129.35175]
+  - [1.98996, 6.07947, 150.04639]
+  - [0.94967, 6.67895, 150.04639]
+- name: hunav_3
+  model: F_Medical_01
+  pose: [-0.2493, 10.20534, 4.3987]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.88
+  desired_velocity: 1.12
+  waypoints:
+  - [0.66756, 10.27587, 4.08561]
+  - [1.9018, 10.36403, 1.25904]
+  - [3.5063, 10.39929, -82.3332]
+  - [3.62973, 9.48243, -22.28559]
+  - [4.70528, 9.04163, -42.70939]
+  - [5.62214, 8.1953, 7.76516]
+  - [6.78584, 8.35399, 7.76516]
+- name: hunav_4
+  model: male_adult_construction_03
+  pose: [-0.49615, -0.2504, 118.61046]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.95
+  desired_velocity: 1.2
+  waypoints:
+  - [-1.02511, 0.71936, 82.03039]
+  - [-0.77826, 2.48255, 90.0]
+  - [-0.77826, 3.9989, 41.28471]
+  - [-0.05535, 4.63365, 82.53943]
+  - [0.1386, 6.11473, 90.0]
+  - [0.1386, 7.71924, 95.71059]
+  - [0.01518, 8.95347, 95.71059]
+robot:
+  name: robot
+  pose: [1.86653, 1.35411, 87.93618]
+  social_attributes: neutral
+  waypoints:
+  - [1.93706, 3.31125, 90.0]
+  - [1.93706, 4.66891, 87.85241]
+  - [1.98996, 6.07947, 94.49715]
+  - [1.86653, 7.64871, 94.49715]
+  behavior: travels along a clear near-horizontal route across the central open area

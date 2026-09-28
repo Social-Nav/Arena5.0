@@ -29,6 +29,12 @@ repositories:
     type: git
     url: https://github.com/voshch/ament_cmake_venv_pyenv
     version: master
+  # buildtool_depend of arena_models; planners.repos declares it too, but only
+  # under planners/deps/ and only when that feature is enabled.
+  deps/ament_cmake_venv_uv:
+    type: git
+    url: https://github.com/voshch/ament_cmake_venv_uv
+    version: humble
 
   # internal management
   deps/arena_models:
@@ -67,15 +73,34 @@ repositories:
     url: https://github.com/SteveMacenski/slam_toolbox.git
     version: jazzy
 
+  # SFM headers for hunav_agent_manager.
+  deps/lightsfm:
+    type: git
+    url: https://github.com/Social-Nav/lightsfm.git
+    version: feature/social_yielding
   deps/hunav/hunav_sim:
     type: git
-    url: https://github.com/voshch/hunav_sim.git
-    version: jazzy
+    url: https://github.com/Social-Nav/hunav_sim.git
+    version: feature/social_yielding
   deps/hunav/people_msgs:
     type: git
     url: https://github.com/wg-perception/people.git
     version: ros2
   deps/hunav/arena_hunav_sim_bridge:
     type: git
-    url: https://github.com/ductaingn/arena_hunav_sim_bridge.git
+    url: https://github.com/Social-Nav/arena_hunav_sim_bridge.git
+    version: feature/social_yielding
+
+  # social navigation (nav2 controller + costmap layer)
+  deps/obstacle_distance_manager:
+    type: git
+    url: https://github.com/Social-Nav/obstacle_distance_manager.git
+    version: feature/social_yielding
+  deps/nav2_social_mpc_controller:
+    type: git
+    url: https://github.com/Social-Nav/nav2_social_mpc_controller.git
+    version: feature/social_yielding
+  deps/nav2_social_costmap_plugin:
+    type: git
+    url: https://github.com/robotics-upo/nav2_social_costmap_plugin.git
     version: humble

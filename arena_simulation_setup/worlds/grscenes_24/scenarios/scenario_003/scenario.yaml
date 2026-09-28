@@ -1,0 +1,30 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [3.87657, 4.51022, 87.48312]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.72
+  desired_velocity: 0.94
+  waypoints:
+  - [3.9471, 6.11473, 95.9806]
+  - [3.75315, 7.96608, 95.9806]
+- name: hunav_2
+  model: male_adult_medical_01
+  pose: [4.67001, 7.64871, -115.23283]
+  behavior_tree: BTRegularNav.xml
+  velocity: 1.05
+  desired_velocity: 1.2
+  waypoints:
+  - [3.9471, 6.11473, -92.51688]
+  - [3.87657, 4.51022, -92.51688]
+robot:
+  name: robot
+  pose: [4.98739, 6.23815, -173.23383]
+  social_attributes: neutral
+  waypoints:
+  - [3.9471, 6.11473, -178.96776]
+  - [1.98996, 6.07947, -178.96776]
+  behavior: drives along a short vertical test path through the shared center after
+    the first pedestrian clears it

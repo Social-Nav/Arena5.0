@@ -598,7 +598,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         )
 
         await self._world_manager.sync()
-        await self.reset_task(first_map=True)
+        await self.reset_task(reason='startup (first_map, during setup)', first_map=True)
 
         self._check_status_task = asyncio.create_task(self._check_task_status())
 
@@ -994,8 +994,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         self.get_logger().warn("Task Reset!")
         self.get_logger().warn("=============")
 
-    async def reset_task(self, **kwargs):
+    async def reset_task(self, reason: str = 'unspecified', **kwargs):
         async with self._reset_lock:
+            self.get_logger().debug(f"[Reset-reason] reset_task: {reason}")
             await self._reset_task_unlocked(**kwargs)
 
     async def _check_task_status(self, *args, **kwargs):
@@ -1024,6 +1025,10 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
 
                         should_reset = True
                     if should_reset:
+                        self.get_logger().debug(
+                            '[Reset-reason] auto-reset loop '
+                            f'(cause={done_reason})'
+                        )
                         await self._reset_task_unlocked()
         except asyncio.CancelledError:
             pass
@@ -1099,7 +1104,12 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         response: std_srvs.Empty.Response
     ):
         self.get_logger().debug("Task Generator received task-reset request!")
-        await self.reset_task()
+        # No caller identity is available on an Empty service request, so name the likely
+        # sources instead: the RViz task_generator_gui panel, a script, or a manual
+        # `ros2 service call`. This is the path that produces resets with no timeout and no
+        # goal-reached behind them.
+        await self.reset_task(
+            reason='reset_task SERVICE called externally (RViz panel / script / ros2 service call)')
         return response
 
     async def _cb_pause_simulation(
