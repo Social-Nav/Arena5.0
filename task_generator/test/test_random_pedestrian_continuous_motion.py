@@ -60,6 +60,7 @@ def _random_mode():
         MODELS_STATIC_OBSTACLES=SimpleNamespace(value=[]),
         MODELS_INTERACTIVE_OBSTACLES=SimpleNamespace(value=[]),
         MODELS_DYNAMIC_OBSTACLES=SimpleNamespace(value=['female_adult_business_02']),
+        POOL_SIZE=SimpleNamespace(value=-1),
     )
     return mode
 
@@ -82,6 +83,33 @@ def test_random_pedestrian_uses_regular_navigation_tree_and_preserves_sampled_go
     assert [(p.position.x, p.position.y) for p in message.goals] == sampled_goals
     assert (0.0, 0.0) not in [(p.position.x, p.position.y) for p in message.goals]
     assert (5.0, 5.0) not in [(p.position.x, p.position.y) for p in message.goals]
+
+
+def test_density_arms_are_nested_prefixes_of_one_fixed_pool():
+    def sample(count):
+        mode = _random_mode()
+        mode._NodeInterface__node.conf.General.RNG.value = np.random.default_rng(20260825)
+        mode._config.N_DYNAMIC_OBSTACLES = SimpleNamespace(value=(count, count))
+        mode._config.POOL_SIZE = SimpleNamespace(value=10)
+        return asyncio.run(mode.reset())[1]
+
+    n0 = sample(0)
+    n5 = sample(5)
+    n10 = sample(10)
+
+    encode = lambda items: [
+        (
+            item.name,
+            item.model.name,
+            item.pose.position.x,
+            item.pose.position.y,
+            item.pose.orientation.to_yaw(),
+            tuple((goal.x, goal.y) for goal in item.waypoints),
+        )
+        for item in items
+    ]
+    assert encode(n0) == []
+    assert encode(n5) == encode(n10)[:5]
 
 
 def test_scenario_authored_behavior_tree_override_still_wins():

@@ -11,6 +11,7 @@ from arena_bringup.benchmark_result import (
 )
 from arena_bringup.social_nav_metrics_aggregate import (
     aggregate_summary,
+    derive_benchmark_success,
     main as aggregate_main,
     summarize_run,
 )
@@ -41,9 +42,13 @@ def _write_complete_run(run_dir: Path) -> None:
                 'local_planner': 'dual_vln',
                 'human': 'hunav',
                 'episodes': 1,
+                'dual_vln_system2_model_path': '/models/socialgen',
             },
             'runtime_adjustments': {'dual_vln_status_topic': '/status'},
             'runtime_environment': {'ros_discovery': {'ROS_DOMAIN_ID': '1'}},
+            'model_provenance': {
+                'system2_checkpoint': {'path': '/models/socialgen', 'revision': {'revision': 'abc'}},
+            },
             'provenance': {
                 'git_commit': 'abc123',
                 'git_branch': 'feat/internnav-eval-progress',
@@ -150,10 +155,18 @@ def test_generate_benchmark_result_writes_complete_canonical_schema(tmp_path):
     assert result['verdict']['benchmark_ready'] is True
     assert result['verdict']['status'] == 'passed'
     assert result['verdict']['valid_run'] is True
+    assert result['verdict']['success'] is True
+    assert result['verdict']['benchmark_success'] is True
+    assert result['verdict']['instruction_following_success'] is True
+    assert result['verdict']['collision_free'] is True
+    assert result['verdict']['social_distance_success'] is True
+    assert result['metrics']['success_criteria']['social_distance_threshold_m'] == 1.0
     assert result['verdict']['primary_failure'] == 'success'
     assert result['metrics']['task']['spl'] == 0.88
     assert result['metrics']['social']['min_footprint_clearance_m'] == 0.95
     assert result['metrics']['model']['forward_count'] == 10
+    assert result['model']['system2_path'] == '/models/socialgen'
+    assert result['model']['system2_checkpoint']['revision']['revision'] == 'abc'
     artifact = result['artifacts']['files']['run_manifest.yaml']
     assert artifact['present'] is True
     assert artifact['size_bytes'] > 0
@@ -260,6 +273,101 @@ def test_valid_task_failure_is_distinct_from_invalid_run(tmp_path):
     ]) == 1
 
 
+def test_zero_human_control_does_not_get_missing_humans_failure_tag(tmp_path):
+    run_dir = tmp_path / 'zero_humans'
+    _write_complete_run(run_dir)
+    manifest = yaml.safe_load((run_dir / 'run_manifest.yaml').read_text())
+    manifest['parameters']['expected_human_count'] = 0
+    (run_dir / 'run_manifest.yaml').write_text(
+        yaml.safe_dump(manifest), encoding='utf-8'
+    )
+    social = json.loads((run_dir / 'social_metrics.json').read_text())
+    social['humans_present'] = False
+    social['max_humans_observed'] = 0
+    social['moving_human_count'] = 0
+    _write_json(run_dir / 'social_metrics.json', social)
+    validation = json.loads((run_dir / 'artifact_validation.json').read_text())
+    validation['checks']['humans']['expected_human_count'] = 0
+    _write_json(run_dir / 'artifact_validation.json', validation)
+
+    result = generate_benchmark_result(run_dir)
+
+    assert 'missing_humans' not in result['verdict']['failure_tags']
+    assert result['verdict']['human_safety_gate_applied'] is False
+    assert result['verdict']['success'] is result['verdict']['instruction_following_success']
+    assert result['verdict']['collision_free'] is None
+    assert result['verdict']['social_distance_success'] is None
+
+
+def _derive_human_success(**social_overrides):
+    social = {
+        'humans_present': True,
+        'min_human_distance_m': 1.01,
+        'human_collision_count': 0,
+        'footprint_human_collision_count': 0,
+        'thresholds': {'personal_space_radius_m': 1.0},
+    }
+    social.update(social_overrides)
+    return derive_benchmark_success(
+        expected_human_count=5,
+        strict_task_success=True,
+        social_metrics=social,
+        static_occupancy={'collision_sample_count': 0},
+    )
+
+
+def test_human_episode_success_requires_collision_free_and_social_distance():
+    result = _derive_human_success()
+
+    assert result['instruction_following_success'] is True
+    assert result['collision_free'] is True
+    assert result['social_distance_success'] is True
+    assert result['benchmark_success'] is True
+
+
+def test_human_episode_collision_overrides_instruction_success():
+    result = _derive_human_success(footprint_human_collision_count=1)
+
+    assert result['collision_free'] is False
+    assert result['benchmark_success'] is False
+    assert 'collision_detected' in result['benchmark_success_failure_reasons']
+
+
+def test_human_episode_social_distance_violation_overrides_instruction_success():
+    result = _derive_human_success(min_human_distance_m=0.99)
+
+    assert result['collision_free'] is True
+    assert result['social_distance_success'] is False
+    assert result['benchmark_success'] is False
+    assert 'social_distance_threshold_failed' in result['benchmark_success_failure_reasons']
+
+
+def test_social_distance_threshold_is_strictly_greater_than():
+    result = _derive_human_success(min_human_distance_m=1.0)
+
+    assert result['social_distance_operator'] == '>'
+    assert result['social_distance_success'] is False
+    assert result['benchmark_success'] is False
+
+
+def test_human_episode_missing_safety_evidence_fails_closed():
+    result = _derive_human_success(min_human_distance_m=None)
+
+    assert result['safety_evidence_complete'] is False
+    assert result['social_distance_success'] is False
+    assert result['benchmark_success'] is False
+    assert 'social_distance_evidence_missing' in result['benchmark_success_failure_reasons']
+
+
+def test_human_episode_missing_collision_evidence_fails_closed():
+    result = _derive_human_success(human_collision_count=None)
+
+    assert result['safety_evidence_complete'] is False
+    assert result['collision_free'] is False
+    assert result['benchmark_success'] is False
+    assert 'collision_evidence_missing' in result['benchmark_success_failure_reasons']
+
+
 def test_aggregate_summary_has_counts_rates_and_groups(tmp_path):
     run_dir = tmp_path / 'run'
     _write_complete_run(run_dir)
@@ -273,6 +381,10 @@ def test_aggregate_summary_has_counts_rates_and_groups(tmp_path):
     assert summary['valid_run_count'] == 1
     assert summary['invalid_run_count'] == 0
     assert summary['benchmark_ready_rate'] == 1.0
+    assert summary['benchmark_success_count'] == 1
+    assert summary['benchmark_success_rate'] == 1.0
+    assert summary['benchmark_success_rate_valid_runs'] == 1.0
+    assert summary['instruction_following_success_rate_valid_runs'] == 1.0
     assert summary['task_success_rate_valid_runs'] == 1.0
     assert summary['mean_spl_valid_runs'] == 0.88
     assert summary['statistics']['spl'] == {
@@ -285,6 +397,26 @@ def test_aggregate_summary_has_counts_rates_and_groups(tmp_path):
     assert summary['mean_spl'] == 0.88
     assert summary['by_world']['grscenes_20_v1']['benchmark_ready_rate'] == 1.0
     assert summary['by_scenario']['grscenes_20_v1/default_2']['run_count'] == 1
+
+
+def test_density_provenance_is_exported_to_aggregate_rows(tmp_path):
+    run_dir = tmp_path / 'run'
+    _write_complete_run(run_dir)
+    manifest = yaml.safe_load((run_dir / 'run_manifest.yaml').read_text())
+    manifest['parameters'].update({
+        'expected_human_count': 5,
+        'pedestrian_seed': 20260923,
+        'pedestrian_pool_size': 10,
+    })
+    (run_dir / 'run_manifest.yaml').write_text(
+        yaml.safe_dump(manifest), encoding='utf-8'
+    )
+
+    row = summarize_run(run_dir, prefer_canonical=False)
+
+    assert row['expected_human_count'] == 5
+    assert row['pedestrian_seed'] == 20260923
+    assert row['pedestrian_pool_size'] == 10
 
 
 def test_aggregate_cli_can_gate_on_ready_runs(tmp_path):

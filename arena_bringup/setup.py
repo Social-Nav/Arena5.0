@@ -42,6 +42,7 @@ setup(
         *recursive_walk('configs'),
     ],
     install_requires=['setuptools', 'PyYAML', 'numpy', 'Pillow', 'imageio', 'pandas'],
+    extras_require={'test': ['pytest']},
     zip_safe=True,
     maintainer='voshch',
     maintainer_email='dev@voshch.dev',
@@ -65,6 +66,7 @@ setup(
             'internnav_timing_plot = arena_bringup.internnav_timing_plot:main',
             'benchmark_failure_report = arena_bringup.benchmark_failure_report:main',
             'benchmark_profile = arena_bringup.benchmark_profile:main',
+            'benchmark_test_split = arena_bringup.test_split:main',
         ],
         'launch_ros.node_action': [
             'NodeLogLevelExtension = arena_bringup.extensions.NodeLogLevelExtension:NodeLogLevelExtension',

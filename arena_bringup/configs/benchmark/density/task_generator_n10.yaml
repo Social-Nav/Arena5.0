@@ -1,0 +1,26 @@
+/**:
+  ros__parameters:
+    episode_navigation_ready_timeout_sec: 900.0
+    world_geometry_ready_timeout_sec: 600.0
+    rng: 20260923
+    task:
+      random:
+        dynamic:
+          n: [10, 10]
+          pool_size: 10
+          models: [female_adult_business_02]
+        interactive:
+          n: [0, 0]
+          models: [shelf]
+        static:
+          n: [0, 0]
+          models: [shelf]
+      scenario:
+        file: default
+    hunavsim:
+      parameters:
+        max_vel: 0.3
+        force_factor_desired: 1.0
+        force_factor_obstacle: 1.0
+        force_factor_social: 5.0
+        force_factor_robot: 0.0

@@ -115,6 +115,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         self._episode_entities_ready: asyncio.Event = asyncio.Event()
         self._human_states_ready: asyncio.Event = asyncio.Event()
         self._last_human_states_count = 0
+        self._human_count_mismatch_observed = False
         # Episode-start barrier state.  ``_episode_started`` is the public t=0
         # edge: the timeout origin, pedestrian motion, the recorded episode and
         # the model client all key off it, so nothing that constitutes the
@@ -255,7 +256,10 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
     def _human_states_callback(self, msg: Agents) -> None:
         agent_count = len(getattr(msg, 'agents', []) or [])
         self._last_human_states_count = agent_count
-        if agent_count > 0:
+        expected = int(self.rosparam[int].get('expected_human_count', -1))
+        if expected >= 0 and agent_count != expected:
+            self._human_count_mismatch_observed = True
+        if (expected >= 0 and agent_count == expected) or (expected < 0 and agent_count > 0):
             self._human_states_ready.set()
 
     def _video_streams_ready_callback(self, msg: Int16) -> None:
@@ -385,10 +389,12 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
           request left 0.06 s after ego frame 0, median completion 1.23 s).
         """
         human_simulator = self.conf.Arena.HUMAN.value
-        pedestrians_expected = human_simulator in (
+        uses_pedestrian_backend = human_simulator in (
             Constants.HumanSimulator.HUNAV,
             Constants.HumanSimulator.GRSCENES_REPLAY,
         )
+        expected_human_count = int(self.rosparam[int].get('expected_human_count', -1))
+        pedestrians_expected = uses_pedestrian_backend and expected_human_count != 0
         recorder_attached = self._video_recorder_attached()
         channels = self._model_channels()
         model_configured = bool(channels['command_services'] or channels['status_topics'])
@@ -412,7 +418,10 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
                 check=self._human_states_ready.is_set,
                 required=pedestrians_expected,
                 skip_reason=f'human_simulator={getattr(human_simulator, "value", human_simulator)}',
-                detail=lambda: f'human_states_agents={self._last_human_states_count}',
+                detail=lambda: (
+                    f'human_states_agents={self._last_human_states_count} '
+                    f'expected={expected_human_count}'
+                ),
             ),
             BarrierCondition(
                 name='video_streams_ready',
@@ -837,6 +846,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
     async def _wait_for_human_states_ready_if_required(self) -> None:
         require_human_states_ready = self.rosparam[bool].get('require_human_states_ready', False)
         timeout_s = max(0.0, self.rosparam[float].get('human_states_ready_timeout_sec', 10.0))
+        expected_human_count = int(self.rosparam[int].get('expected_human_count', -1))
         if not require_human_states_ready or timeout_s <= 0.0:
             return
 
@@ -845,13 +855,24 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             Constants.HumanSimulator.GRSCENES_REPLAY,
         ):
             return
+        if expected_human_count == 0:
+            if self._human_count_mismatch_observed or self._last_human_states_count != 0:
+                raise RuntimeError(
+                    'Expected zero HuNav pedestrians but observed '
+                    f'{self._last_human_states_count}; refusing to start a contaminated N=0 episode'
+                )
+            self.get_logger().warn(
+                'Expected zero HuNav pedestrians; zero-count readiness accepted without waiting for a non-empty human_states message'
+            )
+            return
 
         if self._human_states_ready.is_set():
             return
 
         human_label = self.conf.Arena.HUMAN.value.value
         self.get_logger().info(
-            f"Waiting up to {timeout_s:.1f}s for non-empty {human_label} human_states before releasing episode start"
+            f"Waiting up to {timeout_s:.1f}s for {human_label} human_states count "
+            f"{expected_human_count if expected_human_count >= 0 else 'greater than zero'} before releasing episode start"
         )
         try:
             await asyncio.wait_for(self._human_states_ready.wait(), timeout=timeout_s)
@@ -902,6 +923,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         self._episode_entities_ready.clear()
         self._human_states_ready.clear()
         self._last_human_states_count = 0
+        self._human_count_mismatch_observed = False
         # Re-arm the barrier for this episode.  Pedestrians are held from here
         # until the barrier passes, so no part of their route can be consumed
         # while the scene loads, the robot is teleported and the video streams

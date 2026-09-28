@@ -453,6 +453,7 @@ def _task_generator_stub(events, *, streams_ready_publishers=1):
     node._robot_navigation_ready = False
     node._video_streams_ready_episode = None
     node._last_human_states_count = 0
+    node._human_count_mismatch_observed = False
     node._video_streams_ready_topic = '/task_generator_node/video_streams_ready'
     node._vln_instruction = 'go'
     node._vln_instruction_file = ''
@@ -866,6 +867,55 @@ def test_model_reachability_can_be_declared_not_required_explicitly():
     )
     assert model.required is False
     assert model.skip_reason == 'episode_start_require_model_ready=false'
+
+
+def test_zero_expected_humans_do_not_block_the_episode_barrier():
+    events = []
+    node = _task_generator_stub(events)
+    node.rosparam = _RosParamAccessor({
+        'episode_start_barrier_timeout_sec': 5.0,
+        'episode_start_recorder_discovery_sec': 0.0,
+        'expected_human_count': 0,
+    })
+
+    condition = next(
+        item for item in node._episode_start_barrier_conditions()
+        if item.name == 'pedestrians_spawned'
+    )
+
+    assert condition.required is False
+    assert 'expected=0' in condition.describe()
+
+
+def test_human_state_readiness_requires_the_exact_expected_count():
+    from task_generator.node import TaskGenerator
+
+    node = _task_generator_stub([])
+    node.rosparam = _RosParamAccessor({'expected_human_count': 5})
+
+    TaskGenerator._human_states_callback(
+        node, SimpleNamespace(agents=[object()] * 4)
+    )
+    assert node._human_states_ready.is_set() is False
+
+    TaskGenerator._human_states_callback(
+        node, SimpleNamespace(agents=[object()] * 5)
+    )
+    assert node._human_states_ready.is_set() is True
+
+
+def test_zero_expected_humans_record_nonzero_contamination():
+    from task_generator.node import TaskGenerator
+
+    node = _task_generator_stub([])
+    node.rosparam = _RosParamAccessor({'expected_human_count': 0})
+
+    TaskGenerator._human_states_callback(
+        node, SimpleNamespace(agents=[object()])
+    )
+
+    assert node._human_states_ready.is_set() is False
+    assert node._human_count_mismatch_observed is True
 
 
 # --------------------------------------------------------------------------- #

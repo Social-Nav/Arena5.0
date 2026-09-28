@@ -227,11 +227,12 @@ source_fn(){
 }
 
 launch(){
-    local robot namespace mode model_path device rgb_topic depth_topic camera_info_topic instruction_topic navigation_goal_topic eval_ready_topic task_reset_topic scenario_reset_topic trace_path status_topic visualization_topic action_visualization_topic model_output_topic model_output_policy visualization_rate_hz enable_visualization planning_rate_hz inference_rate_hz inference_timeout_sec camera_ready_timeout_sec internnav_http_url internnav_http_timeout_sec adapter_target extra_ros_args cmd_vel_topic cmd_vel_topic_explicit raw_cmd_vel_topic timing_mode odom_topic
+    local robot namespace mode model_path system2_model_path device rgb_topic depth_topic camera_info_topic instruction_topic navigation_goal_topic eval_ready_topic task_reset_topic scenario_reset_topic trace_path status_topic visualization_topic action_visualization_topic model_output_topic model_output_policy visualization_rate_hz enable_visualization planning_rate_hz inference_rate_hz inference_timeout_sec camera_ready_timeout_sec internnav_http_url internnav_http_timeout_sec adapter_target extra_ros_args cmd_vel_topic cmd_vel_topic_explicit raw_cmd_vel_topic timing_mode odom_topic
     robot="${ARENA_INTERNNAV_ROBOT:-Ai2_Bot2}"
     namespace="${ARENA_INTERNNAV_NAMESPACE:-/task_generator_node/$robot}"
     mode="${ARENA_INTERNNAV_MODE:-internnav}"
     model_path="${ARENA_INTERNNAV_MODEL_PATH:-$(default_model_path)}"
+    system2_model_path="${ARENA_INTERNNAV_SYSTEM2_MODEL_PATH:-}"
     device="${ARENA_INTERNNAV_DEVICE:-cuda:0}"
     rgb_topic="${ARENA_INTERNNAV_RGB_TOPIC:-head_camera/image}"
     depth_topic="${ARENA_INTERNNAV_DEPTH_TOPIC:-head_camera/depth}"
@@ -274,6 +275,7 @@ launch(){
             --namespace) namespace="$2"; shift 2 ;;
             --mode) mode="$2"; shift 2 ;;
             --model-path) model_path="$2"; shift 2 ;;
+            --system2-model-path) system2_model_path="$2"; shift 2 ;;
             --device) device="$2"; shift 2 ;;
             --rgb-topic) rgb_topic="$2"; shift 2 ;;
             --depth-topic) depth_topic="$2"; shift 2 ;;
@@ -348,8 +350,11 @@ launch(){
     if [ -n "$trace_path" ]; then
         cmd="$cmd export ARENA_EVAL_INTERNNAV_TRACE_PATH='$trace_path';"
     fi
+    if [ -n "$system2_model_path" ]; then
+        cmd="$cmd export ARENA_INTERNNAV_SYSTEM2_MODEL_PATH='$system2_model_path';"
+    fi
     if [ "$official_http" = "true" ]; then
-        cmd="$cmd $(venv_path)/bin/python -u /opt/arena_ws/deps/InternNav/scripts/realworld/http_internvla_server.py --host '0.0.0.0' --port '$http_port' --device '$device' --model_path '$model_path' --output_dir '$http_output_dir' & official_http_pid=\$!; trap 'kill \$official_http_pid 2>/dev/null || true' EXIT INT TERM; health_attempts=\$($(venv_path)/bin/python -c \"import math; print(max(1, int(math.ceil(float('$http_health_timeout_sec') / 2.0))))\"); health_i=0; while ! $(venv_path)/bin/python -c \"import json, urllib.request; data=json.loads(urllib.request.urlopen('http://127.0.0.1:$http_port/health', timeout=2).read().decode('utf-8')); raise SystemExit(0 if data.get('status') == 'ready' else 1)\"; do health_i=\$((health_i + 1)); if [ \$health_i -ge \$health_attempts ]; then echo 'official InternVLA HTTP server did not become ready at http://127.0.0.1:$http_port/health' >&2; exit 1; fi; sleep 2; done;"
+        cmd="$cmd $(venv_path)/bin/python -u /opt/arena_ws/deps/InternNav/scripts/realworld/http_internvla_server.py --host '0.0.0.0' --port '$http_port' --device '$device' --model_path '$model_path' --system2-model-path '$system2_model_path' --output_dir '$http_output_dir' & official_http_pid=\$!; trap 'kill \$official_http_pid 2>/dev/null || true' EXIT INT TERM; health_attempts=\$($(venv_path)/bin/python -c \"import math; print(max(1, int(math.ceil(float('$http_health_timeout_sec') / 2.0))))\"); health_i=0; expected_system2='$system2_model_path'; while ! $(venv_path)/bin/python -c \"import json, urllib.request; data=json.loads(urllib.request.urlopen('http://127.0.0.1:$http_port/health', timeout=2).read().decode('utf-8')); actual=((data.get('system2_checkpoint') or {}).get('path') or ''); expected='$system2_model_path'; raise SystemExit(0 if data.get('status') == 'ready' and actual == expected else 1)\"; do health_i=\$((health_i + 1)); if [ \$health_i -ge \$health_attempts ]; then echo 'official InternVLA HTTP server did not become ready with expected System2=$system2_model_path at http://127.0.0.1:$http_port/health' >&2; exit 1; fi; sleep 2; done;"
     fi
     case "$rgb_topic" in /*) ;; *) rgb_topic="$namespace/$rgb_topic" ;; esac
     case "$depth_topic" in /*) ;; *) depth_topic="$namespace/$depth_topic" ;; esac
@@ -396,6 +401,7 @@ Launch options:
   --namespace NS                Default: /task_generator_node/<robot>
   --mode MODE                   Default: internnav
   --model-path PATH             Default: /opt/arena_ws/deps/models/InternVLA-N1-DualVLN
+  --system2-model-path PATH     Optional pure System2 checkpoint overlay; base/System1 stay unchanged
   --device DEVICE               Default: cuda:0
   --rgb-topic TOPIC             Default: head_camera/image
   --depth-topic TOPIC           Default: head_camera/depth

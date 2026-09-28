@@ -24,7 +24,9 @@ WORKSPACE_ROOT = Path(__file__).resolve().parents[4]     # the umbrella workspac
 SCRIPT = REPO_ROOT / '_meta' / 'docker' / 'features' / 'benchmark' / 'main'
 
 # Verbs that `plan` must be able to describe.
-PLANNABLE_VERBS = ['run', 'build', 'runtime', 'up', 'serve', 'eval', 'stop', 'down']
+PLANNABLE_VERBS = [
+    'run', 'full-eval', 'density-eval', 'build', 'runtime', 'up', 'serve', 'eval', 'stop', 'down',
+]
 
 # The declared feature set, which must be visible in the script rather than
 # inherited from the untracked src/Arena/.installed.
@@ -371,6 +373,161 @@ def test_default_eval_uses_the_current_strict_benchmark_contract():
     assert '--scenario-file default_2' in out
     assert '--timeout 300' in out
     assert '--internnav-device cuda:0' in out
+
+
+def test_density_arguments_reach_the_eval_driver():
+    config = '/opt/arena_ws/src/Arena/arena_bringup/configs/benchmark/density/task_generator_n05.yaml'
+    out = _run([
+        'plan', 'eval',
+        '--task-generator-parameter-file', config,
+        '--expected-human-count', '5',
+        '--pedestrian-seed', '20260923',
+        '--pedestrian-pool-size', '10',
+    ]).stdout
+
+    assert f'--task-generator-parameter-file {config}' in out
+    assert '--expected-human-count 5' in out
+    assert '--pedestrian-seed 20260923' in out
+    assert '--pedestrian-pool-size 10' in out
+
+
+def test_full_eval_uses_only_the_checked_in_test_split():
+    out = _run(['plan', 'full-eval']).stdout
+
+    assert 'selected=133 discovered=150 skipped=17' in out
+    assert 'grscenes_1_v1/default' in out
+    assert 'grscenes_30_v1/default_3' in out
+    assert 'grscenes_19_v1/default' not in out
+    assert 'grscenes_23_v1/default_4' not in out
+    assert 'grscenes_26_v1/default_2' not in out
+    assert 'grscenes_27_v1/default_4' not in out
+    assert 'grscenes_29_v1/default_4' not in out
+    assert 'grscenes_30_v1/default_4' not in out
+    assert 'grscenes_4_v1/default_4' not in out
+
+
+def test_full_eval_honours_a_custom_relative_path_allowlist(tmp_path):
+    split = tmp_path / 'test_split.json'
+    split.write_text(
+        '["worlds/grscenes_1_v1/scenarios/default/episode_metadata.json", '
+        '"worlds/grscenes_30_v1/scenarios/default_3/episode_metadata.json"]\n',
+        encoding='utf-8',
+    )
+
+    result = _run(['plan', 'full-eval', '--test-split', str(split)])
+
+    assert result.returncode == 0, result.stderr
+    assert 'selected=2 discovered=150 skipped=148' in result.stdout
+    selected = [
+        line.strip()[2:]
+        for line in result.stdout.splitlines()
+        if line.startswith('  - ')
+    ]
+    assert selected == ['grscenes_1_v1/default', 'grscenes_30_v1/default_3']
+
+
+def test_full_eval_rejects_invalid_split_before_docker(tmp_path):
+    split = tmp_path / 'test_split.json'
+    split.write_text('["../outside/episode_metadata.json"]\n', encoding='utf-8')
+
+    result = _run(
+        ['full-eval', '--test-split', str(split)],
+        env=_docker_free_env(tmp_path),
+    )
+
+    assert result.returncode != 0
+    assert 'split path' in result.stderr
+    assert 'PLAN MODE CALLED DOCKER' not in result.stderr
+
+
+def test_full_eval_owns_per_case_output_prefix():
+    result = _run([
+        'plan', 'full-eval', '--', '--output-prefix', 'would-collide',
+    ])
+
+    assert result.returncode != 0
+    assert 'full-eval owns its output location' in result.stderr
+
+
+def test_full_eval_rejects_output_root_override():
+    result = _run([
+        'plan', 'full-eval', '--', '--output-root', '/tmp/would-escape',
+    ])
+
+    assert result.returncode != 0
+    assert 'full-eval owns its output location' in result.stderr
+
+
+@pytest.mark.parametrize('flag', ['--case', '--world', '--scenario'])
+def test_full_eval_rejects_case_selection_outside_the_split(flag):
+    value = 'grscenes_1_v1/default' if flag == '--case' else 'default'
+    if flag == '--world':
+        value = 'grscenes_1_v1'
+
+    result = _run(['plan', 'full-eval', flag, value])
+
+    assert result.returncode != 0
+    assert 'case selection comes only from --test-split' in result.stderr
+
+
+@pytest.mark.parametrize('prefix', ['/tmp/full_eval', '../full_eval', 'full eval'])
+def test_full_eval_rejects_unsafe_output_prefixes(prefix):
+    result = _run(['plan', 'full-eval', '--full-output-prefix', prefix])
+
+    assert result.returncode != 0
+    assert 'full-eval output prefix' in result.stderr
+
+
+def test_full_eval_requires_a_fresh_result_for_each_case():
+    source = SCRIPT.read_text(encoding='utf-8')
+
+    assert '-newer "$case_started_at"' in source
+    assert 'latest_case_result "$case_started_at"' in source
+
+
+def test_density_eval_is_a_three_arm_ten_episode_paired_plan():
+    out = _run(['plan', 'density-eval']).stdout
+
+    assert out.count('selected=10 discovered=150 skipped=140') == 1
+    assert 'output_prefix=full_eval/n00' in out
+    assert 'output_prefix=full_eval/n05' in out
+    assert 'output_prefix=full_eval/n10' in out
+    assert 'human=hunav tm_obstacles=random traversal=reciprocate' in out
+    assert 'task_generator_n00.yaml' in SCRIPT.read_text(encoding='utf-8')
+    assert 'task_generator_n05.yaml' in SCRIPT.read_text(encoding='utf-8')
+    assert 'task_generator_n10.yaml' in SCRIPT.read_text(encoding='utf-8')
+
+
+def test_density_eval_rejects_a_non_base_model():
+    result = _run([
+        'plan', 'density-eval', '--model-path', '/models/not-the-base-model',
+    ])
+
+    assert result.returncode != 0
+    assert 'base-model experiment' in result.stderr
+
+
+def test_system2_model_path_reaches_server_eval_and_config():
+    path = '/opt/arena_ws/deps/models/socialgen'
+    plan = _run(['plan', 'eval', '--system2-model-path', path]).stdout
+    config = _run(['config', '--system2-model-path', path]).stdout
+    serve = _run(['plan', 'serve', '--system2-model-path', path]).stdout
+    assert f'--internnav-system2-model-path {path}' in plan
+    assert f'system2_model_path={path}' in config
+    assert f'{path}/model.safetensors.index.json' in serve
+    assert f'{path}/.arena_system2_revision.json' in serve
+    assert 'ARENA_INTERNNAV_SYSTEM2_MODEL_PATH=' in serve
+
+
+def test_complete_model_path_reaches_server_and_eval():
+    path = '/opt/arena_ws/deps/models/InternVLA-N1-DualVLN-SocialGen'
+    plan = _run(['plan', 'eval', '--model-path', path]).stdout
+    serve = _run(['plan', 'serve', '--model-path', path]).stdout
+    config = _run(['config', '--model-path', path]).stdout
+
+    assert f'--internnav-model-path {path}' in plan
+    assert f'ARENA_INTERNNAV_MODEL_PATH={path}' in serve
+    assert f'model_path={path}' in config
 
 
 def test_server_and_eval_share_profile_timing_mode():

@@ -101,6 +101,7 @@ def generate_benchmark_result(
             'robot': summary['robot'],
             'planner': summary['planner'],
             'human': summary['human'],
+            'expected_human_count': summary['expected_human_count'],
             'episodes_requested': summary['episodes_requested'],
             'single_episode': summary['single_episode'],
         },
@@ -123,6 +124,8 @@ def generate_benchmark_result(
         'model': {
             'mode': (manifest.get('parameters') or {}).get('dual_vln_mode'),
             'path': (manifest.get('parameters') or {}).get('dual_vln_model_path'),
+            'system2_path': (manifest.get('parameters') or {}).get('dual_vln_system2_model_path'),
+            'system2_checkpoint': (manifest.get('model_provenance') or {}).get('system2_checkpoint'),
             'device': (manifest.get('parameters') or {}).get('dual_vln_device'),
             'output_policy': (manifest.get('parameters') or {}).get('dual_vln_model_output_policy'),
             'external_server': _as_bool((manifest.get('parameters') or {}).get('internnav_external_server')),
@@ -133,6 +136,13 @@ def generate_benchmark_result(
             'valid_run': summary['valid_run'],
             'benchmark_ready': summary['benchmark_ready'],
             'execution_pass': summary['execution_pass'],
+            'success': summary['benchmark_success'],
+            'benchmark_success': summary['benchmark_success'],
+            'instruction_following_success': summary['instruction_following_success'],
+            'human_safety_gate_applied': summary['human_safety_gate_applied'],
+            'safety_evidence_complete': summary['safety_evidence_complete'],
+            'collision_free': summary['collision_free'],
+            'social_distance_success': summary['social_distance_success'],
             'task_success': summary['strict_task_success'],
             'social_success': summary['strict_social_success'],
             'artifact_validation_pass': summary['artifact_validation_pass'],
@@ -142,6 +152,9 @@ def generate_benchmark_result(
             'diagnostic_tags': _split_list(summary['diagnostic_tags']),
             'task_failure_reasons': _split_list(summary['strict_task_failure_reasons']),
             'social_failure_reasons': _split_list(summary['strict_social_failure_reasons']),
+            'benchmark_success_failure_reasons': _split_list(
+                summary['benchmark_success_failure_reasons']
+            ),
             'failed_checks': _split_list(validation.get('failed_checks')),
             'warnings': _split_list(validation.get('warnings')),
         },
@@ -160,10 +173,27 @@ def generate_benchmark_result(
             'episode_outcome': manifest_result.get('episode_outcome'),
         },
         'metrics': {
+            'success_criteria': {
+                'policy': 'arena.task_and_social_safety.v1',
+                'formula': (
+                    'instruction_following_success AND '
+                    '(NOT human_safety_gate_applied OR '
+                    '(collision_free AND social_distance_success))'
+                ),
+                'instruction_following_metric': 'strict_task_success',
+                'human_safety_gate_applied': summary['human_safety_gate_applied'],
+                'collision_free': summary['collision_free'],
+                'social_distance_success': summary['social_distance_success'],
+                'social_distance_metric': summary['social_distance_metric'],
+                'social_distance_operator': summary['social_distance_operator'],
+                'social_distance_threshold_m': summary['social_distance_threshold_m'],
+                'safety_evidence_complete': summary['safety_evidence_complete'],
+            },
             'task': {key: summary[key] for key in (
                 'goal_reached', 'episode_duration_sec', 'navigation_error_m',
                 'oracle_error_m', 'trajectory_length_m', 'shortest_path_length_m',
-                'reference_path_source', 'reference_path_available',
+                'shortest_path_length_source', 'reference_path_source',
+                'reference_path_geometry_source', 'reference_path_available',
                 'spl', 'ndtw', 'sdtw', 'goal_progress_m',
                 'static_occupancy_collision_samples', 'commanded_stuck_time_sec',
             )},

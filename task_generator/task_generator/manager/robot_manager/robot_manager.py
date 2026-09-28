@@ -165,6 +165,9 @@ class RobotManager(NodeInterface):
         self._dual_vln_status: str = 'startup'
         self._dual_vln_status_wall_time: float = 0.0
         self._dual_vln_status_payload: dict = {}
+        self._dual_vln_episode_ready = None
+        self._model_declared_stop = False
+        self._model_declared_stop_payload: dict = {}
         self._direct_dual_vln_client: rclpy.client.Client | None = None
         self._direct_dual_vln_timer: rclpy.timer.Timer | None = None
         self._direct_dual_vln_future = None
@@ -304,7 +307,15 @@ class RobotManager(NodeInterface):
         Returns:
             bool: True if the goal is reached, False otherwise.
         """
-        return self._is_goal_reached
+        return self._is_goal_reached or self._model_declared_stop
+
+    @property
+    def done_reason(self) -> str:
+        if self._is_goal_reached:
+            return 'goal_reached'
+        if self._model_declared_stop:
+            return 'model_stop'
+        return 'running'
 
     async def move_robot_to_pos(self, pose: Pose):
         """Move the robot to the specified pose.
@@ -469,6 +480,8 @@ class RobotManager(NodeInterface):
         if goal_pos is not None:
             self._goal_pos = self._environment_manager.realize(goal_pos)
             self._is_goal_reached = False
+            self._model_declared_stop = False
+            self._model_declared_stop_payload = {}
             self._nav_stop_ticks = 0  # new goal incoming, stop publishing stop-zeros
             self._active_navigation_goal_uuid = None
             self._goal_metadata_pub.publish(self._pose_stamped(self._goal_pos))
@@ -649,6 +662,9 @@ class RobotManager(NodeInterface):
         self._dual_vln_status = 'startup'
         self._dual_vln_status_wall_time = 0.0
         self._dual_vln_status_payload = {}
+        self._dual_vln_episode_ready = None
+        self._model_declared_stop = False
+        self._model_declared_stop_payload = {}
         self._direct_dual_vln_last_status_twist = None
 
     def _is_dual_vln_robot(self) -> bool:
@@ -764,6 +780,27 @@ class RobotManager(NodeInterface):
         self._dual_vln_status = str(payload.get('status', '') or 'unknown')
         self._dual_vln_status_wall_time = time.monotonic()
         self._dual_vln_status_payload = payload
+        status = self._dual_vln_status
+        if status == 'episode_ready' and bool(payload.get('episode_started')):
+            self._dual_vln_episode_ready = payload.get('episode')
+        elif status == 'resetting' and not bool(payload.get('episode_started')):
+            self._dual_vln_episode_ready = None
+            self._model_declared_stop = False
+            self._model_declared_stop_payload = {}
+
+        terminal_model_stop = (
+            status == 'stop'
+            and payload.get('terminal') is True
+            and str(payload.get('termination_reason', '') or '') == 'model_stop'
+            and self._dual_vln_episode_ready is not None
+            and payload.get('episode') == self._dual_vln_episode_ready
+        )
+        if terminal_model_stop:
+            self._model_declared_stop = True
+            self._model_declared_stop_payload = payload
+            self._stop_direct_dual_vln_command_bridge()
+            self._publish_direct_dual_vln_stop()
+            self._nav_stop_ticks = max(self._nav_stop_ticks, 15)
         self._update_direct_dual_vln_status_twist(payload)
         self._publish_direct_dual_vln_status_command(payload)
 

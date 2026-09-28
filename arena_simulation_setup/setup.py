@@ -12,7 +12,11 @@ setup(
     ),
     package_dir={'': python_root},
     data_files=[
-        ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name, [
+            'package.xml',
+            'test_split.json',
+            'density_eval_split_10.json',
+        ]),
         # Will recursively track all .yaml files in the entities/robots
         # directory and its subdirectories.
         *[
@@ -26,6 +30,9 @@ setup(
             for file in files
             if not file.endswith(('.pyc', '.pyo'))
         ],
+        (os.path.join('share', package_name, 'reference_data'), [
+            'reference_data/reference_trajectory_lengths.csv.xlsx',
+        ]),
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
     ],
     install_requires=[
@@ -39,6 +46,7 @@ setup(
         'PyYAML',
         'shapely',
     ],
+    extras_require={'test': ['pytest']},
     zip_safe=True,
     maintainer='voshch',
     maintainer_email='dev@voshch.dev',
@@ -54,6 +62,7 @@ setup(
             f'generate_world = {package_name}.utils.generative.world_generator:main',
             f'world_generator = {package_name}.utils.generative.world_generator_ros:main',
             f'laser_scan_to_cloud = {package_name}.laser_scan_to_cloud:main',
+            f'import_reference_trajectory_lengths = {package_name}.reference_trajectory_metadata:main',
         ],
     },
 )

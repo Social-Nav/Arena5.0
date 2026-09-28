@@ -36,6 +36,7 @@ class _Config:
     MODELS_STATIC_OBSTACLES: ROSParamT[list[str]]
     MODELS_INTERACTIVE_OBSTACLES: ROSParamT[list[str]]
     MODELS_DYNAMIC_OBSTACLES: ROSParamT[list[str]]
+    POOL_SIZE: ROSParamT[int] | None = None
 
 
 class TM_Random(TM_Obstacles):
@@ -161,22 +162,60 @@ class TM_Random(TM_Obstacles):
             n=N_STATIC_OBSTACLES + N_INTERACTIVE_OBSTACLES,
             safe_dist=1,
         ) if N_STATIC_OBSTACLES + N_INTERACTIVE_OBSTACLES else []
+        configured_pool_size = (
+            int(self._config.POOL_SIZE.value)
+            if self._config.POOL_SIZE is not None
+            else -1
+        )
+        if configured_pool_size >= 0 and N_STATIC_OBSTACLES + N_INTERACTIVE_OBSTACLES:
+            raise ValueError(
+                'task.random.dynamic.pool_size requires static and interactive counts to be zero'
+            )
+        pool_size = max(N_DYNAMIC_OBSTACLES, configured_pool_size)
         pedestrian_sample = DensityAwarePositionSampler(
             world_map=self._PROPS.world_manager.map,
             rng=self.node.conf.General.RNG.value,
             candidate_provider=self._PROPS.world_manager._occupancy_to_available,
             config=DensityAwareSamplingConfig(goals_per_agent=waypoints_per_ped),
-        ).sample(N_DYNAMIC_OBSTACLES)
-        positions = map(
-            lambda pos: Pose(
-                pos,
-                orientation=Orientation.from_yaw(
-                    2 * np.pi * self.node.conf.General.RNG.value.random()
-                ),
-            ),
-            [*static_and_interactive, *(route.start for route in pedestrian_sample.routes)],
+        ).sample(pool_size)
+        selected_pedestrian_routes = pedestrian_sample.routes[:N_DYNAMIC_OBSTACLES]
+        self._logger.warn(
+            f'[PedestrianPopulation] requested={N_DYNAMIC_OBSTACLES} '
+            f'pool_size={pool_size} selected={len(selected_pedestrian_routes)}'
         )
-        pedestrian_routes = iter(pedestrian_sample.routes)
+        if configured_pool_size < 0:
+            # Preserve the original RNG consumption outside a nested-prefix
+            # experiment.
+            positions = map(
+                lambda pos: Pose(
+                    pos,
+                    orientation=Orientation.from_yaw(
+                        2 * np.pi * self.node.conf.General.RNG.value.random()
+                    ),
+                ),
+                [*static_and_interactive, *(route.start for route in selected_pedestrian_routes)],
+            )
+            pedestrian_models = self.node.conf.General.RNG.value.choice(
+                a=MODELS_DYNAMIC_OBSTACLES.a,
+                p=MODELS_DYNAMIC_OBSTACLES.p,
+                size=N_DYNAMIC_OBSTACLES,
+            )
+        else:
+            # Draw attributes for the complete cap-sized pool before slicing.
+            # N=5 is therefore byte-for-byte the first five records of N=10.
+            pedestrian_orientations = (
+                2 * np.pi * self.node.conf.General.RNG.value.random(pool_size)
+            )
+            pedestrian_models = self.node.conf.General.RNG.value.choice(
+                a=MODELS_DYNAMIC_OBSTACLES.a,
+                p=MODELS_DYNAMIC_OBSTACLES.p,
+                size=pool_size,
+            )
+            positions = iter(
+                Pose(route.start, Orientation.from_yaw(yaw))
+                for route, yaw in zip(selected_pedestrian_routes, pedestrian_orientations)
+            )
+        pedestrian_routes = iter(selected_pedestrian_routes)
 
         obstacles: list[Obstacle] = []
 
@@ -228,13 +267,7 @@ class TM_Random(TM_Obstacles):
                     pose=next(positions),
                     extra={"behavior_tree": "BTRegularNav.xml"},
                 )
-                for i, model in enumerate(
-                    self.node.conf.General.RNG.value.choice(
-                        a=MODELS_DYNAMIC_OBSTACLES.a,
-                        p=MODELS_DYNAMIC_OBSTACLES.p,
-                        size=N_DYNAMIC_OBSTACLES,
-                    )
-                )
+                for i, model in enumerate(pedestrian_models[:N_DYNAMIC_OBSTACLES])
             ]
 
         return obstacles, dynamic_obstacles
@@ -291,5 +324,9 @@ class TM_Random(TM_Obstacles):
                 [],
                 type_=rclpy.Parameter.Type.STRING_ARRAY,
                 parse=functools.partial(param_to_modellist, PedestrianIdentifier)
+            ),
+            POOL_SIZE=self.node.ROSParam[int](
+                self.namespace(DYNAMIC, 'pool_size'),
+                -1,
             ),
         )

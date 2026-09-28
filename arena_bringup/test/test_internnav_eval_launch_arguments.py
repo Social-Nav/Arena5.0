@@ -145,6 +145,46 @@ def test_pedestrian_goal_traversal_is_emitted_only_when_requested():
     )
 
 
+def test_density_experiment_arguments_reach_launch_and_manifest():
+    source = SOURCE.read_text(encoding='utf-8')
+
+    assert 'expected_human_count:={args.expected_human_count}' in source
+    assert 'task_generator_parameter_file:={args.task_generator_parameter_file}' in source
+    assert "'expected_human_count': args.expected_human_count" in source
+    assert "'pedestrian_seed': args.pedestrian_seed" in source
+    assert "'pedestrian_pool_size': args.pedestrian_pool_size" in source
+
+
+def test_explicit_random_obstacle_mode_survives_social_eval():
+    source = SOURCE.read_text(encoding='utf-8')
+
+    assert 'explicit_tm_obstacles = any(' in source
+    assert "args.tm_obstacles == 'random' and not explicit_tm_obstacles" in source
+
+
+def test_arena_launch_forwards_density_controls_to_task_generator():
+    arena_launch = (SOURCE.parents[1] / 'launch' / 'arena.launch.py').read_text(
+        encoding='utf-8'
+    )
+    task_generator_launch = (
+        SOURCE.parents[2] / 'task_generator' / 'launch' / 'task_generator.launch.py'
+    ).read_text(encoding='utf-8')
+
+    assert "name='task_generator_parameter_file'" in arena_launch
+    assert "'parameter_file': task_generator_parameter_file.substitution" in arena_launch
+    assert "name='expected_human_count'" in arena_launch
+    assert '**expected_human_count.dict' in arena_launch
+    assert 'name="expected_human_count"' in task_generator_launch
+    assert '**expected_human_count.param(int)' in task_generator_launch
+
+
+def test_snapshot_helper_has_its_path_dependency():
+    source = SOURCE.read_text(encoding='utf-8')
+
+    assert 'from pathlib import Path' in source
+    assert 'def _snapshot_name(' in source
+
+
 @pytest.mark.parametrize(
     'argument, accepted',
     [

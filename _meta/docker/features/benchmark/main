@@ -67,6 +67,15 @@ benchmark_script_arena_dir(){
 benchmark_default_profile(){
     echo "$(benchmark_script_arena_dir)/arena_bringup/configs/benchmark/profiles/internnav_grscenes.yaml"
 }
+benchmark_default_test_split(){
+    echo "$(benchmark_script_arena_dir)/arena_simulation_setup/test_split.json"
+}
+benchmark_test_split_package_root(){
+    echo "$(benchmark_script_arena_dir)/arena_simulation_setup"
+}
+benchmark_test_split_module(){
+    echo "$(benchmark_script_arena_dir)/arena_bringup/arena_bringup/test_split.py"
+}
 
 # Read --profile before parsing the rest of the command.  The loader validates
 # the tracked YAML and emits shell-quoted PROFILE_* assignments only.
@@ -580,11 +589,24 @@ do_status(){
 ROBOT="$PROFILE_EVALUATION_ROBOT"
 WORLD="$PROFILE_EVALUATION_WORLD"
 SCENARIO="$PROFILE_EVALUATION_SCENARIO"
+HUMAN="$PROFILE_EVALUATION_HUMAN_SIMULATOR"
+TM_OBSTACLES="$PROFILE_EVALUATION_TASK_GENERATOR_OBSTACLES"
+PEDESTRIAN_GOAL_TRAVERSAL=""
 DEVICE="${ARENA_BENCHMARK_DEVICE:-$PROFILE_RUNTIME_DEVICE}"
+MODEL_PATH="${ARENA_BENCHMARK_MODEL_PATH:-$PROFILE_SERVER_MODEL_PATH}"
+SYSTEM2_MODEL_PATH="${ARENA_BENCHMARK_SYSTEM2_MODEL_PATH:-}"
+TEST_SPLIT_PATH="${ARENA_BENCHMARK_TEST_SPLIT:-$(benchmark_default_test_split)}"
+FULL_EVAL_OUTPUT_PREFIX="${ARENA_BENCHMARK_FULL_OUTPUT_PREFIX:-full_eval}"
+TASK_GENERATOR_PARAMETER_FILE="${ARENA_BENCHMARK_TASK_GENERATOR_PARAMETER_FILE:-}"
+EXPECTED_HUMAN_COUNT="${ARENA_BENCHMARK_EXPECTED_HUMAN_COUNT:--1}"
+PEDESTRIAN_SEED="${ARENA_BENCHMARK_PEDESTRIAN_SEED:--1}"
+PEDESTRIAN_POOL_SIZE="${ARENA_BENCHMARK_PEDESTRIAN_POOL_SIZE:--1}"
+FULL_EVAL_MODE=0
 EPISODES="$PROFILE_EVALUATION_EPISODES"
 TIMEOUT="$PROFILE_EVALUATION_TIMEOUT_SEC"
 HTTP_PORT="${ARENA_INTERNNAV_HTTP_PORT:-$PROFILE_RUNTIME_HTTP_PORT}"
 EVAL_EXTRA=()
+SINGLE_CASE_OVERRIDE=0
 
 validate_eval_extra(){
     local arg
@@ -609,16 +631,38 @@ validate_eval_extra(){
     done
 }
 
+validate_density_contract(){
+    local config_root expected_config actual_sha expected_sha
+    [ "$MODEL_PATH" = "$PROFILE_SERVER_MODEL_PATH" ] \
+        || die "density-eval is the base-model experiment" \
+            "expected model: $PROFILE_SERVER_MODEL_PATH" \
+            "got: $MODEL_PATH"
+    [ -z "$SYSTEM2_MODEL_PATH" ] \
+        || die "density-eval must not use a System2 overlay" \
+            "got: $SYSTEM2_MODEL_PATH"
+    config_root="$(benchmark_script_arena_dir)/arena_bringup/configs/benchmark/density"
+    for expected_config in task_generator_n00.yaml task_generator_n05.yaml task_generator_n10.yaml; do
+        [ -s "$config_root/$expected_config" ] \
+            || die "missing density task-generator config" "$config_root/$expected_config"
+    done
+    [ "$HUMAN" = "hunav" ] || die "density-eval requires HuNav for all arms"
+    [ "$TM_OBSTACLES" = "random" ] || die "density-eval requires tm_obstacles=random"
+    [ "$PEDESTRIAN_GOAL_TRAVERSAL" = "reciprocate" ] \
+        || die "density-eval requires reciprocal pedestrian routes"
+}
+
 # Starts the model server and the official InternNav ROS client inside
 # internnav-1.  Delegates entirely to the internnav feature script, which owns
 # the /health readiness gate and the container lifetime trap.
 do_serve(){
+    verify_system2_checkpoint
     run_step "start the InternNav model server and ROS client in internnav-1" \
         env \
             "HOST_ARENA_WS_DIR=$(benchmark_ws_dir)" \
             "ARENA_PROJECT_NAME=$(benchmark_project)" \
             "ARENA_IMAGE=${ARENA_IMAGE:-arena:dev}" \
-            "ARENA_INTERNNAV_MODEL_PATH=$PROFILE_SERVER_MODEL_PATH" \
+            "ARENA_INTERNNAV_MODEL_PATH=$MODEL_PATH" \
+            "ARENA_INTERNNAV_SYSTEM2_MODEL_PATH=$SYSTEM2_MODEL_PATH" \
             "ARENA_INTERNNAV_RGB_TOPIC=$PROFILE_SERVER_RGB_TOPIC" \
             "ARENA_INTERNNAV_DEPTH_TOPIC=$PROFILE_SERVER_DEPTH_TOPIC" \
             "ARENA_INTERNNAV_CAMERA_INFO_TOPIC=$PROFILE_SERVER_CAMERA_INFO_TOPIC" \
@@ -639,13 +683,26 @@ do_serve(){
             --robot "$ROBOT" --mode "$PROFILE_SERVER_MODE" --device "$DEVICE"
 }
 
+verify_system2_checkpoint(){
+    if [ -z "$SYSTEM2_MODEL_PATH" ]; then
+        return 0
+    fi
+    run_step "verify the System2 checkpoint is visible in internnav-1" \
+        docker exec "$(benchmark_container internnav)" test -s \
+            "$SYSTEM2_MODEL_PATH/model.safetensors.index.json"
+    run_step "verify the System2 checkpoint provenance is present" \
+        docker exec "$(benchmark_container internnav)" test -s \
+            "$SYSTEM2_MODEL_PATH/.arena_system2_revision.json"
+}
+
 start_server_background(){
     local serve_log="$1"
     setsid env \
         "HOST_ARENA_WS_DIR=$(benchmark_ws_dir)" \
         "ARENA_PROJECT_NAME=$(benchmark_project)" \
         "ARENA_IMAGE=${ARENA_IMAGE:-arena:dev}" \
-        "ARENA_INTERNNAV_MODEL_PATH=$PROFILE_SERVER_MODEL_PATH" \
+        "ARENA_INTERNNAV_MODEL_PATH=$MODEL_PATH" \
+        "ARENA_INTERNNAV_SYSTEM2_MODEL_PATH=$SYSTEM2_MODEL_PATH" \
         "ARENA_INTERNNAV_RGB_TOPIC=$PROFILE_SERVER_RGB_TOPIC" \
         "ARENA_INTERNNAV_DEPTH_TOPIC=$PROFILE_SERVER_DEPTH_TOPIC" \
         "ARENA_INTERNNAV_CAMERA_INFO_TOPIC=$PROFILE_SERVER_CAMERA_INFO_TOPIC" \
@@ -679,21 +736,54 @@ eval_inner_command(){
     local -a eval_args=(
         ros2 run arena_bringup internnav_eval
         --benchmark-profile "$PROFILE_PATH"
+        --human "$HUMAN"
+        --tm-obstacles "$TM_OBSTACLES"
         --world "$WORLD"
         --robot "$ROBOT"
         --episodes "$EPISODES"
         --timeout "$TIMEOUT"
         --internnav-device "$DEVICE"
+        --internnav-model-path "$MODEL_PATH"
+        --expected-human-count "$EXPECTED_HUMAN_COUNT"
+        --pedestrian-seed "$PEDESTRIAN_SEED"
+        --pedestrian-pool-size "$PEDESTRIAN_POOL_SIZE"
     )
     if [ -n "$SCENARIO" ]; then
         eval_args+=(--scenario-file "$SCENARIO")
+    fi
+    if [ -n "$SYSTEM2_MODEL_PATH" ]; then
+        eval_args+=(--internnav-system2-model-path "$SYSTEM2_MODEL_PATH")
+    fi
+    if [ -n "$TASK_GENERATOR_PARAMETER_FILE" ]; then
+        eval_args+=(--task-generator-parameter-file "$TASK_GENERATOR_PARAMETER_FILE")
+    fi
+    if [ -n "$PEDESTRIAN_GOAL_TRAVERSAL" ]; then
+        eval_args+=(--pedestrian-goal-traversal "$PEDESTRIAN_GOAL_TRAVERSAL")
+    fi
+    if [ "$FULL_EVAL_MODE" = "1" ]; then
+        eval_args+=(--output-prefix "$FULL_EVAL_OUTPUT_PREFIX/${WORLD}_${SCENARIO}")
     fi
     eval_args+=("${EVAL_EXTRA[@]}")
     printf -v quoted '%q ' "${eval_args[@]}"
     printf '%s' "source /opt/ros/jazzy/setup.bash && source install/setup.bash && ARENA_INTERNNAV_EXTERNAL_SERVER=1 ${quoted% }"
 }
 
+eval_docker_command(){
+    docker exec \
+            -e "ROS_DOMAIN_ID=$ROS_DOMAIN_ID" \
+            -e "RMW_IMPLEMENTATION=$RMW_IMPLEMENTATION" \
+            -e "FASTDDS_BUILTIN_TRANSPORTS=$FASTDDS_BUILTIN_TRANSPORTS" \
+            -e "ROS_LOCALHOST_ONLY=$ROS_LOCALHOST_ONLY" \
+            -e "ROS_AUTOMATIC_DISCOVERY_RANGE=$ROS_AUTOMATIC_DISCOVERY_RANGE" \
+            -w /opt/arena_ws \
+            "$(benchmark_container arena)" \
+            bash -lc "$(eval_inner_command)"
+}
+
 do_eval(){
+    # Keep the complete argv visible in plan mode.  Besides making the plan
+    # useful to operators, this proves which container and ROS/DDS contract
+    # the single-case evaluator will use without contacting Docker.
     run_step "run the evaluation in arena-1" \
         docker exec \
             -e "ROS_DOMAIN_ID=$ROS_DOMAIN_ID" \
@@ -726,6 +816,10 @@ do_run(){
         run_step_sh "wait for the arena workspace build marker /.built" "<poll docker exec ... test -f /.built>"
         run_step_sh "verify container build, model runtime, and GPU device access" \
             "<docker exec ... test /.built and /opt/internnav_venv, then open /dev/nvidia0 and run nvidia-smi -L>"
+        if [ -n "$SYSTEM2_MODEL_PATH" ]; then
+            run_step_sh "verify the System2 checkpoint is visible in internnav-1" \
+                "docker exec $(benchmark_container internnav) test -s $SYSTEM2_MODEL_PATH/model.safetensors.index.json"
+        fi
         run_step_sh "start the model server in the background, logging to $serve_log" \
             "setsid env <profile server settings> bash .../features/internnav/main launch --robot $ROBOT --mode $PROFILE_SERVER_MODE --device $DEVICE </dev/null >>$serve_log 2>&1 &"
         wait_for_model
@@ -745,6 +839,7 @@ do_run(){
     CHECK_FAILURES=0
     check_runtime_preconditions
     abort_on_check_failures "containers may be running; no model server or evaluation was started"
+    verify_system2_checkpoint
     mkdir -p "$(dirname "$serve_log")"
     # Cleanup must be a trap, not a trailing statement: run_step calls die() on
     # failure, which exits, so a failed evaluation would otherwise leave the GPU
@@ -769,6 +864,266 @@ do_run(){
     return 0
 }
 
+load_full_eval_cases(){
+    local listing world scenario relative
+    listing="$(
+        python3 "$(benchmark_test_split_module)" \
+            --split "$TEST_SPLIT_PATH" \
+            --package-root "$(benchmark_test_split_package_root)" \
+            --format tsv
+    )" || die "failed to validate full-eval test split" "split: $TEST_SPLIT_PATH"
+    FULL_EVAL_CASES=()
+    while IFS=$'\t' read -r world scenario relative; do
+        [ -n "$world" ] || continue
+        FULL_EVAL_CASES+=("$world/$scenario")
+    done <<< "$listing"
+    [ "${#FULL_EVAL_CASES[@]}" -gt 0 ] \
+        || die "full-eval test split selected zero cases" "split: $TEST_SPLIT_PATH"
+}
+
+reject_full_eval_output_override(){
+    local arg
+    for arg in ${EVAL_EXTRA[@]+"${EVAL_EXTRA[@]}"}; do
+        case "$arg" in
+            --output-prefix|--output-prefix=*|--output-root|--output-root=*)
+                die "full-eval owns its output location" \
+                    "use --full-output-prefix so every split case gets an isolated directory"
+                ;;
+        esac
+    done
+}
+
+validate_full_eval_output_prefix(){
+    if [[ ! "$FULL_EVAL_OUTPUT_PREFIX" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+        die "full-eval output prefix contains unsupported characters" \
+            "use a relative path made from letters, digits, dot, underscore, dash, and slash"
+    fi
+    case "$FULL_EVAL_OUTPUT_PREFIX" in
+        ""|/*|.|..|./*|../*|*/.|*/..|*/./*|*/../*|*//*|*/)
+            die "full-eval output prefix must be a normalized relative path" \
+                "got: $FULL_EVAL_OUTPUT_PREFIX"
+            ;;
+    esac
+}
+
+latest_case_result(){
+    local case_started_at="$1" case_root
+    case_root="$(benchmark_ws_dir)/outputs/$FULL_EVAL_OUTPUT_PREFIX/${WORLD}_${SCENARIO}"
+    find "$case_root" -type f -name benchmark_result.json -newer "$case_started_at" \
+        -printf '%T@ %p\n' 2>/dev/null \
+        | sort -nr | head -n 1 | cut -d' ' -f2-
+}
+
+do_full_eval(){
+    local split_summary serve_log case case_rc result_path case_started_at
+    local valid_count=0 invalid_count=0
+    validate_full_eval_output_prefix
+    load_full_eval_cases
+    reject_full_eval_output_override
+    split_summary="$(
+        python3 "$(benchmark_test_split_module)" \
+            --split "$TEST_SPLIT_PATH" \
+            --package-root "$(benchmark_test_split_package_root)" \
+            --format summary
+    )" || die "failed to summarize full-eval test split"
+
+    if [ "$DRY_RUN" = "1" ]; then
+        echo "plan for '$name full-eval' ($split_summary):"
+        echo "test_split=$TEST_SPLIT_PATH"
+        echo "output_prefix=$FULL_EVAL_OUTPUT_PREFIX"
+        echo "selected cases (all other discovered GRScenes cases are skipped):"
+        for case in "${FULL_EVAL_CASES[@]}"; do
+            echo "  - $case"
+        done
+        run_step "start containers ($BENCHMARK_SERVICES) without building" \
+            arena_docker_compose up -d --remove-orphans --no-build $BENCHMARK_SERVICES
+        run_step_sh "start one persistent model server for the selected split" \
+            "setsid env <profile server settings> bash .../features/internnav/main launch ..."
+        run_step_sh "run each selected world/scenario sequentially in arena-1" \
+            "for case in <test_split>; do ros2 run arena_bringup internnav_eval --world <world> --scenario-file <scenario>; done"
+        run_step_sh "require a canonical valid_run result for every selected case" \
+            "ros2 run arena_bringup benchmark_result --dir <run_dir> --require-valid"
+        return 0
+    fi
+
+    log "full-eval split accepted: $split_summary"
+    log "checking preconditions that do not require running containers"
+    CHECK_FAILURES=0
+    check_static_preconditions
+    abort_on_check_failures
+    do_up
+    CHECK_FAILURES=0
+    check_runtime_preconditions
+    abort_on_check_failures "containers may be running; no model server or evaluation was started"
+    verify_system2_checkpoint
+
+    serve_log="$(benchmark_ws_dir)/outputs/.benchmark_full_eval_serve.log"
+    mkdir -p "$(dirname "$serve_log")"
+    benchmark_stop_full_eval_server(){
+        log "stopping the full-eval model server"
+        bash "$(benchmark_arena_dir)/_meta/docker/features/internnav/main" stop >/dev/null 2>&1 || true
+        if [ -f "$serve_log.pid" ]; then
+            kill "$(cat "$serve_log.pid")" >/dev/null 2>&1 || true
+            rm -f "$serve_log.pid"
+        fi
+    }
+    trap benchmark_stop_full_eval_server EXIT INT TERM
+    run_step "start one model server for the complete test split" start_server_background "$serve_log"
+    wait_for_model
+    FULL_EVAL_MODE=1
+
+    for case in "${FULL_EVAL_CASES[@]}"; do
+        WORLD="${case%%/*}"
+        SCENARIO="${case#*/}"
+        log "full-eval case $((valid_count + invalid_count + 1))/${#FULL_EVAL_CASES[@]}: $WORLD/$SCENARIO"
+        case_started_at="$(mktemp "$(benchmark_ws_dir)/outputs/.benchmark_${WORLD}_${SCENARIO}.XXXXXX")" \
+            || die "could not create a full-eval freshness marker"
+        case_rc=0
+        eval_docker_command || case_rc=$?
+        result_path="$(latest_case_result "$case_started_at")"
+        rm -f "$case_started_at"
+        if [ -n "$result_path" ] \
+            && python3 -c 'import json,sys; raise SystemExit(0 if json.load(open(sys.argv[1]))["summary"]["valid_run"] else 1)' "$result_path"; then
+            valid_count=$((valid_count + 1))
+            log "full-eval valid: $WORLD/$SCENARIO result=$result_path evaluator_rc=$case_rc"
+        else
+            invalid_count=$((invalid_count + 1))
+            warn "full-eval INVALID: $WORLD/$SCENARIO result=${result_path:-<missing>} evaluator_rc=$case_rc"
+        fi
+    done
+
+    log "full-eval complete: selected=${#FULL_EVAL_CASES[@]} valid=$valid_count invalid=$invalid_count"
+    [ "$invalid_count" = "0" ] \
+        || die "full-eval produced $invalid_count invalid run(s)" \
+            "task/social failures remain valid; only missing/incomplete pipeline artifacts count here"
+}
+
+do_density_eval(){
+    local density config_path arm_prefix original_split original_prefix split_summary
+    local serve_log case case_rc result_path case_started_at
+    local original_config original_expected original_seed original_pool failed=0
+    original_split="$TEST_SPLIT_PATH"
+    original_prefix="$FULL_EVAL_OUTPUT_PREFIX"
+    original_config="$TASK_GENERATOR_PARAMETER_FILE"
+    original_expected="$EXPECTED_HUMAN_COUNT"
+    original_seed="$PEDESTRIAN_SEED"
+    original_pool="$PEDESTRIAN_POOL_SIZE"
+
+    TEST_SPLIT_PATH="$(benchmark_test_split_package_root)/density_eval_split_10.json"
+    HUMAN=hunav
+    TM_OBSTACLES=random
+    PEDESTRIAN_GOAL_TRAVERSAL=reciprocate
+    PEDESTRIAN_SEED=20260923
+    PEDESTRIAN_POOL_SIZE=10
+    validate_density_contract
+    load_full_eval_cases
+    split_summary="$(
+        python3 "$(benchmark_test_split_module)" \
+            --split "$TEST_SPLIT_PATH" \
+            --package-root "$(benchmark_test_split_package_root)" \
+            --format summary
+    )" || die "failed to summarize density-eval split"
+
+    if [ "$DRY_RUN" = "1" ]; then
+        echo "plan for '$name density-eval' ($split_summary):"
+        echo "test_split=$TEST_SPLIT_PATH"
+        echo "model_path=$MODEL_PATH"
+        echo "human=$HUMAN tm_obstacles=$TM_OBSTACLES traversal=$PEDESTRIAN_GOAL_TRAVERSAL"
+        echo "pedestrian_seed=$PEDESTRIAN_SEED pool_size=$PEDESTRIAN_POOL_SIZE"
+        echo "selected paired cases:"
+        for case in "${FULL_EVAL_CASES[@]}"; do
+            echo "  - $case"
+        done
+        for density in 0 5 10; do
+            printf -v config_path '%s/arena_bringup/configs/benchmark/density/task_generator_n%02d.yaml' \
+                "$(benchmark_script_arena_dir)" "$density"
+            printf -v arm_prefix '%s/n%02d' "$original_prefix" "$density"
+            echo "  arm N=$density: config=$config_path output_prefix=$arm_prefix"
+        done
+        run_step_sh "start containers and one persistent base-model server" \
+            "benchmark preconditions; start arena isaac internnav; start model $MODEL_PATH"
+        run_step_sh "run 30 paired cases sequentially and save all videos/metrics" \
+            "for N in 0 5 10; do for case in <10-case split>; do internnav_eval --expected-human-count N; done; done"
+        run_step_sh "validate each canonical result and aggregate success rates by N" \
+            "benchmark_result --require-valid; social_nav_metrics_aggregate by density arm"
+        return 0
+    fi
+
+    log "density-eval split accepted: $split_summary"
+    log "checking preconditions that do not require running containers"
+    CHECK_FAILURES=0
+    check_static_preconditions
+    abort_on_check_failures
+    do_up
+    CHECK_FAILURES=0
+    check_runtime_preconditions
+    abort_on_check_failures "containers may be running; no model server or evaluation was started"
+    verify_system2_checkpoint
+
+    serve_log="$(benchmark_ws_dir)/outputs/.benchmark_density_eval_serve.log"
+    mkdir -p "$(dirname "$serve_log")"
+    benchmark_stop_density_eval_server(){
+        log "stopping the density-eval model server"
+        bash "$(benchmark_arena_dir)/_meta/docker/features/internnav/main" stop >/dev/null 2>&1 || true
+        if [ -f "$serve_log.pid" ]; then
+            kill "$(cat "$serve_log.pid")" >/dev/null 2>&1 || true
+            rm -f "$serve_log.pid"
+        fi
+    }
+    trap benchmark_stop_density_eval_server EXIT INT TERM
+    run_step "start one base-model server for all density arms" start_server_background "$serve_log"
+    wait_for_model
+    FULL_EVAL_MODE=1
+
+    for density in 0 5 10; do
+        printf -v config_path '%s/arena_bringup/configs/benchmark/density/task_generator_n%02d.yaml' \
+            "$(benchmark_script_arena_dir)" "$density"
+        printf -v arm_prefix '%s/n%02d' "$original_prefix" "$density"
+        TASK_GENERATOR_PARAMETER_FILE="$config_path"
+        EXPECTED_HUMAN_COUNT="$density"
+        FULL_EVAL_OUTPUT_PREFIX="$arm_prefix"
+        for case in "${FULL_EVAL_CASES[@]}"; do
+            WORLD="${case%%/*}"
+            SCENARIO="${case#*/}"
+            log "density-eval N=$density case $WORLD/$SCENARIO"
+            case_started_at="$(mktemp "$(benchmark_ws_dir)/outputs/.benchmark_density_n${density}_${WORLD}_${SCENARIO}.XXXXXX")" \
+                || die "could not create a density-eval freshness marker"
+            case_rc=0
+            eval_docker_command || case_rc=$?
+            result_path="$(latest_case_result "$case_started_at")"
+            rm -f "$case_started_at"
+            if [ -n "$result_path" ] \
+                && python3 -c 'import json,sys; raise SystemExit(0 if json.load(open(sys.argv[1]))["summary"]["valid_run"] else 1)' "$result_path"; then
+                log "density-eval valid: N=$density $WORLD/$SCENARIO result=$result_path evaluator_rc=$case_rc"
+            else
+                failed=1
+                warn "density-eval INVALID: N=$density $WORLD/$SCENARIO result=${result_path:-<missing>} evaluator_rc=$case_rc"
+            fi
+        done
+    done
+
+    for density in 0 5 10; do
+        printf -v arm_prefix '%s/n%02d' "$original_prefix" "$density"
+        run_step "aggregate density-eval N=$density results" \
+            docker exec \
+                -e "ROS_DOMAIN_ID=$ROS_DOMAIN_ID" \
+                -e "RMW_IMPLEMENTATION=$RMW_IMPLEMENTATION" \
+                -e "FASTDDS_BUILTIN_TRANSPORTS=$FASTDDS_BUILTIN_TRANSPORTS" \
+                -w /opt/arena_ws \
+                "$(benchmark_container arena)" \
+                bash -lc \
+                "source /opt/ros/jazzy/setup.bash && source install/setup.bash && ros2 run arena_bringup social_nav_metrics_aggregate --root /opt/arena_ws/outputs/$arm_prefix --output-csv /opt/arena_ws/outputs/$arm_prefix/aggregate.csv --summary-json /opt/arena_ws/outputs/$arm_prefix/aggregate.json --min-runs 10"
+    done
+
+    TEST_SPLIT_PATH="$original_split"
+    FULL_EVAL_OUTPUT_PREFIX="$original_prefix"
+    TASK_GENERATOR_PARAMETER_FILE="$original_config"
+    EXPECTED_HUMAN_COUNT="$original_expected"
+    PEDESTRIAN_SEED="$original_seed"
+    PEDESTRIAN_POOL_SIZE="$original_pool"
+    [ "$failed" = "0" ] || die "density-eval produced invalid pipeline run(s)"
+}
+
 # ---------------------------------------------------------------------------
 # plan: print what a verb would do, without doing any of it.
 # Pure - touches no container and no image - so it is reviewable and testable
@@ -787,7 +1142,9 @@ do_plan(){
         eval)    echo "plan for '$name eval':"; do_eval ;;
         stop)    echo "plan for '$name stop':"; do_stop ;;
         down)    echo "plan for '$name down':"; do_down ;;
-        *) die "cannot plan unknown verb '$target'" "try: run build runtime up serve eval stop down" ;;
+        full-eval) do_full_eval ;;
+        density-eval) do_density_eval ;;
+        *) die "cannot plan unknown verb '$target'" "try: run full-eval density-eval build runtime up serve eval stop down" ;;
     esac
     echo
     echo "nothing above was executed."
@@ -803,9 +1160,19 @@ do_config(){
     echo "robot=$ROBOT"
     echo "world=$WORLD"
     echo "scenario=$SCENARIO"
+    echo "human=$HUMAN"
+    echo "tm_obstacles=$TM_OBSTACLES"
     echo "episodes=$EPISODES"
     echo "timeout_sec=$TIMEOUT"
     echo "device=$DEVICE"
+    echo "model_path=$MODEL_PATH"
+    echo "system2_model_path=${SYSTEM2_MODEL_PATH:-<pretrained>}"
+    echo "test_split=$TEST_SPLIT_PATH"
+    echo "full_output_prefix=$FULL_EVAL_OUTPUT_PREFIX"
+    echo "task_generator_parameter_file=${TASK_GENERATOR_PARAMETER_FILE:-<default>}"
+    echo "expected_human_count=$EXPECTED_HUMAN_COUNT"
+    echo "pedestrian_seed=$PEDESTRIAN_SEED"
+    echo "pedestrian_pool_size=$PEDESTRIAN_POOL_SIZE"
     echo "simulator=$PROFILE_EVALUATION_SIMULATOR"
     echo "external_server=$PROFILE_INTERNNAV_EXTERNAL_SERVER"
     echo "direct_cmd_vel=$PROFILE_INTERNNAV_DIRECT_CMD_VEL"
@@ -863,6 +1230,11 @@ Verbs
   eval        Run one evaluation in arena. Assumes 'serve' is already up.
   run         The one-click path: doctor, up, serve in the background, wait for
               the model to report ready, evaluate, then stop the server.
+  full-eval   Run only the world/scenario episodes listed in test_split.json.
+              Cases absent from the split are skipped. Runs are sequential and
+              reuse one model server; task failures do not abort the split.
+  density-eval Run the tracked 10-episode split at N=0,5,10 pedestrians.
+               All arms use HuNav, seed 20260923, and one nested cap-10 pool.
 
 Options
   --dry-run           Print what would happen and exit. Same as 'plan'.
@@ -873,9 +1245,19 @@ Options
   --robot NAME        Default: $ROBOT
   --world NAME        Default: $WORLD
   --scenario NAME     Default: $SCENARIO
+  --human NAME        Human simulator backend. Default: $HUMAN
+  --tm-obstacles MODE Obstacle source. Default: $TM_OBSTACLES
   --episodes N        Must be 1. Run independent directories, then aggregate.
   --timeout SEC       Per-episode simulated timeout. Default: $TIMEOUT
   --device DEVICE     Model device. Default: $DEVICE
+  --model-path PATH   Load a complete InternVLA-N1 checkpoint. Default: $MODEL_PATH
+  --system2-model-path PATH  Overlay a pure System2 checkpoint on the base model.
+  --test-split PATH   Full-eval allowlist. Default: $TEST_SPLIT_PATH
+  --full-output-prefix PATH  Output prefix for full-eval. Default: $FULL_EVAL_OUTPUT_PREFIX
+  --task-generator-parameter-file PATH  Density/task ROS parameters visible in arena-1.
+  --expected-human-count N  Exact HuNav count; -1 keeps legacy non-empty checks.
+  --pedestrian-seed N  Provenance for a fixed density population seed.
+  --pedestrian-pool-size N  Provenance for nested-prefix population experiments.
   --                  Everything after this is appended to internnav_eval.
 
 Where the results go
@@ -916,14 +1298,25 @@ while [ $# -gt 0 ]; do
                 */*) WORLD="${2%%/*}"; SCENARIO="${2#*/}" ;;
                 *) die "--case expects WORLD/SCENARIO, got '$2'" ;;
             esac
+            SINGLE_CASE_OVERRIDE=1
             shift 2
             ;;
         --robot)    ROBOT="$2"; shift 2 ;;
-        --world)    WORLD="$2"; shift 2 ;;
-        --scenario) SCENARIO="$2"; shift 2 ;;
+        --world)    WORLD="$2"; SINGLE_CASE_OVERRIDE=1; shift 2 ;;
+        --scenario) SCENARIO="$2"; SINGLE_CASE_OVERRIDE=1; shift 2 ;;
+        --human)    HUMAN="$2"; shift 2 ;;
+        --tm-obstacles) TM_OBSTACLES="$2"; shift 2 ;;
         --episodes) EPISODES="$2"; shift 2 ;;
         --timeout)  TIMEOUT="$2"; shift 2 ;;
         --device)   DEVICE="$2"; shift 2 ;;
+        --model-path) MODEL_PATH="$2"; shift 2 ;;
+        --system2-model-path) SYSTEM2_MODEL_PATH="$2"; shift 2 ;;
+        --test-split) TEST_SPLIT_PATH="$2"; shift 2 ;;
+        --full-output-prefix) FULL_EVAL_OUTPUT_PREFIX="$2"; shift 2 ;;
+        --task-generator-parameter-file) TASK_GENERATOR_PARAMETER_FILE="$2"; shift 2 ;;
+        --expected-human-count) EXPECTED_HUMAN_COUNT="$2"; shift 2 ;;
+        --pedestrian-seed) PEDESTRIAN_SEED="$2"; shift 2 ;;
+        --pedestrian-pool-size) PEDESTRIAN_POOL_SIZE="$2"; shift 2 ;;
         --help|-h)  help; exit 0 ;;
         --)         shift; EVAL_EXTRA=("$@"); break ;;
         *)          die "unknown option '$1'" "run '$name --help' for the option list" ;;
@@ -931,7 +1324,7 @@ while [ $# -gt 0 ]; do
 done
 
 case "$VERB:${PLAN_TARGET:-}" in
-    run:*|eval:*|plan:|plan:run|plan:eval)
+    run:*|eval:*|full-eval:*|density-eval:*|plan:|plan:run|plan:eval|plan:full-eval|plan:density-eval)
         if [ "$EPISODES" != "1" ]; then
             die "the strict benchmark entry point requires --episodes 1" \
                 "run independent one-episode evaluations, then aggregate their result directories"
@@ -939,6 +1332,11 @@ case "$VERB:${PLAN_TARGET:-}" in
         ;;
 esac
 validate_eval_extra
+if { [ "$VERB" = "full-eval" ] || { [ "$VERB" = "plan" ] && [ "$PLAN_TARGET" = "full-eval" ]; }; } \
+    && [ "$SINGLE_CASE_OVERRIDE" = "1" ]; then
+    die "full-eval case selection comes only from --test-split" \
+        "do not combine full-eval with --case, --world, or --scenario"
+fi
 
 if [ "$DRY_RUN" = "1" ] && [ "$VERB" != "plan" ]; then
     do_plan "$VERB"
@@ -959,5 +1357,7 @@ case "$VERB" in
     serve)   do_serve; exit $? ;;
     eval)    do_eval; exit $? ;;
     run)     do_run; exit $? ;;
+    full-eval) do_full_eval; exit $? ;;
+    density-eval) do_density_eval; exit $? ;;
     *)       printf '[%s] FATAL: unknown verb %s\n\n' "$name" "$VERB" >&2; help >&2; exit 1 ;;
 esac

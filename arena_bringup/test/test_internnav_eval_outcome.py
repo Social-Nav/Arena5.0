@@ -35,6 +35,17 @@ def test_classify_end_reason_prefers_explicit_goal_reached():
     ) == 'episode_goal_reached'
 
 
+def test_classify_end_reason_preserves_model_stop_without_claiming_goal_reached():
+    assert _classify_end_reason(
+        finished_observed=True,
+        launch_returncode=0,
+        timed_out=False,
+        internnav_status={'status': 'stop'},
+        episode_outcome={'reason': 'model_stop'},
+        internnav_diagnostic_summary={'final_goal_distance': {'min': 2.0}},
+    ) == 'episode_model_stop'
+
+
 def test_classify_end_reason_keeps_legacy_finished_without_outcome():
     assert _classify_end_reason(
         finished_observed=True,

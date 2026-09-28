@@ -9,6 +9,7 @@ DONE_REASON_RUNNING = "running"
 DONE_REASON_GOAL_REACHED = "goal_reached"
 DONE_REASON_SIM_TIMEOUT = "sim_timeout"
 DONE_REASON_WALL_TIMEOUT = "wall_timeout"
+DONE_REASON_MODEL_STOP = "model_stop"
 
 
 class TM_Robots(TaskMode):
@@ -106,8 +107,14 @@ class TM_Robots(TaskMode):
         if not self._PROPS.robots:
             self._last_done_reason = DONE_REASON_RUNNING
             return False
-        if not all(await asyncio.gather(*(robot_manager.is_done for robot_manager in self._PROPS.robots.values()))):
+        robot_managers = list(self._PROPS.robots.values())
+        if not all(await asyncio.gather(*(robot_manager.is_done for robot_manager in robot_managers))):
             self._last_done_reason = DONE_REASON_RUNNING
             return False
-        self._last_done_reason = DONE_REASON_GOAL_REACHED
+        done_reasons = [str(getattr(manager, 'done_reason', DONE_REASON_GOAL_REACHED)) for manager in robot_managers]
+        self._last_done_reason = (
+            DONE_REASON_MODEL_STOP
+            if DONE_REASON_MODEL_STOP in done_reasons
+            else DONE_REASON_GOAL_REACHED
+        )
         return True

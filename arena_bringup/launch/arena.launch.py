@@ -343,6 +343,15 @@ def generate_launch_description():
         default_value='default',
         description='Scenario file/name forwarded to task.scenario.file'
     )
+    task_generator_parameter_file = LaunchArgument(
+        name='task_generator_parameter_file',
+        default_value=os.path.join(
+            get_package_share_directory('arena_bringup'),
+            'configs',
+            'task_generator.yaml',
+        ),
+        description='ROS parameter YAML for task_generator; use a tracked experiment file for density sweeps',
+    )
     tm_modules = LaunchArgument(
         name='tm_modules',
         default_value='rviz_ui'  # TODO breaks launch if empty
@@ -397,6 +406,11 @@ def generate_launch_description():
         name='human_states_ready_timeout_sec',
         default_value='10.0',
         description='Maximum wait for non-empty HuNav human_states before releasing an episode.'
+    )
+    expected_human_count = LaunchArgument(
+        name='expected_human_count',
+        default_value='-1',
+        description='Exact HuNav pedestrian count; -1 keeps legacy non-empty readiness semantics.'
     )
     episode_start_delay_sec = LaunchArgument(
         name='episode_start_delay_sec',
@@ -577,10 +591,11 @@ def generate_launch_description():
                     'headless': headlessness,
                     'reference': str(reference),
                     'prefix': prefix,
-                    'parameter_file': os.path.join(get_package_share_directory('arena_bringup'), 'configs', 'task_generator.yaml'),
+                    'parameter_file': task_generator_parameter_file.substitution,
                     **train_mode.dict,
                     **require_human_states_ready.dict,
                     **human_states_ready_timeout_sec.dict,
+                    **expected_human_count.dict,
                     **episode_start_delay_sec.dict,
                     **pedestrian_goal_traversal.dict,
                 }.items(),

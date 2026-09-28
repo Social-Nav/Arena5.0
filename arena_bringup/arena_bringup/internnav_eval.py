@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime
+from pathlib import Path
 
 import yaml
 from ament_index_python.packages import get_package_share_directory
@@ -41,6 +42,7 @@ HTTP_ADAPTER_REPLACED_TARGETS = {
 GENERIC_VLN_INSTRUCTIONS = {'', 'navigate', 'go', 'start', 'default', 'none', 'null'}
 SCENARIO_INSTRUCTION_SCHEMA_VERSION = 1
 SCENARIO_INSTRUCTION_FIELD = 'parsed_result.instruction'
+SYSTEM2_CHECKPOINT_REVISION_FILE = '.arena_system2_revision.json'
 
 
 def _write_yaml(path: str, data) -> None:
@@ -51,6 +53,48 @@ def _write_yaml(path: str, data) -> None:
 def _write_text(path: str, data: str) -> None:
     with open(path, 'w', encoding='utf-8') as f:
         f.write(data)
+
+
+def _system2_checkpoint_provenance(path: str) -> dict | None:
+    raw_path = str(path or '').strip()
+    if not raw_path:
+        return None
+    checkpoint = os.path.abspath(os.path.expanduser(raw_path))
+    index_path = os.path.join(checkpoint, 'model.safetensors.index.json')
+    record = {
+        'path': checkpoint,
+        'index_path': index_path,
+        'index_sha256': None,
+        'revision': None,
+    }
+    candidate_paths = [index_path, os.path.join(checkpoint, SYSTEM2_CHECKPOINT_REVISION_FILE)]
+    if not any(os.path.exists(candidate) for candidate in candidate_paths):
+        workspace_root = _workspace_root_from_runtime()
+        container_prefix = os.path.join(os.sep, 'opt', 'arena_ws', 'deps', 'models')
+        if checkpoint == container_prefix or checkpoint.startswith(container_prefix + os.sep):
+            relative = os.path.relpath(checkpoint, container_prefix)
+            host_checkpoint = os.path.join(workspace_root, 'deps', 'models', relative)
+            index_path = os.path.join(host_checkpoint, 'model.safetensors.index.json')
+            revision_path = os.path.join(host_checkpoint, SYSTEM2_CHECKPOINT_REVISION_FILE)
+            record['host_path'] = host_checkpoint
+        else:
+            revision_path = os.path.join(checkpoint, SYSTEM2_CHECKPOINT_REVISION_FILE)
+    else:
+        revision_path = os.path.join(checkpoint, SYSTEM2_CHECKPOINT_REVISION_FILE)
+    record['index_path'] = index_path
+    try:
+        with open(index_path, 'rb') as stream:
+            record['index_sha256'] = hashlib.sha256(stream.read()).hexdigest()
+    except OSError:
+        pass
+    try:
+        with open(revision_path, encoding='utf-8') as stream:
+            revision = json.load(stream)
+        if isinstance(revision, dict):
+            record['revision'] = revision
+    except (OSError, ValueError):
+        pass
+    return record
 
 
 def _git_source_provenance(workspace_root: str) -> dict:
@@ -132,6 +176,11 @@ def _copy_if_exists(src: str, dst: str) -> str | None:
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     shutil.copy2(src, dst)
     return dst
+
+
+def _snapshot_name(label: str, src: str) -> str:
+    suffix = Path(src).suffix
+    return f'{label}{suffix}' if suffix else label
 
 
 def _workspace_root_from_share(package_share_dir: str) -> str:
@@ -3438,6 +3487,15 @@ def _apply_runtime_defaults(args) -> dict:
         adjustments['dual_vln_status_topic'] = args.dual_vln_status_topic
 
     if _is_internnav_run(args):
+        env_system2_path, env_system2_path_name = _first_env_value(
+            'ARENA_EVAL_INTERNNAV_SYSTEM2_MODEL_PATH',
+            'ARENA_INTERNNAV_SYSTEM2_MODEL_PATH',
+        )
+        if env_system2_path and not getattr(args, 'dual_vln_system2_model_path', ''):
+            args.dual_vln_system2_model_path = env_system2_path
+            adjustments['dual_vln_system2_model_path'] = (
+                f'{env_system2_path} ({env_system2_path_name})'
+            )
         env_http_url, env_http_url_name = _first_env_value(
             'ARENA_EVAL_INTERNNAV_HTTP_URL',
             'ARENA_INTERNNAV_HTTP_URL',
@@ -3559,7 +3617,7 @@ def _classify_end_reason(
 ):
     if finished_observed and isinstance(episode_outcome, dict):
         reason = str(episode_outcome.get('reason') or '').strip()
-        if reason in {'goal_reached', 'sim_timeout', 'wall_timeout', 'force_reset'}:
+        if reason in {'goal_reached', 'model_stop', 'sim_timeout', 'wall_timeout', 'force_reset'}:
             return f'episode_{reason}'
 
     if finished_observed and not timed_out and launch_returncode in (None, 0):
@@ -3840,6 +3898,10 @@ def _resolved_profile_parameters(args) -> dict:
         'human': args.human,
         'world': args.world,
         'scenario': args.scenario_file,
+        'expected_human_count': args.expected_human_count,
+        'pedestrian_seed': args.pedestrian_seed,
+        'pedestrian_pool_size': args.pedestrian_pool_size,
+        'task_generator_parameter_file': args.task_generator_parameter_file,
         'robot': args.robot,
         'local_planner': args.local_planner,
         'inter_planner': args.inter_planner,
@@ -3848,6 +3910,7 @@ def _resolved_profile_parameters(args) -> dict:
         'timeout_sec': args.timeout,
         'device': args.dual_vln_device,
         'mode': args.dual_vln_mode,
+        'system2_model_path': args.dual_vln_system2_model_path,
         'external_server': args.internnav_external_server,
         'direct_cmd_vel': args.internnav_direct_cmd_vel,
         'social_eval': args.social_eval,
@@ -3916,6 +3979,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--scenario-config-id', default='')
     parser.add_argument('--scenario-config-path', default='')
     parser.add_argument(
+        '--expected-human-count',
+        type=int,
+        default=-1,
+        help='Expected HuNav pedestrian count for readiness and artifact validation; -1 uses legacy non-empty semantics.',
+    )
+    parser.add_argument('--pedestrian-seed', type=int, default=-1)
+    parser.add_argument('--pedestrian-pool-size', type=int, default=-1)
+    parser.add_argument(
+        '--task-generator-parameter-file',
+        default='',
+        help='Optional task_generator ROS parameter YAML forwarded to arena.launch.py.',
+    )
+    parser.add_argument(
         '--social-eval',
         action=argparse.BooleanOptionalAction,
         help='Enable or disable stricter social-navigation metrics and artifact validation expectations.',
@@ -3945,6 +4021,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument('--internnav-mode', '--dual-vln-mode', dest='dual_vln_mode', default='heuristic')
     parser.add_argument('--internnav-model-path', '--dual-vln-model-path', dest='dual_vln_model_path', default='')
+    parser.add_argument(
+        '--internnav-system2-model-path',
+        '--dual-vln-system2-model-path',
+        dest='dual_vln_system2_model_path',
+        default='',
+        help='Optional pure System2 checkpoint overlaid by the external InternNav server.',
+    )
     parser.add_argument('--internnav-device', '--dual-vln-device', dest='dual_vln_device', default='cpu')
     parser.add_argument(
         '--internnav-inference-rate-hz',
@@ -4085,6 +4168,10 @@ def main(argv: list[str] | None = None) -> int:
     # values on add_argument would otherwise replace parser-level defaults.
     parser.set_defaults(**evaluation_defaults(benchmark_profile))
     args = parser.parse_args(raw_argv)
+    if args.expected_human_count < -1:
+        parser.error('--expected-human-count must be -1 or non-negative')
+    if args.pedestrian_pool_size != -1 and args.pedestrian_pool_size < args.expected_human_count:
+        parser.error('--pedestrian-pool-size must be -1 or at least --expected-human-count')
     runtime_adjustments = _apply_runtime_defaults(args)
     if args.internnav_direct_cmd_vel:
         args.internnav_external_server = True
@@ -4095,10 +4182,14 @@ def main(argv: list[str] | None = None) -> int:
         args.internnav_external_server = True
         args.dual_vln_require_real_backend = False
         args.dual_vln_strict_device = False
+    explicit_tm_obstacles = any(
+        value == '--tm-obstacles' or value.startswith('--tm-obstacles=')
+        for value in raw_argv
+    )
     if args.social_eval:
         if args.tm_robots == 'random':
             args.tm_robots = 'scenario'
-        if args.tm_obstacles == 'random':
+        if args.tm_obstacles == 'random' and not explicit_tm_obstacles:
             args.tm_obstacles = 'scenario'
         if not args.scenario_file:
             args.scenario_file = 'normal'
@@ -4189,13 +4280,17 @@ def main(argv: list[str] | None = None) -> int:
     episode_outcome_topic = _episode_outcome_topic(args.finished_topic, args.task_reset_topic)
     map_yaml_path = _world_map_yaml_path(sim_setup_share, args.world)
 
+    effective_task_generator_file = (
+        args.task_generator_parameter_file
+        or os.path.join(bringup_share, 'configs', 'task_generator.yaml')
+    )
     snapshot_files = {}
     for label, src in {
-        'task_generator': os.path.join(bringup_share, 'configs', 'task_generator.yaml'),
+        'task_generator': effective_task_generator_file,
         'internnav_controller': os.path.join(sim_setup_share, 'configs', 'nav2', 'controllers', 'dual_vln', 'controller_config.yaml'),
         'benchmark_profile': benchmark_profile_metadata['path'],
     }.items():
-        copied = _copy_if_exists(src, os.path.join(snapshots_dir, os.path.basename(src)))
+        copied = _copy_if_exists(src, os.path.join(snapshots_dir, _snapshot_name(label, src)))
         if copied is not None:
             snapshot_files[label] = copied
 
@@ -4225,6 +4320,7 @@ def main(argv: list[str] | None = None) -> int:
         # regression the user observed.
         f'require_human_states_ready:={str(args.human == "hunav").lower()}',
         'human_states_ready_timeout_sec:=20.0',
+        f'expected_human_count:={args.expected_human_count}',
         'episode_start_delay_sec:=1.0',
         f'vln_instruction:={args.vln_instruction}',
         f'dual_vln_mode:={args.dual_vln_mode}',
@@ -4292,6 +4388,10 @@ def main(argv: list[str] | None = None) -> int:
         launch_cmd.append(f'dual_vln_model_path:={args.dual_vln_model_path}')
     if args.scenario_file:
         launch_cmd.append(f'scenario_file:={args.scenario_file}')
+    if args.task_generator_parameter_file:
+        launch_cmd.append(
+            f'task_generator_parameter_file:={args.task_generator_parameter_file}'
+        )
     launch_cmd.extend(args.extra_launch_args)
 
     metrics_cmd = ['ros2', 'run', 'arena_evaluation', 'metrics', '--dir', output_dir]
@@ -4355,13 +4455,18 @@ def main(argv: list[str] | None = None) -> int:
             'scenario_file': args.scenario_file,
             'scenario_config_id': args.scenario_config_id,
             'scenario_config_path': args.scenario_config_path,
+            'expected_human_count': args.expected_human_count,
+            'pedestrian_seed': args.pedestrian_seed,
+            'pedestrian_pool_size': args.pedestrian_pool_size,
+            'task_generator_parameter_file': effective_task_generator_file,
             'social_eval': args.social_eval,
             'social_eval_expectations': {
                 'world': args.world,
                 'robot': args.robot,
                 'human': 'hunav',
-                'tm_obstacles': 'scenario',
+                'tm_obstacles': args.tm_obstacles,
                 'scenario_file': args.scenario_file or 'normal',
+                'expected_human_count': args.expected_human_count,
                 'required_videos': [
                     'ego_observation',
                     'ego_debug_overlay',
@@ -4382,6 +4487,7 @@ def main(argv: list[str] | None = None) -> int:
             'vln_instruction_timestamp': args.vln_instruction_timestamp,
             'dual_vln_mode': args.dual_vln_mode,
             'dual_vln_model_path': args.dual_vln_model_path,
+            'dual_vln_system2_model_path': args.dual_vln_system2_model_path,
             'dual_vln_device': args.dual_vln_device,
             'internnav_planning_rate_hz': args.dual_vln_inference_rate_hz,
             'dual_vln_inference_rate_hz': args.dual_vln_inference_rate_hz,
@@ -4442,6 +4548,12 @@ def main(argv: list[str] | None = None) -> int:
         'runtime_adjustments': runtime_adjustments,
         'runtime_environment': {
             'ros_discovery': resolved_ros_env,
+        },
+        'model_provenance': {
+            'base_model_path': args.dual_vln_model_path,
+            'system2_checkpoint': _system2_checkpoint_provenance(
+                args.dual_vln_system2_model_path
+            ),
         },
         'provenance': _git_source_provenance(_workspace_root_from_runtime()),
         'snapshots': snapshot_files,
@@ -4508,6 +4620,9 @@ def main(argv: list[str] | None = None) -> int:
     env.setdefault('ARENA_EVAL_PYTHON', sys.executable)
     env['ARENA_EVAL_INTERNNAV_MODE'] = str(args.dual_vln_mode)
     env['ARENA_EVAL_INTERNNAV_MODEL_PATH'] = str(args.dual_vln_model_path or '')
+    env['ARENA_EVAL_INTERNNAV_SYSTEM2_MODEL_PATH'] = str(
+        args.dual_vln_system2_model_path or ''
+    )
     env['ARENA_EVAL_INTERNNAV_DEVICE'] = str(args.dual_vln_device)
     env['ARENA_EVAL_INTERNNAV_RGB_TOPIC'] = str(args.dual_vln_rgb_topic or '')
     env['ARENA_EVAL_INTERNNAV_DEPTH_TOPIC'] = str(args.dual_vln_depth_topic or '')

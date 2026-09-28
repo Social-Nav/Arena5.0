@@ -75,6 +75,7 @@ if importlib.util.find_spec('rclpy') is None:
             self.data = data
 
     std_msgs.msg.String = _String
+    std_msgs.msg.__getattr__ = lambda name: object
 
     ament_index_python = _module('ament_index_python')
     ament_index_python.packages = _module('ament_index_python.packages')
@@ -198,6 +199,12 @@ def _robot_manager_stub(*, rosparams=None):
     manager._direct_dual_vln_bounds_warning_emitted = False
     manager._direct_dual_vln_last_status_twist = None
     manager._direct_dual_vln_status_bridge_active = True
+    manager._dual_vln_episode_ready = None
+    manager._model_declared_stop = False
+    manager._model_declared_stop_payload = {}
+    manager._dual_vln_status = 'startup'
+    manager._dual_vln_status_wall_time = 0.0
+    manager._dual_vln_status_payload = {}
     manager._cmd_vel_pub = _Publisher()
     manager._is_goal_reached = False
     manager._nav_stop_ticks = 0
@@ -301,6 +308,54 @@ def test_direct_dual_vln_status_twist_accepts_heuristic_command_statuses():
     assert len(manager._cmd_vel_pub.messages) == 1
     assert manager._cmd_vel_pub.messages[0].linear.x == 0.16
     assert manager._cmd_vel_pub.messages[0].angular.z == 0.6
+
+
+def test_terminal_model_stop_ends_matching_episode_and_publishes_zero():
+    manager = _robot_manager_stub()
+    manager._stop_direct_dual_vln_command_bridge = lambda: setattr(
+        manager, '_direct_dual_vln_status_bridge_active', False
+    )
+
+    manager._on_dual_vln_status(SimpleNamespace(data=json.dumps({
+        'status': 'episode_ready',
+        'episode': 7,
+        'episode_started': True,
+    })))
+    manager._on_dual_vln_status(SimpleNamespace(data=json.dumps({
+        'status': 'stop',
+        'episode': 7,
+        'episode_started': True,
+        'terminal': True,
+        'termination_reason': 'model_stop',
+    })))
+
+    assert asyncio.run(manager.is_done) is True
+    assert manager.done_reason == 'model_stop'
+    assert manager._direct_dual_vln_status_bridge_active is False
+    assert manager._nav_stop_ticks == 15
+    assert len(manager._cmd_vel_pub.messages) == 1
+    assert manager._cmd_vel_pub.messages[0].linear.x == 0.0
+    assert manager._cmd_vel_pub.messages[0].angular.z == 0.0
+
+
+def test_nonterminal_or_stale_stop_does_not_end_episode():
+    manager = _robot_manager_stub()
+    manager._stop_direct_dual_vln_command_bridge = lambda: None
+
+    manager._on_dual_vln_status(SimpleNamespace(data=json.dumps({
+        'status': 'episode_ready',
+        'episode': 8,
+        'episode_started': True,
+    })))
+    for payload in (
+        {'status': 'stop', 'episode': 8, 'terminal': False, 'termination_reason': 'model_stop'},
+        {'status': 'stop', 'episode': 7, 'terminal': True, 'termination_reason': 'model_stop'},
+        {'status': 'adapter_exception', 'episode': 8, 'terminal': False},
+    ):
+        manager._on_dual_vln_status(SimpleNamespace(data=json.dumps(payload)))
+
+    assert asyncio.run(manager.is_done) is False
+    assert manager.done_reason == 'running'
 
 
 def test_direct_dual_vln_bridge_stops_instead_of_publishing_when_pose_leaves_safe_bounds():
@@ -454,6 +509,21 @@ def test_tm_robots_done_records_goal_reached_reason():
 
     assert asyncio.run(mode.done) is True
     assert mode.last_done_reason == 'goal_reached'
+
+
+def test_tm_robots_done_records_model_stop_reason():
+    mode = TM_Robots.__new__(TM_Robots)
+    mode._NodeInterface__node = SimpleNamespace(
+        conf=SimpleNamespace(Robot=SimpleNamespace(TIMEOUT=SimpleNamespace(value=10))),
+        rosparam=_RosParamAccessor({'timeout_wall_factor': 5.0, 'timeout_wall_sec': 0.0}),
+    )
+    robot = SimpleNamespace(is_done=_done_true(), done_reason='model_stop')
+    mode._PROPS = SimpleNamespace(clock=SimpleNamespace(clock=SimpleNamespace(sec=1)), robots={'robot': robot})
+    mode._last_reset = 0
+    mode._last_reset_wall = time.monotonic()
+
+    assert asyncio.run(mode.done) is True
+    assert mode.last_done_reason == 'model_stop'
 
 
 async def _done_true():

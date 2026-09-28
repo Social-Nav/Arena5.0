@@ -64,12 +64,71 @@ per run directory. Run multiple independent commands and aggregate their result
 directories for repeated trials. Arguments after `--` are passed to
 `internnav_eval`:
 
+InternNav's symbolic `STOP` is an episode-terminal action, matching its VLN-CE
+evaluation semantics. The run records `episode_outcome.reason: model_stop` and
+`result.end_reason: episode_model_stop`. Task success is still determined from
+the final pose and scenario goal tolerance: a premature STOP ends and scores the
+episode but does not become `goal_reached`.
+
 ```bash
 src/Arena/_meta/docker/features/benchmark/main run \
   --case grscenes_20_v1/default_4 \
   --timeout 300 \
   -- --output-prefix review/default_4
 ```
+
+## Run the Versioned Test Split
+
+The full benchmark is an explicit allowlist, not a directory scan. The tracked
+`arena_simulation_setup/test_split.json` is a JSON array containing only paths
+relative to the `arena_simulation_setup` package, for example:
+
+```json
+[
+  "worlds/grscenes_1_v1/scenarios/default/episode_metadata.json"
+]
+```
+
+The checked-in split currently contains 133 executable episodes. The source
+workbook has 134 physical rows: one header row and 133 data rows. Arena has 150
+discoverable GRScenes scenarios, so the other 17 scenarios are skipped. The
+split loader rejects absolute/traversal paths, duplicates, missing
+`episode_metadata.json` files, and missing sibling `scenario.yaml` files before
+starting Docker or loading a model.
+
+Inspect the exact selected/skipped counts and selected case list without
+starting containers, then run the cases sequentially:
+
+```bash
+cd /home/ubuntu/arena_jazzy_ws
+src/Arena/_meta/docker/features/benchmark/main plan full-eval
+src/Arena/_meta/docker/features/benchmark/main full-eval
+```
+
+`full-eval` starts one InternNav server, runs only the listed world/scenario
+pairs in split order, and gives every case its own output prefix under
+`outputs/full_eval/<world>_<scenario>/`. A model task failure remains a valid
+scored result and does not stop the batch. A missing or incomplete canonical
+`benchmark_result.json` is an invalid pipeline run; all selected cases are still
+attempted, then `full-eval` exits non-zero. Existing result files from earlier
+runs are ignored when validating the current case.
+
+To review a replacement split or choose another batch output root:
+
+```bash
+src/Arena/_meta/docker/features/benchmark/main plan full-eval \
+  --test-split /absolute/host/path/to/test_split.json \
+  --full-output-prefix full_eval/review
+
+src/Arena/_meta/docker/features/benchmark/main full-eval \
+  --test-split /absolute/host/path/to/test_split.json \
+  --full-output-prefix full_eval/review
+```
+
+The custom split must reference files beneath the checked-out
+`arena_simulation_setup` package. Do not pass `--output-prefix` after `--` in
+full-eval mode; the batch runner owns it so results from different episodes
+cannot collide.
 
 ## Configuration Layers
 

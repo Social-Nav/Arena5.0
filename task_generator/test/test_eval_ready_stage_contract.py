@@ -227,6 +227,7 @@ def _build_node(harness, *, streams_ready_publishers=1):
     node._robot_navigation_ready = False
     node._video_streams_ready_episode = None
     node._last_human_states_count = 0
+    node._human_count_mismatch_observed = False
     node._video_streams_ready_topic = '/task_generator_node/video_streams_ready'
     node._vln_instruction = 'go'
     node._vln_instruction_file = ''

@@ -180,9 +180,27 @@ docker exec arena-arena_jazzy_ws-arena-1 bash -lc '
 '
 ```
 
-The aggregate JSON reports total/valid/invalid/ready counts, task and social
-success rates over all runs and over valid runs only, SPL/nDTW/SDTW and distance
-means, per-metric sample counts/standard deviations/95% confidence intervals,
-collision and near-miss run rates, failure counts, and per-world/per-scenario
-breakdowns. Use the `*_valid_runs` fields for model-quality reporting and report
-`invalid_run_count` separately.
+The canonical `verdict.success` (also exported as `benchmark_success`) is the
+benchmark's final task-and-safety score. For a zero-human control episode it is
+equal to `instruction_following_success`. When `expected_human_count > 0`, it is:
+
+```text
+instruction_following_success
+AND collision_free
+AND min_human_distance_m > personal_space_radius_m
+```
+
+The default social-distance threshold is `1.0 m`; the exact value, metric name,
+strict `>` operator, and evidence-completeness result are recorded under
+`metrics.success_criteria`. Missing collision or distance evidence fails closed.
+`strict_task_success` and `strict_social_success` remain separate diagnostic
+scores and are not overwritten by the composite result.
+
+The aggregate JSON reports total/valid/invalid/ready counts, composite
+`benchmark_success_rate`, separate instruction/task/social success rates over
+all runs and over valid runs only, human-arm collision-free and social-distance
+pass rates, SPL/nDTW/SDTW and distance means, per-metric sample
+counts/standard deviations/95% confidence intervals, collision and near-miss
+run rates, failure counts, and per-world/per-scenario breakdowns. Use the
+`*_valid_runs` fields for model-quality reporting and report `invalid_run_count`
+separately.

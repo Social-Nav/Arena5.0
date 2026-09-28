@@ -296,6 +296,10 @@ def generate_launch_description():
         name="human_states_ready_timeout_sec",
         default_value="10.0",
     )
+    expected_human_count = LaunchArgument(
+        name="expected_human_count",
+        default_value="-1",
+    )
     episode_start_delay_sec = LaunchArgument(
         name="episode_start_delay_sec",
         default_value="0.0",
@@ -456,6 +460,7 @@ def generate_launch_description():
                 **train_mode.param(bool),
                 **require_human_states_ready.param(bool),
                 **human_states_ready_timeout_sec.param(float),
+                **expected_human_count.param(int),
                 **episode_start_delay_sec.param(float),
                 **pedestrian_goal_traversal.str_param,
             },

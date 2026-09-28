@@ -3,6 +3,7 @@ import json
 
 from arena_bringup.social_nav_validation import (
     _check_dynamic_scene,
+    _check_humans,
     _check_metrics,
     _check_model_control,
     _check_videos,
@@ -161,7 +162,74 @@ def test_dynamic_scene_check_fails_static_humans():
 
     assert result["pass"] is False
     assert "moving_human_count_below_threshold" in result["failures"]
-    assert "human_robot_motion_overlap_below_threshold" in result["failures"]
+
+
+def test_zero_human_control_is_valid_when_explicitly_expected(tmp_path):
+    _write_rows(tmp_path / 'human_states.csv', ['time', 'data'], [])
+    social = {
+        'humans_present': False,
+        'max_humans_observed': 0,
+        'moving_human_count': 0,
+        'human_motion_total_m': 0.0,
+        'human_motion_time_sec': 0.0,
+        'robot_motion_time_sec': 1.0,
+        'human_robot_motion_overlap_time_sec': 0.0,
+        'human_robot_interaction_time_sec': 0.0,
+        'dynamic_scene_success': False,
+        'thresholds': {},
+    }
+
+    assert _check_humans(tmp_path, social, expected_human_count=0)['pass'] is True
+    dynamic = _check_dynamic_scene(social, expected_human_count=0)
+    assert dynamic['pass'] is True
+    assert dynamic['max_humans_observed'] == 0
+
+
+def test_exact_human_count_mismatch_is_invalid(tmp_path):
+    _write_rows(tmp_path / 'human_states.csv', ['time', 'data'], [
+        {'time': '1', 'data': json.dumps([{'id': index} for index in range(4)])},
+    ])
+    social = {
+        'humans_present': True,
+        'max_humans_observed': 4,
+        'moving_human_count': 4,
+        'human_motion_total_m': 10.0,
+        'human_motion_time_sec': 10.0,
+        'robot_motion_time_sec': 1.0,
+        'human_robot_motion_overlap_time_sec': 1.0,
+        'human_robot_interaction_time_sec': 0.0,
+        'dynamic_scene_success': False,
+        'thresholds': {},
+    }
+
+    assert _check_humans(tmp_path, social, expected_human_count=5)['pass'] is False
+    assert 'human_count_mismatch' in _check_dynamic_scene(
+        social, expected_human_count=5
+    )['failures']
+
+
+def test_dynamic_scene_validity_does_not_require_policy_to_enter_human_interaction_radius():
+    result = _check_dynamic_scene(
+        {
+            "moving_human_count": 2,
+            "human_motion_total_m": 20.0,
+            "human_motion_time_sec": 30.0,
+            "robot_motion_time_sec": 10.0,
+            "human_robot_motion_overlap_time_sec": 10.0,
+            "human_robot_interaction_time_sec": 0.0,
+            "dynamic_scene_success": False,
+            "thresholds": {
+                "min_moving_human_count": 1,
+                "min_human_motion_time_sec": 5.0,
+                "min_human_robot_motion_overlap_time_sec": 3.0,
+                "min_human_robot_interaction_time_sec": 1.0,
+            },
+        }
+    )
+
+    assert result["pass"] is True
+    assert result["dynamic_scene_success"] is False
+    assert result["human_robot_interaction_time_sec"] == 0.0
 
 
 def test_metrics_check_requires_strict_task_and_social_success(tmp_path):

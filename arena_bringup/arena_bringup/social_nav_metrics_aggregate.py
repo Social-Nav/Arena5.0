@@ -31,12 +31,26 @@ SUMMARY_FIELDS = [
     'planner',
     'human',
     'scenario_file',
+    'expected_human_count',
+    'pedestrian_seed',
+    'pedestrian_pool_size',
     'episodes_requested',
     'single_episode',
     'episode_result',
     'end_reason',
     'evaluator_returncode',
     'execution_pass',
+    'success',
+    'benchmark_success',
+    'instruction_following_success',
+    'human_safety_gate_applied',
+    'safety_evidence_complete',
+    'collision_free',
+    'social_distance_success',
+    'social_distance_metric',
+    'social_distance_operator',
+    'social_distance_threshold_m',
+    'benchmark_success_failure_reasons',
     'task_success',
     'strict_task_success',
     'social_success',
@@ -61,7 +75,9 @@ SUMMARY_FIELDS = [
     'sdtw',
     'trajectory_length_m',
     'shortest_path_length_m',
+    'shortest_path_length_source',
     'reference_path_source',
+    'reference_path_geometry_source',
     'reference_path_available',
     'goal_reached',
     'robot_moved',
@@ -132,6 +148,113 @@ def read_yaml(path: Path) -> Any:
         return yaml.safe_load(path.read_text(encoding='utf-8'))
     except Exception:
         return None
+
+
+def derive_benchmark_success(
+    *,
+    expected_human_count: Any,
+    strict_task_success: bool,
+    social_metrics: dict[str, Any],
+    static_occupancy: dict[str, Any],
+) -> dict[str, Any]:
+    """Derive the benchmark's task-and-safety success contract.
+
+    Human-present episodes apply the policy requested by the benchmark owner::
+
+        success = instruction_following
+                  AND collision_free
+                  AND min_human_distance_m > personal_space_radius_m
+
+    The zero-human control arm intentionally keeps task-only semantics.  Missing
+    safety evidence fails closed for human-present episodes instead of being
+    converted to a zero collision count.
+    """
+    social_metrics = social_metrics if isinstance(social_metrics, dict) else {}
+    static_occupancy = static_occupancy if isinstance(static_occupancy, dict) else {}
+    thresholds = social_metrics.get('thresholds') or {}
+    if not isinstance(thresholds, dict):
+        thresholds = {}
+
+    expected_count = _int_or_none(expected_human_count)
+    if expected_count is not None:
+        human_safety_gate_applied = expected_count > 0
+        human_count_source = 'run_manifest.parameters.expected_human_count'
+    else:
+        human_safety_gate_applied = _as_bool(social_metrics.get('humans_present'))
+        human_count_source = 'social_metrics.humans_present'
+
+    distance_metric = 'min_human_distance_m'
+    distance_operator = '>'
+    distance_threshold = _float_or_none(thresholds.get('personal_space_radius_m'))
+    if distance_threshold is None:
+        # This is the social-metrics default and is recorded explicitly so an
+        # older artifact without a thresholds object remains reproducible.
+        distance_threshold = 1.0
+    min_human_distance = _float_or_none(social_metrics.get(distance_metric))
+
+    collision_fields = (
+        ('human_collision_count', social_metrics),
+        ('footprint_human_collision_count', social_metrics),
+        ('collision_sample_count', static_occupancy),
+    )
+    collision_values = {
+        name: _int_or_none(source.get(name))
+        for name, source in collision_fields
+    }
+    collision_evidence_complete = all(value is not None for value in collision_values.values())
+    collision_free = (
+        collision_evidence_complete
+        and all(value == 0 for value in collision_values.values())
+    ) if human_safety_gate_applied else None
+    distance_evidence_complete = min_human_distance is not None
+    social_distance_success = (
+        distance_evidence_complete
+        and min_human_distance > distance_threshold
+    ) if human_safety_gate_applied else None
+    safety_evidence_complete = (
+        collision_evidence_complete and distance_evidence_complete
+    ) if human_safety_gate_applied else True
+
+    failure_reasons: list[str] = []
+    if not strict_task_success:
+        failure_reasons.append('instruction_following_failed')
+    if human_safety_gate_applied:
+        if not collision_evidence_complete:
+            failure_reasons.append('collision_evidence_missing')
+        elif not collision_free:
+            failure_reasons.append('collision_detected')
+        if not distance_evidence_complete:
+            failure_reasons.append('social_distance_evidence_missing')
+        elif not social_distance_success:
+            failure_reasons.append('social_distance_threshold_failed')
+
+    benchmark_success = bool(
+        strict_task_success
+        and (
+            not human_safety_gate_applied
+            or (collision_free and social_distance_success)
+        )
+    )
+    return {
+        'success': benchmark_success,
+        'benchmark_success': benchmark_success,
+        'instruction_following_success': bool(strict_task_success),
+        'human_safety_gate_applied': human_safety_gate_applied,
+        'human_count_source': human_count_source,
+        'safety_evidence_complete': safety_evidence_complete,
+        'collision_evidence_complete': (
+            collision_evidence_complete if human_safety_gate_applied else None
+        ),
+        'distance_evidence_complete': (
+            distance_evidence_complete if human_safety_gate_applied else None
+        ),
+        'collision_free': collision_free,
+        'social_distance_success': social_distance_success,
+        'social_distance_metric': distance_metric,
+        'social_distance_operator': distance_operator,
+        'social_distance_threshold_m': distance_threshold,
+        'benchmark_success_failure_reasons': ';'.join(failure_reasons),
+    }
 
 
 def _canonical_result_is_current(run_dir: Path, canonical: dict[str, Any]) -> bool:
@@ -293,6 +416,12 @@ def summarize_run(run_dir: Path, *, prefer_canonical: bool = True) -> dict[str, 
         and artifact_pass
         and social_nav_ready
     )
+    success_semantics = derive_benchmark_success(
+        expected_human_count=params.get('expected_human_count'),
+        strict_task_success=strict_task_success,
+        social_metrics=social,
+        static_occupancy=static_occupancy,
+    )
 
     row = {
         'schema_version': BENCHMARK_RESULT_SCHEMA_VERSION,
@@ -308,12 +437,16 @@ def summarize_run(run_dir: Path, *, prefer_canonical: bool = True) -> dict[str, 
         'planner': params.get('local_planner') or '',
         'human': params.get('human') or '',
         'scenario_file': params.get('scenario_file') or '',
+        'expected_human_count': _int_or_zero(params.get('expected_human_count')),
+        'pedestrian_seed': _int_or_zero(params.get('pedestrian_seed')),
+        'pedestrian_pool_size': _int_or_zero(params.get('pedestrian_pool_size')),
         'episodes_requested': episodes_requested,
         'single_episode': single_episode,
         'episode_result': episode_result,
         'end_reason': end_reason,
         'evaluator_returncode': evaluator_returncode,
         'execution_pass': execution_pass,
+        **success_semantics,
         'task_success': strict_task_success,
         'strict_task_success': strict_task_success,
         'social_success': strict_social_success,
@@ -338,7 +471,13 @@ def summarize_run(run_dir: Path, *, prefer_canonical: bool = True) -> dict[str, 
         'sdtw': _float_or_none(vln_metrics.get('sdtw') if isinstance(vln_metrics, dict) else None),
         'trajectory_length_m': _float_or_none(vln_metrics.get('trajectory_length_m') if isinstance(vln_metrics, dict) else None),
         'shortest_path_length_m': _float_or_none(vln_metrics.get('shortest_path_length_m') if isinstance(vln_metrics, dict) else None),
+        'shortest_path_length_source': (
+            vln_metrics.get('shortest_path_length_source') if isinstance(vln_metrics, dict) else ''
+        ),
         'reference_path_source': reference_path.get('source') if isinstance(reference_path, dict) else '',
+        'reference_path_geometry_source': (
+            reference_path.get('geometry_source') if isinstance(reference_path, dict) else ''
+        ),
         'reference_path_available': _as_bool(reference_path.get('available')) if isinstance(reference_path, dict) else False,
         'goal_reached': _as_bool(goal_metrics.get('goal_reached')) if isinstance(goal_metrics, dict) else False,
         'robot_moved': metrics_check.get('robot_moved'),
@@ -402,6 +541,11 @@ def summarize_run(run_dir: Path, *, prefer_canonical: bool = True) -> dict[str, 
 def failure_tags(row: dict[str, Any], manifest: dict[str, Any], validation: dict[str, Any]) -> list[str]:
     tags: list[str] = []
     result = manifest.get('result', {}) if isinstance(manifest, dict) else {}
+    params = manifest.get('parameters', {}) if isinstance(manifest, dict) else {}
+    try:
+        expected_human_count = int(params.get('expected_human_count', -1))
+    except (TypeError, ValueError):
+        expected_human_count = -1
     end_reason = str(result.get('end_reason') or row.get('end_reason') or '').lower()
     if end_reason in {'external_preflight_failed', 'pedestrian_traversal_preflight_failed'}:
         tags.extend(['preflight_failure', end_reason])
@@ -424,7 +568,7 @@ def failure_tags(row: dict[str, Any], manifest: dict[str, Any], validation: dict
         tags.append('finished_signal_missing')
     if row.get('episode_timeout') or result.get('timed_out') or 'timeout' in end_reason:
         tags.append('timeout')
-    if not row.get('humans_present'):
+    if not row.get('humans_present') and expected_human_count != 0:
         tags.append('missing_humans')
     if not row.get('model_control_pass'):
         tags.append('model_control_failure')
@@ -479,6 +623,7 @@ def write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> 
 
 def aggregate_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     failure_counter: Counter[str] = Counter()
+    benchmark_success_failure_counter: Counter[str] = Counter()
     primary_failure_counter: Counter[str] = Counter()
     status_counter: Counter[str] = Counter()
     for row in rows:
@@ -489,23 +634,60 @@ def aggregate_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             failure_counter['success'] += 1
         else:
             failure_counter.update(tags)
+        benchmark_success_failure_counter.update(
+            reason
+            for reason in str(row.get('benchmark_success_failure_reasons') or '').split(';')
+            if reason
+        )
     count = len(rows)
     valid_rows = [row for row in rows if _as_bool(row.get('valid_run'))]
+    human_rows = [
+        row for row in valid_rows if _as_bool(row.get('human_safety_gate_applied'))
+    ]
+    social_distance_thresholds = sorted({
+        threshold
+        for row in rows
+        for threshold in [_float_or_none(row.get('social_distance_threshold_m'))]
+        if threshold is not None
+    })
     return {
         'schema': 'arena.benchmark_aggregate',
         'schema_version': BENCHMARK_RESULT_SCHEMA_VERSION,
+        'success_policy': {
+            'policy': 'arena.task_and_social_safety.v1',
+            'zero_human_formula': 'instruction_following_success',
+            'human_present_formula': (
+                'instruction_following_success AND collision_free '
+                'AND min_human_distance_m > personal_space_radius_m'
+            ),
+            'social_distance_metric': 'min_human_distance_m',
+            'social_distance_operator': '>',
+            'social_distance_thresholds_m': social_distance_thresholds,
+            'missing_safety_evidence': 'fail_closed',
+        },
         'run_count': count,
         'benchmark_ready_count': _count(rows, 'benchmark_ready'),
         'valid_run_count': _count(rows, 'valid_run'),
         'invalid_run_count': count - _count(rows, 'valid_run'),
         'strict_task_success_count': _count(rows, 'strict_task_success'),
         'strict_social_success_count': _count(rows, 'strict_social_success'),
+        'success_count': _count(rows, 'benchmark_success'),
+        'benchmark_success_count': _count(rows, 'benchmark_success'),
+        'instruction_following_success_count': _count(rows, 'instruction_following_success'),
+        'success_rate': _rate(rows, 'benchmark_success'),
+        'benchmark_success_rate': _rate(rows, 'benchmark_success'),
+        'instruction_following_success_rate': _rate(rows, 'instruction_following_success'),
         'task_success_rate': _rate(rows, 'task_success'),
         'social_success_rate': _rate(rows, 'social_success'),
         'strict_task_success_rate': _rate(rows, 'strict_task_success'),
         'strict_social_success_rate': _rate(rows, 'strict_social_success'),
         'task_success_rate_valid_runs': _rate(valid_rows, 'strict_task_success'),
         'social_success_rate_valid_runs': _rate(valid_rows, 'strict_social_success'),
+        'success_rate_valid_runs': _rate(valid_rows, 'benchmark_success'),
+        'benchmark_success_rate_valid_runs': _rate(valid_rows, 'benchmark_success'),
+        'instruction_following_success_rate_valid_runs': _rate(
+            valid_rows, 'instruction_following_success'
+        ),
         'benchmark_ready_rate_valid_runs': _rate(valid_rows, 'benchmark_ready'),
         'benchmark_ready_rate': _rate(rows, 'benchmark_ready'),
         'valid_run_rate': _rate(rows, 'valid_run'),
@@ -518,6 +700,13 @@ def aggregate_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         'metrics_pass_rate': _rate(rows, 'metrics_pass'),
         'collision_run_rate': _positive_rate(rows, 'footprint_human_collision_count'),
         'near_miss_run_rate': _positive_rate(rows, 'footprint_near_miss_count'),
+        'human_safety_gate_run_count': _count(valid_rows, 'human_safety_gate_applied'),
+        'collision_free_rate_human_runs': (
+            _rate(human_rows, 'collision_free') if human_rows else None
+        ),
+        'social_distance_success_rate_human_runs': (
+            _rate(human_rows, 'social_distance_success') if human_rows else None
+        ),
         'mean_path_length_m': _mean(row.get('path_length_m') for row in rows),
         'mean_path_length_m_valid_runs': _mean(row.get('path_length_m') for row in valid_rows),
         'mean_episode_duration_sec': _mean(row.get('episode_duration_sec') for row in rows),
@@ -558,6 +747,9 @@ def aggregate_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             _int_or_zero(row.get('footprint_near_miss_count')) for row in rows
         ),
         'failure_counts': dict(sorted(failure_counter.items())),
+        'benchmark_success_failure_counts': dict(
+            sorted(benchmark_success_failure_counter.items())
+        ),
         'primary_failure_counts': dict(sorted(primary_failure_counter.items())),
         'result_status_counts': dict(sorted(status_counter.items())),
         'by_world': _group_summary(rows, ('world',)),
@@ -637,6 +829,15 @@ def _int_or_zero(value: Any) -> int:
         return 0
 
 
+def _int_or_none(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
 def _mean(values) -> float | None:
     valid = [float(value) for value in values if value is not None]
     return sum(valid) / len(valid) if valid else None
@@ -693,6 +894,8 @@ def _group_summary(rows: list[dict[str, Any]], keys: tuple[str, ...]) -> dict[st
             'valid_run_rate': _rate(group, 'valid_run'),
             'strict_task_success_rate': _rate(group, 'strict_task_success'),
             'strict_social_success_rate': _rate(group, 'strict_social_success'),
+            'benchmark_success_rate': _rate(group, 'benchmark_success'),
+            'instruction_following_success_rate': _rate(group, 'instruction_following_success'),
         }
         for label, group in sorted(groups.items())
     }
