@@ -81,7 +81,7 @@ repositories:
   deps/hunav/hunav_sim:
     type: git
     url: https://github.com/Social-Nav/hunav_sim.git
-    version: feature/social_yielding
+    version: integration/eval-social-yielding
   deps/hunav/people_msgs:
     type: git
     url: https://github.com/wg-perception/people.git
