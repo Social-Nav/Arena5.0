@@ -368,6 +368,25 @@ def test_human_episode_missing_collision_evidence_fails_closed():
     assert 'collision_evidence_missing' in result['benchmark_success_failure_reasons']
 
 
+def test_unspecified_expected_count_uses_observed_human_presence():
+    result = derive_benchmark_success(
+        expected_human_count=-1,
+        strict_task_success=True,
+        social_metrics={
+            'humans_present': True,
+            'min_human_distance_m': 1.2,
+            'human_collision_count': 0,
+            'footprint_human_collision_count': 0,
+            'thresholds': {'personal_space_radius_m': 1.0},
+        },
+        static_occupancy={'collision_sample_count': 0},
+    )
+
+    assert result['human_safety_gate_applied'] is True
+    assert result['human_count_source'] == 'social_metrics.humans_present'
+    assert result['benchmark_success'] is True
+
+
 def test_aggregate_summary_has_counts_rates_and_groups(tmp_path):
     run_dir = tmp_path / 'run'
     _write_complete_run(run_dir)

@@ -176,7 +176,7 @@ def derive_benchmark_success(
         thresholds = {}
 
     expected_count = _int_or_none(expected_human_count)
-    if expected_count is not None:
+    if expected_count is not None and expected_count >= 0:
         human_safety_gate_applied = expected_count > 0
         human_count_source = 'run_manifest.parameters.expected_human_count'
     else:
