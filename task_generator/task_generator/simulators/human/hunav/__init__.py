@@ -111,6 +111,7 @@ class HunavDynamicObstacle:
     yaw: float
     model: PedestrianIdentifier
     goals: Goals
+    goal_desired_velocities: list[float]
     extra: dict
     velocity: None
     desired_velocity: float
@@ -146,6 +147,21 @@ class HunavDynamicObstacle:
                 in obj.waypoints
             ])
 
+        desired_velocity = float(
+            extra.get('desired_velocity', cls._default.desired_velocity)
+        )
+        configured_goal_velocities = extra.get('waypoint_desired_velocities') or []
+        goal_desired_velocities = [
+            desired_velocity if velocity is None else float(velocity)
+            for velocity in configured_goal_velocities
+        ]
+        if len(goal_desired_velocities) < len(waypoints):
+            goal_desired_velocities.extend(
+                [desired_velocity] * (len(waypoints) - len(goal_desired_velocities))
+            )
+        elif len(goal_desired_velocities) > len(waypoints):
+            goal_desired_velocities = goal_desired_velocities[:len(waypoints)]
+
         if 'behavior' in extra:
             behavior = cls.Behavior.parse(extra['behavior'])
         else:
@@ -173,8 +189,9 @@ class HunavDynamicObstacle:
             yaw=extra.get('position', {}).get('h', obj.pose.orientation.to_yaw()),
             model=obj.model,
             goals=waypoints,
+            goal_desired_velocities=goal_desired_velocities,
             velocity=extra.get('velocity', cls._default.velocity),
-            desired_velocity=extra.get('desired_velocity', cls._default.desired_velocity),
+            desired_velocity=desired_velocity,
             radius=extra.get('radius', cls._default.radius),
             linear_vel=extra.get('linear_vel', cls._default.linear_vel),
             angular_vel=extra.get('angular_vel', cls._default.angular_vel),
@@ -217,6 +234,12 @@ class HunavDynamicObstacle:
         agent_msg.cyclic_goals = self.cyclic_goals
         if self.goals:
             agent_msg.goals = self.goals.as_poses()
+            # Keep pedestrian spawning functional while an existing workspace still has the
+            # pre-segment-speed hunav_msgs build installed. In that case HuNav falls back to the
+            # top-level desired_velocity exactly as it did before; rebuilding hunav_msgs and
+            # hunav_agent_manager enables the per-goal values.
+            if hasattr(agent_msg, 'goal_desired_velocities'):
+                agent_msg.goal_desired_velocities = self.goal_desired_velocities
         else:
             # Default goals if none exist
             goals = [
@@ -249,6 +272,9 @@ class HunavDynamicObstacle:
             extra=obj.get('extra', cls._default.extra),
             model=obj.get('model', cls._default.model),
             goals=waypoints,
+            goal_desired_velocities=[
+                obj.get('max_vel', cls._default.desired_velocity)
+            ] * len(waypoints),
             init_pose=PositionH(
                 x=obj.get('init_pose', {}).get('x', cls._default.init_pose.x),
                 y=obj.get('init_pose', {}).get('y', cls._default.init_pose.y),
@@ -318,6 +344,7 @@ HunavDynamicObstacle._default = HunavDynamicObstacle(
     model=PedestrianIdentifier(''),
     extra={},
     goals=Goals(),
+    goal_desired_velocities=[],
     id=0,
     type=1,
     skin=0,
