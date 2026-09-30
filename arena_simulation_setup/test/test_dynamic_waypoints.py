@@ -44,3 +44,23 @@ def test_normalize_dynamic_waypoints(
 def test_waypoint_velocity_must_be_positive(velocity):
     with pytest.raises(ValueError, match="must be positive"):
         dynamic_waypoints.normalize_dynamic_waypoints([[1, 2, 3, velocity]])
+
+
+@pytest.mark.parametrize(
+    ("values", "return_value", "expected"),
+    [
+        ([], "spawn", []),
+        (["w1"], "spawn", ["w1", "spawn"]),
+        (["w1", "w2"], "spawn", ["w1", "w2", "w1", "spawn"]),
+        (
+            ["w1", "w2", "w3"],
+            "spawn",
+            ["w1", "w2", "w3", "w2", "w1", "spawn"],
+        ),
+    ],
+)
+def test_build_reciprocating_sequence(values, return_value, expected):
+    assert dynamic_waypoints.build_reciprocating_sequence(
+        values,
+        return_value,
+    ) == expected

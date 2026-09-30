@@ -1,5 +1,22 @@
 from __future__ import annotations
 
+from typing import TypeVar
+
+
+T = TypeVar("T")
+
+
+def build_reciprocating_sequence(values: list[T], return_value: T) -> list[T]:
+    """Return a route that reaches the end, retraces it, and returns home.
+
+    The returned sequence is intended to be consumed cyclically. For example,
+    ``[w1, w2, w3]`` becomes ``[w1, w2, w3, w2, w1, spawn]``; the cyclic
+    transition from ``spawn`` back to ``w1`` starts the next traversal.
+    """
+    if not values:
+        return []
+    return [*values, *values[-2::-1], return_value]
+
 
 def normalize_dynamic_waypoints(waypoints) -> tuple[list[list], list[float | None]]:
     """Normalize legacy and speed-annotated pedestrian waypoints."""

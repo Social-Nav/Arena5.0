@@ -8,6 +8,9 @@ import geometry_msgs.msg
 import hunav_msgs.msg
 import yaml
 from ament_index_python.packages import get_package_share_directory
+from arena_simulation_setup.shared.dynamic_waypoints import (
+    build_reciprocating_sequence,
+)
 from arena_simulation_setup.tree.assets.Pedestrian import PedestrianIdentifier
 
 from task_generator.shared import DynamicObstacle, Pose, Position
@@ -233,29 +236,36 @@ class HunavDynamicObstacle:
         agent_msg.goal_radius = self.goal_radius
         agent_msg.cyclic_goals = self.cyclic_goals
         if self.goals:
-            agent_msg.goals = self.goals.as_poses()
-            # Keep pedestrian spawning functional while an existing workspace still has the
-            # pre-segment-speed hunav_msgs build installed. In that case HuNav falls back to the
-            # top-level desired_velocity exactly as it did before; rebuilding hunav_msgs and
-            # hunav_agent_manager enables the per-goal values.
-            if hasattr(agent_msg, 'goal_desired_velocities'):
-                agent_msg.goal_desired_velocities = self.goal_desired_velocities
+            goals = list(self.goals)
+            goal_desired_velocities = list(self.goal_desired_velocities)
         else:
             # Default goals if none exist
             goals = [
-                (-3.133759, -4.166653, 1.250000),
-                (0.997901, -4.131655, 1.250000),
-                (-0.227549, -20.187146, 1.250000)
+                Position(x=-3.133759, y=-4.166653, z=0.),
+                Position(x=0.997901, y=-4.131655, z=0.),
+                Position(x=-0.227549, y=-20.187146, z=0.),
             ]
-            agent_msg.goals = [
-                geometry_msgs.msg.Pose(
-                    position=geometry_msgs.msg.Point(
-                        x=x,
-                        y=y
-                    )
-                )
-                for x, y, _ in goals
-            ]
+            goal_desired_velocities = [self.desired_velocity] * len(goals)
+
+        if self.cyclic_goals:
+            spawn = Position(
+                x=self.init_pose.x,
+                y=self.init_pose.y,
+                z=0.,
+            )
+            goals = build_reciprocating_sequence(goals, spawn)
+            goal_desired_velocities = build_reciprocating_sequence(
+                goal_desired_velocities,
+                self.desired_velocity,
+            )
+
+        agent_msg.goals = Goals(goals).as_poses()
+        # Keep pedestrian spawning functional while an existing workspace still has the
+        # pre-segment-speed hunav_msgs build installed. In that case HuNav falls back to the
+        # top-level desired_velocity exactly as it did before; rebuilding hunav_msgs and
+        # hunav_agent_manager enables the per-goal values.
+        if hasattr(agent_msg, 'goal_desired_velocities'):
+            agent_msg.goal_desired_velocities = goal_desired_velocities
 
         return agent_msg
 
