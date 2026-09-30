@@ -344,11 +344,6 @@ class HunavHumanSimulator(
         self._last_smooth_yaws = {}
         self._latest_obstacles = {}
 
-        # Pair state used by the post-HuNav collision-avoidance layer.  A side
-        # is kept for the entire encounter so agents do not alternate left and
-        # right every 10 Hz update.
-        self._passing_sides: dict[tuple[int, int], int] = {}
-
         self._agent_previous_orientations = {}
         self._orientation_smoothing_factor = 0.15  # 0.05-0.3 range
 
@@ -1056,8 +1051,6 @@ class HunavHumanSimulator(
         self._last_updated_agents = None
         self._last_smooth_yaws = {}
         self._agent_previous_orientations = {}
-        self._passing_sides = {}
-
         self._logger.debug("All local data structures cleared")
 
     def _create_arena_pedestrian(
@@ -1150,17 +1143,6 @@ class HunavHumanSimulator(
                             response.updated_agents.header.frame_id = "map"
                             response.updated_agents.header.stamp = (
                                 self.node.sim_time.to_msg()
-                            )
-
-                            # HuNav's social force is a soft constraint.  Add
-                            # a short-horizon pairwise layer before handing
-                            # the next targets to Isaac: approaching pairs
-                            # choose opposite lateral sides, while pairs whose
-                            # predicted distance is unsafe cannot keep moving
-                            # towards one another.
-                            response.updated_agents = self._apply_pairwise_avoidance(
-                                current_agents,
-                                response.updated_agents,
                             )
 
                             self._last_updated_agents = response.updated_agents
@@ -1377,164 +1359,6 @@ class HunavHumanSimulator(
             vel_y *= scale_factor
 
         return vel_x, vel_y
-
-    # Pairwise avoidance runs after HuNav and only changes the state for the
-    # next 10 Hz interval.  It deliberately does not alter goals/waypoints;
-    # once an encounter ends, HuNav resumes its ordinary goal seeking.
-    _PAIRWISE_DT = 0.1
-    _PAIRWISE_DETECTION_DISTANCE = 2.5
-    _PAIRWISE_TTC_TRIGGER = 2.0
-    _PAIRWISE_LOOKAHEAD = 2.0
-    _PAIRWISE_SAFETY_MARGIN = 0.2
-    _PAIRWISE_LATERAL_SPEED = 0.25
-    _PAIRWISE_EXIT_DISTANCE = 3.0
-
-    @staticmethod
-    def _limit_xy_speed(velocity: np.ndarray, max_speed: float) -> np.ndarray:
-        """Return ``velocity`` clamped to a non-negative scalar speed limit."""
-        speed = float(np.linalg.norm(velocity))
-        if max_speed > 0.0 and speed > max_speed:
-            return velocity * (max_speed / speed)
-        return velocity
-
-    def _apply_pairwise_avoidance(
-        self, current_agents: Agents, updated_agents: Agents
-    ) -> Agents:
-        """Apply TTC side-passing and a minimum-distance safety guard.
-
-        The input ``updated_agents`` is HuNav's proposed next state.  For an
-        approaching pair with an unsafe predicted separation, this method
-        gives each agent an opposite lateral velocity.  If that pair would
-        still violate its safety distance, only the component that moves it
-        *towards* the other agent is removed.  This keeps sideways motion and
-        goal progression possible without modifying the waypoint list.
-        """
-        current_by_id = {agent.id: agent for agent in current_agents.agents}
-        candidates = [
-            agent for agent in updated_agents.agents if agent.id in current_by_id
-        ]
-        active_pairs: set[tuple[int, int]] = set()
-
-        # Proposed velocity is derived from the actual position step returned
-        # by HuNav, which is the state Isaac will receive next.
-        proposed_velocities: dict[int, np.ndarray] = {}
-        for agent in candidates:
-            previous = current_by_id[agent.id]
-            proposed_velocities[agent.id] = np.array([
-                (agent.position.position.x - previous.position.position.x)
-                / self._PAIRWISE_DT,
-                (agent.position.position.y - previous.position.position.y)
-                / self._PAIRWISE_DT,
-            ], dtype=float)
-
-        for first_index, first in enumerate(candidates):
-            for second in candidates[first_index + 1:]:
-                first_previous = current_by_id[first.id]
-                second_previous = current_by_id[second.id]
-                offset = np.array([
-                    second_previous.position.position.x - first_previous.position.position.x,
-                    second_previous.position.position.y - first_previous.position.position.y,
-                ], dtype=float)
-                distance = float(np.linalg.norm(offset))
-                pair = tuple(sorted((first.id, second.id)))
-
-                if distance < 1e-6:
-                    # No well-defined lateral direction exists at coincident
-                    # centers.  Preserve the previous side, or choose one
-                    # deterministically, to avoid a divide-by-zero/NaN.
-                    normal = np.array([1.0, 0.0])
-                else:
-                    normal = offset / distance
-
-                first_velocity = proposed_velocities[first.id]
-                second_velocity = proposed_velocities[second.id]
-                relative_velocity = second_velocity - first_velocity
-                closing_dot = float(np.dot(offset, relative_velocity))
-                relative_speed_sq = float(np.dot(relative_velocity, relative_velocity))
-
-                if closing_dot >= 0.0 or relative_speed_sq < 1e-8:
-                    if distance > self._PAIRWISE_EXIT_DISTANCE:
-                        self._passing_sides.pop(pair, None)
-                    continue
-
-                ttc = -closing_dot / relative_speed_sq
-                closest_time = min(max(ttc, 0.0), self._PAIRWISE_LOOKAHEAD)
-                predicted_distance = float(np.linalg.norm(
-                    offset + relative_velocity * closest_time
-                ))
-                safe_distance = (
-                    max(float(first.radius), 0.0)
-                    + max(float(second.radius), 0.0)
-                    + self._PAIRWISE_SAFETY_MARGIN
-                )
-
-                is_risky = (
-                    distance < self._PAIRWISE_DETECTION_DISTANCE
-                    and ttc < self._PAIRWISE_TTC_TRIGGER
-                    and predicted_distance < safe_distance
-                )
-                if not is_risky:
-                    if distance > self._PAIRWISE_EXIT_DISTANCE:
-                        self._passing_sides.pop(pair, None)
-                    continue
-
-                active_pairs.add(pair)
-                # Sorted IDs select a stable opposite-side convention.  The
-                # sign is persisted until the encounter is over.
-                side = self._passing_sides.setdefault(pair, 1)
-                lateral = np.array([-normal[1], normal[0]])
-                risk = min(
-                    1.0,
-                    max(
-                        (self._PAIRWISE_TTC_TRIGGER - ttc)
-                        / self._PAIRWISE_TTC_TRIGGER,
-                        (safe_distance - predicted_distance) / safe_distance,
-                    ),
-                )
-
-                # Slow each person slightly, then make them pass on opposite
-                # sides.  This is not applied to parallel/non-closing agents.
-                first_velocity *= 1.0 - 0.5 * risk
-                second_velocity *= 1.0 - 0.5 * risk
-                first_velocity += side * self._PAIRWISE_LATERAL_SPEED * risk * lateral
-                second_velocity -= side * self._PAIRWISE_LATERAL_SPEED * risk * lateral
-
-                # Hard guard: remove only each inward component.  They may
-                # still sidestep or move away, but cannot advance further into
-                # a predicted unsafe separation.
-                if predicted_distance < safe_distance:
-                    first_inward = max(0.0, float(np.dot(first_velocity, normal)))
-                    second_inward = max(0.0, float(np.dot(second_velocity, -normal)))
-                    first_velocity -= first_inward * normal
-                    second_velocity += second_inward * normal
-
-                proposed_velocities[first.id] = first_velocity
-                proposed_velocities[second.id] = second_velocity
-
-        # Forget old pair state once either agent disappears or separates.
-        valid_ids = {agent.id for agent in candidates}
-        self._passing_sides = {
-            pair: side for pair, side in self._passing_sides.items()
-            if pair in active_pairs or (
-                pair[0] in valid_ids and pair[1] in valid_ids
-            )
-        }
-
-        for agent in candidates:
-            previous = current_by_id[agent.id]
-            velocity = self._limit_xy_speed(
-                proposed_velocities[agent.id], float(agent.desired_velocity)
-            )
-            agent.velocity.linear.x = float(velocity[0])
-            agent.velocity.linear.y = float(velocity[1])
-            agent.position.position.x = (
-                previous.position.position.x + float(velocity[0]) * self._PAIRWISE_DT
-            )
-            agent.position.position.y = (
-                previous.position.position.y + float(velocity[1]) * self._PAIRWISE_DT
-            )
-
-        return updated_agents
 
     def _slerp_quaternions(self, q1_list, q2_list, t):
         """Spherical linear interpolation between two quaternions"""
