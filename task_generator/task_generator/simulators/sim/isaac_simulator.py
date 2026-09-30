@@ -1,7 +1,6 @@
 import asyncio
 import itertools
 import os
-import random
 import traceback
 import types
 import typing
@@ -495,46 +494,15 @@ class IsaacSimulator(BaseSim, NodeInterface):
 
     async def pedestrian_spawn(self, pedestrians):
 
-        on_success: list[tuple[str, str]] = []
-
-        # TODO implement targeted pedestrian models
         async def impl(pedestrian: DynamicObstacle) -> Pedestrian | None:
-            available_models: dict[str, str] = {
-                # "F_Business_02",
-                # "F_Medical_01",
-                # "M_Medical_01",
-                # "biped_demo",
-                # "female_adult_police_01_new",
-                # "female_adult_police_02",
-                # "female_adult_police_03_new",
-                # "male_adult_construction_01_new",
-                # "male_adult_construction_03",
-                # "male_adult_construction_05_new",
-                # "male_adult_police_04",
-                "female_adult_business_02": "original_female_adult_business_02",
-                "female_adult_medical_01": "original_female_adult_medical_01",
-                "female_adult_police_01": "original_female_adult_police_01",
-                "female_adult_police_02": "original_female_adult_police_02",
-                "female_adult_police_03": "original_female_adult_police_03",
-                "male_adult_construction_01": "original_male_adult_construction_01",
-                "male_adult_construction_02": "original_male_adult_construction_02",
-                "male_adult_construction_03": "original_male_adult_construction_03",
-                "male_adult_construction_05": "original_male_adult_construction_05",
-                "male_adult_medical_01": "original_male_adult_medical_01",
-                "male_adult_police_04": "original_male_adult_police_04",
-            }
-            if pedestrian.model.name in available_models:
-                model_name = pedestrian.model.name
-            else:
-                model_name = random.choice(tuple(available_models.keys()))
+            model_name = pedestrian.model.name
 
             ped = Pedestrian()
             ped.name = self._NS_PEDESTRIAN(pedestrian.sim_path)
-            ped.character_name = available_models[model_name]
+            ped.character_name = model_name
             ped.pose = pedestrian.pose.to_msg()
             ped.controller_stats = False
 
-            on_success.append((pedestrian.name, model_name))
             return ped
 
         req = SpawnPedestrians.Request()

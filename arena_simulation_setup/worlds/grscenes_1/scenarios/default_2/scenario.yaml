@@ -2,7 +2,7 @@
 
 dynamic:
 - name: hunav_1
-  model: female_adult_business_02
+  model: pedestrian
   pose: [-2.5777, -6.94009, 22.0679]
   behavior_tree: BTRegularNav.xml
   velocity: 0.82
@@ -26,7 +26,7 @@ dynamic:
   - [-2.90049, -1.91584, 86.63354]
   - [-2.85839, -1.2001, 86.63354]
 - name: hunav_2
-  model: male_adult_medical_01
+  model: pedestrian
   pose: [1.12733, -5.4244, 63.10376]
   behavior_tree: BTRegularNav.xml
   velocity: 0.93

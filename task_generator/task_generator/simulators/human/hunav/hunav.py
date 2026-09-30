@@ -78,7 +78,10 @@ def _create_robot_message(
     robot_msg.id = 0
     robot_msg.name = "robot"
     robot_msg.type = Agent.ROBOT
-    robot_msg.radius = 0.3
+    # This is the radius used only by HuNav's pedestrian-side SFM.  It is
+    # deliberately independent of the Nav2 footprint: pedestrians start
+    # yielding a little earlier without changing robot navigation geometry.
+    robot_msg.radius = 0.4
 
     x, y, yaw = pose if pose is not None else (0.0, 0.0, 0.0)
     robot_msg.position.position.x = x
@@ -1053,6 +1056,7 @@ class HunavHumanSimulator(
         self._last_updated_agents = None
         self._last_smooth_yaws = {}
         self._agent_previous_orientations = {}
+        self._passing_sides = {}
 
         self._logger.debug("All local data structures cleared")
 
