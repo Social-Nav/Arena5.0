@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Native feature entry point; implementation is shared with benchmark dispatch.
+if [ "${1:-}" = source ]; then return 0 2>/dev/null || exit 0; fi
+set -euo pipefail
+feature_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+arena_dir=$(cd "$feature_dir/../../../.." && pwd)
+exec /usr/bin/python3 "$arena_dir/arena_bringup/arena_bringup/benchmark_lightnav.py" "$@" \
+  --profile "$arena_dir/arena_bringup/configs/benchmark/profiles/lightnav_grscenes.yaml"

@@ -1,0 +1,45 @@
+services:
+  navila:
+    image: ${NAVILA_IMAGE:-navila-isaac-vlm:cu122}
+    init: true
+    network_mode: host
+    shm_size: 16gb
+    user: "${NAVILA_UID:-1000}:${NAVILA_GID:-1000}"
+    command: ["--host", "127.0.0.1", "--port", "${NAVILA_PORT:-54321}", "--model_path", "/models/navila-llama3-8b-8f"]
+    environment:
+      CUDA_VISIBLE_DEVICES: "0"
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      HF_HOME: /cache/huggingface
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      ALL_PROXY: ""
+      NO_PROXY: localhost,127.0.0.1
+    volumes:
+      - type: bind
+        source: ${NAVILA_MODEL_PATH:-/home/kaizhen/vln_ws/NaVILA/artifacts/checkpoints/navila-llama3-8b-8f}
+        target: /models/navila-llama3-8b-8f
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${NAVILA_CACHE_PATH:-/home/kaizhen/vln_ws/NaVILA/artifacts/huggingface}
+        target: /cache/huggingface
+        read_only: true
+        bind: {create_host_path: false}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${NAVILA_GPU:-0}"]
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', ${NAVILA_PORT:-54321}), 3).close()"]
+      interval: 10s
+      timeout: 5s
+      start_period: 900s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}

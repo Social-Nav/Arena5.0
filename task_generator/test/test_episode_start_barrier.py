@@ -841,6 +841,27 @@ def test_model_reachability_is_required_and_reads_the_ros_graph():
     assert model.evaluate() is True
 
 
+def test_lightnav_direct_client_requires_its_own_fresh_status():
+    import time
+    node = _task_generator_stub([])
+    robot = SimpleNamespace(
+        _is_dual_vln_robot=lambda: True,
+        _internnav_direct_cmd_vel_enabled=lambda: True,
+        _dual_vln_command_service_name=lambda: '/unused/get_command',
+        _dual_vln_status_topic='/task_generator_node/Ai2_Bot2/lightnav/status',
+        _dual_vln_status_wall_time=time.monotonic(),
+        _dual_vln_status_payload={'backend': 'internnav', 'backend_ready': True},
+    )
+    node._robots_manager = SimpleNamespace(managers={'Ai2_Bot2': robot})
+    channels = node._model_channels()
+    assert channels['command_services'] == []
+    assert not node._model_ready_state(channels)['ready']
+    robot._dual_vln_status_payload = {'backend': 'lightnav', 'backend_ready': True}
+    assert node._model_ready_state(channels)['ready']
+    robot._dual_vln_status_wall_time -= 10
+    assert not node._model_ready_state(channels)['ready']
+
+
 def test_model_reachability_can_be_declared_not_required_explicitly():
     """The escape hatch is a named rosparam, not a silent skip."""
     events = []

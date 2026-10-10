@@ -4,7 +4,7 @@ dynamic:
   pose:
   - 7.61054
   - -2.82125
-  - -2.443251164216
+  - -139.987980000002
   behavior_tree: ./BTRegularNav.xml
   velocity: 0.8
   desired_velocity: 1.0

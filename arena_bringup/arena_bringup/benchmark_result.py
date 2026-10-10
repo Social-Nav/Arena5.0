@@ -76,7 +76,10 @@ def generate_benchmark_result(
     social = read_json(run_path / 'social_metrics.json') or {}
     summary = summarize_run(run_path, prefer_canonical=False)
     source_files = {}
-    for filename in SOURCE_ARTIFACTS:
+    backend = manifest.get('model_backend', 'internnav')
+    source_artifacts = tuple(name.replace('internnav_', f'{backend}_', 1) if backend in {'lightnav', 'navila'} and name in {
+        'internnav_status.json', 'internnav_trace.jsonl', 'internnav_diagnostic_summary.json'} else name for name in SOURCE_ARTIFACTS)
+    for filename in source_artifacts:
         path = run_path / filename
         source_files[filename] = {
             'path': filename,
@@ -127,9 +130,12 @@ def generate_benchmark_result(
             'system2_path': (manifest.get('parameters') or {}).get('dual_vln_system2_model_path'),
             'system2_checkpoint': (manifest.get('model_provenance') or {}).get('system2_checkpoint'),
             'device': (manifest.get('parameters') or {}).get('dual_vln_device'),
-            'output_policy': (manifest.get('parameters') or {}).get('dual_vln_model_output_policy'),
-            'external_server': _as_bool((manifest.get('parameters') or {}).get('internnav_external_server')),
-            'direct_cmd_vel': _as_bool((manifest.get('parameters') or {}).get('internnav_direct_cmd_vel')),
+            'output_policy': ('discrete_action' if backend == 'navila' else
+                              (manifest.get('parameters') or {}).get('dual_vln_model_output_policy')),
+            'external_server': backend in {'lightnav', 'navila'} or _as_bool(
+                (manifest.get('parameters') or {}).get('internnav_external_server')),
+            'direct_cmd_vel': (manifest.get('parameters') or {}).get('execution_mode') == 'external_direct_cmd_vel'
+                or _as_bool((manifest.get('parameters') or {}).get('internnav_direct_cmd_vel')),
         },
         'verdict': {
             'status': summary['result_status'],
@@ -159,6 +165,9 @@ def generate_benchmark_result(
             'warnings': _split_list(validation.get('warnings')),
         },
         'execution': {
+            'model_backend': backend,
+            'controller': manifest.get('parameters', {}).get('controller'),
+            'execution_mode': manifest.get('parameters', {}).get('execution_mode'),
             'episode_result': summary['episode_result'],
             'end_reason': summary['end_reason'],
             'evaluator_returncode': summary['evaluator_returncode'],

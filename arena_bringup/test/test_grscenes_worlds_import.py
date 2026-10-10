@@ -202,12 +202,12 @@ def test_normalizes_robot_humans_waypoints_behavior_and_bt(tmp_path):
     assert "robot" not in native
     assert native["robots"] == [
         {
-            "start": [1.0, 1.0, round(math.radians(1.0), 12)],
-            "goal": [2.0, 2.0, round(math.radians(-2.0), 12)],
+            "start": [1.0, 1.0, 1.0],
+            "goal": [2.0, 2.0, -2.0],
         }
     ]
     human = native["dynamic"][0]
-    assert human["pose"] == [3.0, 3.0, round(math.radians(2.0), 12)]
+    assert human["pose"] == [3.0, 3.0, 2.0]
     assert human["waypoints"] == [[4.0, 4.0, 0.0]]
     assert human["behavior_tree"] == "./BTRegularNav.xml"
     assert human["model"] == "female_adult_business_02"
@@ -217,6 +217,11 @@ def test_normalizes_robot_humans_waypoints_behavior_and_bt(tmp_path):
     assert (scenario_dir / "BTRegularNav.xml").read_bytes() == bt.read_bytes()
 
     case = _case(_catalog(output), f"{IMPORT_ID}:grscenes_1:default")
+    assert _catalog(output)['import']['conversion_version'] == 3
+    assert case['units_and_frames']['robot_generated_yaw_unit'] == 'degrees'
+    assert case['units_and_frames']['dynamic_generated_pose_yaw_unit'] == 'degrees'
+    assert case['route']['normalized_start_xy_yaw_rad'][2] == pytest.approx(math.radians(1.0))
+    assert case['humans']['agents'][0]['normalized_pose_xy_yaw_rad'][2] == pytest.approx(math.radians(2.0))
     assert case["route"]["raw_waypoints_xy_yaw_deg"] == [[1.5, 1.5, 0.5], [2.0, 2.0, -2.0]]
     assert case["humans"]["agents"][0]["raw_waypoints_xy_heading_deg"] == [[4.0, 4.0, 45.0]]
     assert case["humans"]["agents"][0]["emitted_waypoints_xyz_m"] == [[4.0, 4.0, 0.0]]

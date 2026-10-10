@@ -321,12 +321,26 @@ class IsaacEvalSimulator(IsaacSimulator):
                             'without a confirmed live robot prim.'
                         )
                         return False
+                    scale = float(robot_params.scale)
+                    if scale != 1.0:
+                        scaled = await self._call_edit_prims_subprocess(
+                            EditPrims.Request(
+                                prims=[Prim(name=spawn_path, scale=Scale(x=scale, y=scale, z=scale))],
+                                scale=True,
+                            ),
+                            timeout_sec=60.0,
+                            timeout_is_success=False,
+                        )
+                        if not scaled or not all(scaled):
+                            self._logger.error(f"Failed to scale robot '{robot.name}' to {scale}; spawn not ready")
+                            return False
                     await asyncio.sleep(1.0)
                     self._spawned_usd_robots.add(robot.name)
                     await self._ensure_map_to_world_tf(robot.name)
                     await self._publish_sensor_frame_tfs(
                         robot.name,
                         robot_params.sensor_frame_transforms,
+                        scale=scale,
                     )
                     return True
 

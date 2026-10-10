@@ -6,7 +6,7 @@ import tempfile
 import time
 import typing
 
-import arena_bringup.extensions.NodeLogLevelExtension as NodeLogLevelExtension
+from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
 import launch
 import launch.launch_service
 import launch_ros.actions
@@ -378,7 +378,7 @@ def main():
         launch_service = launch.launch_service.LaunchService()
         launch_service.include_launch_description(
             launch.LaunchDescription([
-                NodeLogLevelExtension.SetGlobalLogLevelAction(
+                SetGlobalLogLevelAction(
                     rclpy.logging.get_logger_effective_level(config_file_generator.get_logger().name).name.lower()
                 ),
                 launch_ros.actions.Node(

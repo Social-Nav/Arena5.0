@@ -393,7 +393,9 @@ scenario_reset_topic = sys.argv[5] if len(sys.argv) > 5 else ''
 require_reset_for_history = (sys.argv[6].strip().lower() in {'1', 'true', 'yes'}) if len(sys.argv) > 6 else False
 rclpy.init()
 node = Node('internnav_eval_status_watcher')
-qos = QoSProfile(depth=1)
+# A LightNav tick emits response, accepted path, then control back-to-back.
+# KEEP_LAST(1) loses the evidence needed to associate those events.
+qos = QoSProfile(depth=256 if topic.endswith(('/lightnav/status', '/navila/status')) else 1)
 qos.reliability = ReliabilityPolicy.RELIABLE
 qos.durability = DurabilityPolicy.VOLATILE
 state = {'last': None, 'reset_seen': False}
@@ -1680,6 +1682,8 @@ def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> di
 
 
 def _is_internnav_run(args) -> bool:
+    if getattr(args, 'model_backend', '') in {'lightnav', 'navila'}:
+        return False
     adapter_target = str(args.dual_vln_adapter_target or '').lower()
     mode = str(args.dual_vln_mode or '').lower()
     model_path = str(args.dual_vln_model_path or '').lower()
@@ -3452,6 +3456,12 @@ def _apply_runtime_defaults(args) -> dict:
             else:
                 adjustments['vln_instruction_manifest_not_found'] = manifest_attempts
 
+    if getattr(args, 'model_backend', '') in {'lightnav', 'navila'}:
+        args.dual_vln_status_topic = _robot_topic(args.task_reset_topic, args.robot, args.dual_vln_status_topic)
+        if not args.eval_video_sim_top_down_topic:
+            args.eval_video_sim_top_down_topic = _default_eval_video_sim_top_down_topic(args.robot)
+        return adjustments
+
     env_python, env_python_name = _first_env_value(
         'ARENA_VLN_MODEL_PYTHON',
         'ARENA_INTERNNAV_PYTHON',
@@ -3910,16 +3920,18 @@ def _resolved_profile_parameters(args) -> dict:
         'timeout_sec': args.timeout,
         'device': args.dual_vln_device,
         'mode': args.dual_vln_mode,
+        'model_backend': getattr(args, 'model_backend', 'internnav'),
+        'execution_mode': getattr(args, 'execution_mode', 'external_direct_cmd_vel' if args.internnav_direct_cmd_vel else 'wrapper'),
         'system2_model_path': args.dual_vln_system2_model_path,
-        'external_server': args.internnav_external_server,
-        'direct_cmd_vel': args.internnav_direct_cmd_vel,
+        'external_server': args.internnav_external_server or getattr(args, 'model_backend', '') in {'lightnav', 'navila'},
+        'direct_cmd_vel': args.internnav_direct_cmd_vel or getattr(args, 'model_backend', '') in {'lightnav', 'navila'},
         'social_eval': args.social_eval,
         'save_eval_video': args.save_eval_video,
         'output_prefix': args.output_prefix,
     }
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> int:
     raw_argv, benchmark_profile, benchmark_profile_metadata = _profile_bootstrap(argv)
     parser = argparse.ArgumentParser(
         description=(
@@ -4168,6 +4180,9 @@ def main(argv: list[str] | None = None) -> int:
     # values on add_argument would otherwise replace parser-level defaults.
     parser.set_defaults(**evaluation_defaults(benchmark_profile))
     args = parser.parse_args(raw_argv)
+    args.model_backend = model_backend or getattr(args, 'model_backend', 'internnav')
+    is_external_client = args.model_backend in {'lightnav', 'navila'}
+    external_direct_cmd_vel = args.internnav_direct_cmd_vel or is_external_client
     if args.expected_human_count < -1:
         parser.error('--expected-human-count must be -1 or non-negative')
     if args.pedestrian_pool_size != -1 and args.pedestrian_pool_size < args.expected_human_count:
@@ -4240,9 +4255,9 @@ def main(argv: list[str] | None = None) -> int:
     output_dir = os.path.join(output_root, relative_dir)
     snapshots_dir = os.path.join(output_dir, 'snapshots')
     os.makedirs(snapshots_dir, exist_ok=True)
-    dual_vln_status_path = os.path.join(output_dir, 'internnav_status.json')
-    internnav_trace_path = os.path.join(output_dir, 'internnav_trace.jsonl')
-    internnav_diagnostic_summary_path = os.path.join(output_dir, 'internnav_diagnostic_summary.json')
+    dual_vln_status_path = os.path.join(output_dir, f'{args.model_backend}_status.json')
+    internnav_trace_path = os.path.join(output_dir, f'{args.model_backend}_trace.jsonl')
+    internnav_diagnostic_summary_path = os.path.join(output_dir, f'{args.model_backend}_diagnostic_summary.json')
     episode_outcome_path = os.path.join(output_dir, 'episode_outcome.json')
     postprocess_commands_path = os.path.join(output_dir, 'postprocess_commands.txt')
     videos_dir = os.path.join(output_dir, 'videos')
@@ -4250,6 +4265,9 @@ def main(argv: list[str] | None = None) -> int:
     video_error_path = os.path.join(output_dir, 'video_recording_error.txt')
 
     env = os.environ.copy()
+    if is_external_client:
+        env.update(ARENA_MODEL_BACKEND=args.model_backend, ARENA_MODEL_EXECUTION_MODE='external_direct_cmd_vel',
+                   ARENA_MODEL_STATUS_TOPIC=args.dual_vln_status_topic)
     if args.scenario_file:
         env['ARENA_SCENARIO_FILE'] = str(args.scenario_file)
     if str(args.world or '').startswith('grscenes_'):
@@ -4347,7 +4365,7 @@ def main(argv: list[str] | None = None) -> int:
         f'internnav_raw_cmd_vel_topic:={args.dual_vln_raw_cmd_vel_topic}',
         f'dual_vln_raw_cmd_vel_topic:={args.dual_vln_raw_cmd_vel_topic}',
     ]
-    if args.local_planner == 'dual_vln':
+    if args.local_planner in {'dual_vln', 'lightnav', 'navila'}:
         launch_cmd.append('enable_collision_monitor:=false')
     # Only forwarded when a mode was actually requested.  An empty value means
     # "leave configs/hunav/default.yaml in charge", and ros2launch rejects a
@@ -4358,8 +4376,8 @@ def main(argv: list[str] | None = None) -> int:
     # scene dynamics, so it is also recorded under `parameters` below.
     if args.pedestrian_goal_traversal:
         launch_cmd.append(f'pedestrian_goal_traversal:={args.pedestrian_goal_traversal}')
-    if args.internnav_direct_cmd_vel:
-        launch_cmd.append('robot_launch_file:=internnav_async_eval.launch.py')
+    if external_direct_cmd_vel:
+        launch_cmd.append('robot_launch_file:=' + ('external_direct_eval.launch.py' if is_external_client else 'internnav_async_eval.launch.py'))
     if args.dual_vln_rgb_topic:
         launch_cmd.append(f'dual_vln_rgb_topic:={args.dual_vln_rgb_topic}')
     if args.dual_vln_depth_topic:
@@ -4590,6 +4608,16 @@ def main(argv: list[str] | None = None) -> int:
         },
     }
 
+    manifest['model_backend'] = args.model_backend
+    manifest['parameters'].update(model_backend=args.model_backend,
+        execution_mode='external_direct_cmd_vel' if external_direct_cmd_vel else 'wrapper',
+        controller={'lightnav': 'lightnav_mpc', 'navila': 'navila_action_velocity'}.get(args.model_backend, 'internnav_native'))
+    if is_external_client:
+        from importlib import import_module
+        runtime_identity = import_module(f'arena_bringup.{args.model_backend}_support').runtime_identity
+        manifest['model_provenance'] = runtime_identity(args.robot)
+        manifest['artifacts'][f'{args.model_backend}_trace_path'] = manifest['artifacts'].pop('internnav_trace_path')
+        manifest['artifacts'][f'{args.model_backend}_diagnostic_summary_path'] = manifest['artifacts'].pop('internnav_diagnostic_summary_path')
     manifest_path = os.path.join(output_dir, 'run_manifest.yaml')
     _write_yaml(manifest_path, manifest)
     if manifest_binding_failure:
@@ -4851,7 +4879,7 @@ def main(argv: list[str] | None = None) -> int:
             internnav_trace_path,
             task_reset_topic=args.task_reset_topic,
             scenario_reset_topic=robot_scenario_reset_topic,
-            require_reset_for_history=bool(args.internnav_direct_cmd_vel),
+            require_reset_for_history=bool(args.internnav_direct_cmd_vel or getattr(args, 'model_backend', '') in {'lightnav', 'navila'}),
         )
         launch_proc = subprocess.Popen(
             launch_cmd,
@@ -4989,7 +5017,12 @@ def main(argv: list[str] | None = None) -> int:
 
     dual_vln_status = _read_json_if_exists(dual_vln_status_path)
     episode_outcome = _read_json_if_exists(episode_outcome_path)
-    internnav_diagnostic_summary = _write_internnav_diagnostic_summary(
+    summarize_model = _write_internnav_diagnostic_summary
+    if is_external_client:
+        from importlib import import_module
+        diagnostic_summary = import_module(f'arena_bringup.{args.model_backend}_support').diagnostic_summary
+        summarize_model = diagnostic_summary
+    internnav_diagnostic_summary = summarize_model(
         internnav_trace_path,
         internnav_diagnostic_summary_path,
     )
@@ -5033,9 +5066,9 @@ def main(argv: list[str] | None = None) -> int:
         internnav_diagnostic_summary=internnav_diagnostic_summary,
     )
 
-    manifest['artifacts']['internnav_status_present'] = dual_vln_status is not None
-    manifest['artifacts']['internnav_trace_present'] = os.path.exists(internnav_trace_path)
-    manifest['artifacts']['internnav_diagnostic_summary_present'] = internnav_diagnostic_summary is not None
+    manifest['artifacts'][f'{args.model_backend}_status_present'] = dual_vln_status is not None
+    manifest['artifacts'][f'{args.model_backend}_trace_present'] = os.path.exists(internnav_trace_path)
+    manifest['artifacts'][f'{args.model_backend}_diagnostic_summary_present'] = internnav_diagnostic_summary is not None
     manifest['artifacts']['episode_outcome_present'] = episode_outcome is not None
     manifest['artifacts']['snapshot_files'] = sorted(snapshot_files.values())
     manifest['artifacts']['video_index_present'] = video_index is not None
@@ -5059,7 +5092,7 @@ def main(argv: list[str] | None = None) -> int:
             'end_reason': end_reason,
             'episode_outcome': episode_outcome,
             'dual_vln_status': dual_vln_status,
-            'internnav_diagnostic_summary': internnav_diagnostic_summary,
+            f'{args.model_backend}_diagnostic_summary': internnav_diagnostic_summary,
             'video_recorder_returncode': video_returncode,
         }
     )

@@ -216,11 +216,14 @@ class RobotManager(NodeInterface):
             goal_qos,
         )
 
-        self._cmd_vel_pub = self.node.create_publisher(
-            geometry_msgs.msg.Twist,
-            self.namespace('cmd_vel'),
-            1,
-        )
+        # External clients own both motion and stopping. Do not compete with
+        # their controller on cmd_vel, including the legacy InternNav mode.
+        if not self._internnav_direct_cmd_vel_enabled():
+            self._cmd_vel_pub = self.node.create_publisher(
+                geometry_msgs.msg.Twist,
+                self.namespace('cmd_vel'),
+                1,
+            )
 
         self._stop_vel_timer = self.node.create_timer(
             0.1,
@@ -460,6 +463,8 @@ class RobotManager(NodeInterface):
 
     async def _clear_global_costmap(self) -> bool:
         """Clear the entire global costmap (removes dynamic obstacle marks from previous episode)."""
+        if self._internnav_direct_cmd_vel_enabled():
+            return True
         node_name = self.node.service_namespace(self.name, 'global_costmap/global_costmap')
         srv_name = os.path.abspath(node_name('../clear_entirely_global_costmap'))
         return await self._clear_costmap(node_name, srv_name)
@@ -554,7 +559,7 @@ class RobotManager(NodeInterface):
         preset takes effect immediately without a relaunch.
         No-op when attributes is falsy (caller resolves the default profile).
         """
-        if not attributes:
+        if not attributes or self._internnav_direct_cmd_vel_enabled():
             return True
         by_node = self._load_social_attributes(attributes)
         if not by_node:
@@ -580,7 +585,7 @@ class RobotManager(NodeInterface):
 
         No-op when vel is None (field absent -> the profile's value stands).
         """
-        if vel is None:
+        if vel is None or self._internnav_direct_cmd_vel_enabled():
             return True
 
         if vel <= 0.0:
@@ -906,6 +911,9 @@ class RobotManager(NodeInterface):
         }
 
     def _internnav_direct_cmd_vel_enabled(self) -> bool:
+        # Compatibility entry point shared by the two explicit direct clients.
+        if os.environ.get('ARENA_MODEL_EXECUTION_MODE') == 'external_direct_cmd_vel':
+            return True
         if os.environ.get('ARENA_INTERNNAV_DIRECT_CMD_VEL', '').strip().lower() in {'1', 'true', 'yes', 'on'}:
             return True
         return self._get_compat_rosparam(bool, 'internnav_direct_cmd_vel', 'dual_vln_direct_cmd_vel', False)
@@ -927,6 +935,8 @@ class RobotManager(NodeInterface):
                 topics[key] = configured if configured.startswith('/') else str(self.namespace(configured))
             else:
                 topics[key] = defaults.get(key, '')
+        if os.environ.get('ARENA_MODEL_BACKEND') in {'lightnav', 'navila'}:
+            return {'rgb': topics['rgb']}
         return topics
 
     def _reset_navigation_readiness_state(self) -> None:
@@ -948,7 +958,7 @@ class RobotManager(NodeInterface):
             candidates.append(self._get_compat_rosparam(str, 'local_planner', 'local_planner', ''))
         except Exception:
             pass
-        return any(str(value).strip().lower() == 'dual_vln' for value in candidates)
+        return any(str(value).strip().lower() in {'dual_vln', 'lightnav', 'navila'} for value in candidates)
 
     def _setup_camera_readiness_subscriptions(self) -> None:
         camera_topics = self._configured_camera_topics_for_readiness()
@@ -972,19 +982,19 @@ class RobotManager(NodeInterface):
             lambda _msg: self._mark_camera_ready('rgb'),
             sensor_qos,
         )
-        self.node.create_subscription(
-            sensor_msgs.Image,
-            self._camera_ready_topics['depth'],
-            lambda _msg: self._mark_camera_ready('depth'),
-            sensor_qos,
-        )
-        self.node.create_subscription(
-            sensor_msgs.CameraInfo,
-            self._camera_ready_topics['camera_info'],
-            lambda _msg: self._mark_camera_ready('camera_info'),
-            sensor_qos,
-        )
-
+        if 'depth' in self._camera_ready_topics:
+            self.node.create_subscription(
+                sensor_msgs.Image,
+                self._camera_ready_topics['depth'],
+                lambda _msg: self._mark_camera_ready('depth'),
+                sensor_qos,
+            )
+            self.node.create_subscription(
+                sensor_msgs.CameraInfo,
+                self._camera_ready_topics['camera_info'],
+                lambda _msg: self._mark_camera_ready('camera_info'),
+                sensor_qos,
+            )
         self._ensure_dual_vln_status_subscription()
 
     def _ensure_dual_vln_status_subscription(self) -> None:
@@ -1000,6 +1010,10 @@ class RobotManager(NodeInterface):
             '',
             empty_is_missing=True,
         )
+        if os.environ.get('ARENA_MODEL_BACKEND') in {'lightnav', 'navila'}:
+            # InternNav's primary launch parameter has a nonempty default and
+            # therefore masks the legacy alias supplied by the shared evaluator.
+            configured_status_topic = os.environ.get('ARENA_MODEL_STATUS_TOPIC') or self.namespace(os.environ['ARENA_MODEL_BACKEND'], 'status')
         self._dual_vln_status_topic = str(configured_status_topic or self.namespace('internnav', 'status'))
         status_qos = QoSProfile(depth=1)
         status_qos.reliability = ReliabilityPolicy.RELIABLE

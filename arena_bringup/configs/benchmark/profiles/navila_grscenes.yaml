@@ -1,0 +1,52 @@
+schema_version: 2
+id: navila_grscenes
+description: NaVILA RGB model with external native timed-action velocity conversion.
+runtime:
+  ros_domain_id: 1
+  rmw_implementation: rmw_fastrtps_cpp
+  fastdds_builtin_transports: UDPv4
+  ros_localhost_only: 0
+  ros_automatic_discovery_range: SUBNET
+  device: cuda:0
+server:
+  mode: navila
+  endpoint: tcp://127.0.0.1:54321
+  model_path: /models/navila-llama3-8b-8f
+evaluation:
+  simulator: isaac_eval
+  human_simulator: hunav
+  world: grscenes_20_v1
+  scenario: default_2
+  robot: Ai2_Bot2
+  local_planner: navila
+  inter_planner: none
+  global_planner: none
+  episodes: 1
+  timeout_sec: 300
+  timeout_wall_factor: 5.0
+  timeout_wall_sec: 1800.0
+  task_generator_robots: scenario
+  task_generator_obstacles: scenario
+  headless: '2'
+  log_level: warn
+  vln_instruction: navigate
+  social_eval: true
+  launch_timeout_sec: 2400.0
+  shutdown_grace_period_sec: 20.0
+  output_prefix: navila_eval
+video:
+  enabled: true
+  fps: 10.0
+  top_down_size_px: 640
+  top_down_window_m: 10.0
+  sim_top_down_topic: top_down_camera/image
+  debug_overlay_topic: navila/debug_image
+client:
+  kind: navila_action_velocity
+  rgb_topic: head_camera/image
+  odom_topic: odom
+  command_timeout_sec: 0.5
+  request_timeout_sec: 10.0
+execution:
+  mode: external_direct_cmd_vel
+  timing_mode: wall

@@ -536,11 +536,14 @@ def test_task_generator_episode_outcome_payload_contains_reason(monkeypatch):
     node._pub_episode_outcome = _Publisher()
     node.conf = SimpleNamespace(General=SimpleNamespace(DESIRED_EPISODES=SimpleNamespace(value=1)))
     node.get_logger = lambda: _Logger()
+    barriers = []
+    node._publish_eval_ready = lambda *args, **kwargs: barriers.append((args, kwargs))
     monkeypatch.setattr(TaskGenerator, 'sim_time', property(lambda _self: SimpleNamespace(sec=12, nanosec=300_000_000)))
     monkeypatch.setattr('task_generator.node.time.time', lambda: 456.0)
 
     node._publish_episode_outcome('sim_timeout')
 
+    assert barriers == [(('episode', False), {'reason': 'episode_finished'})]
     assert len(node._pub_episode_outcome.messages) == 1
     payload = json.loads(node._pub_episode_outcome.messages[0].data)
     assert payload['episode_index'] == 0

@@ -126,6 +126,7 @@ for contract_name in ROS_DOMAIN_ID RMW_IMPLEMENTATION FASTDDS_BUILTIN_TRANSPORTS
         exit 1
     fi
 done
+profile_dispatch_python="$profile_python"
 unset profile_loader profile_python profile_python_candidate profile_assignments contract_name profile_name
 PROFILE_PATH="$PROFILE_PATH"
 
@@ -139,6 +140,12 @@ ROS_LOCALHOST_ONLY="$PROFILE_RUNTIME_ROS_LOCALHOST_ONLY"
 ROS_AUTOMATIC_DISCOVERY_RANGE="$PROFILE_RUNTIME_ROS_AUTOMATIC_DISCOVERY_RANGE"
 export ROS_DOMAIN_ID RMW_IMPLEMENTATION FASTDDS_BUILTIN_TRANSPORTS
 export ROS_LOCALHOST_ONLY ROS_AUTOMATIC_DISCOVERY_RANGE
+
+# Both backends use this public entry point. The v2 native client has its own
+# fixed deployment topology; do not feed it into the v1 InternNav shell fields.
+if [ "$PROFILE_SERVER_MODE" = lightnav ] || [ "$PROFILE_SERVER_MODE" = navila ]; then
+    exec "$profile_dispatch_python" "$(benchmark_script_arena_dir)/arena_bringup/arena_bringup/benchmark_external.py" "$@"
+fi
 
 # Same guarded-definition idiom as features/internnav/main: reuse the caller's
 # wrapper when sourced through `arena`, otherwise stand alone from the host.
@@ -290,7 +297,7 @@ check_feature_set(){
         return 0
     fi
     actual="$(grep -v '^[[:space:]]*$' "$installed_file" | sort | paste -sd' ' -)"
-    if [ "$declared" = "$actual" ]; then
+    if [ "$declared" = "$actual" ] || "$profile_dispatch_python" -c 'from pathlib import Path; import sys; e=Path(sys.argv[1]).read_text().split(); s=set(e); sys.exit(not (len(e)==len(s) and {"isaac","internnav"} <= s <= {"isaac","internnav","lightnav","navila"}))' "$installed_file"; then
         check_report PASS ".installed matches the declared feature set ($actual)"
     else
         check_report FAIL ".installed does not match the feature set this benchmark needs" \
@@ -551,12 +558,17 @@ do_runtime(){
 
 do_up(){
     run_step "start containers ($BENCHMARK_SERVICES) without building" \
-        arena_docker_compose up -d --remove-orphans --no-build $BENCHMARK_SERVICES
+        arena_docker_compose up -d --no-recreate --no-build $BENCHMARK_SERVICES
     run_step_sh "wait for the arena workspace build marker /.built" \
         "for i in \$(seq 1 300); do docker exec $(benchmark_container arena) test -f /.built >/dev/null 2>&1 && exit 0; sleep 2; done; echo 'arena container never reported /.built' >&2; exit 1"
 }
 
 do_stop(){
+    if grep -Eq '^(lightnav|navila)$' "$(benchmark_arena_dir)/.installed" 2>/dev/null; then
+        run_step "stop only selected InternNav; preserve shared Arena/Isaac and LightNav" \
+            arena_docker_compose stop --timeout 10 internnav
+        return
+    fi
     run_step "stop containers, leaving images and volumes intact" \
         arena_docker_compose stop --timeout 0
 }
@@ -656,6 +668,7 @@ validate_density_contract(){
 # the /health readiness gate and the container lifetime trap.
 do_serve(){
     verify_system2_checkpoint
+    check_control_ownership
     run_step "start the InternNav model server and ROS client in internnav-1" \
         env \
             "HOST_ARENA_WS_DIR=$(benchmark_ws_dir)" \
@@ -681,6 +694,20 @@ do_serve(){
             "ARENA_INTERNNAV_TIMING_MODE=$PROFILE_INTERNNAV_TIMING_MODE" \
         bash "$(benchmark_arena_dir)/_meta/docker/features/internnav/main" launch \
             --robot "$ROBOT" --mode "$PROFILE_SERVER_MODE" --device "$DEVICE"
+}
+
+check_control_ownership(){
+    local command
+    printf -v command '%q ' /usr/bin/python3 -m arena_bringup.control_ownership --robot "$ROBOT" "$@"
+    run_step "verify the robot control channel is available before starting a model" \
+        docker exec \
+            -e "ROS_DOMAIN_ID=$ROS_DOMAIN_ID" \
+            -e "RMW_IMPLEMENTATION=$RMW_IMPLEMENTATION" \
+            -e "FASTDDS_BUILTIN_TRANSPORTS=$FASTDDS_BUILTIN_TRANSPORTS" \
+            -e "ROS_LOCALHOST_ONLY=$ROS_LOCALHOST_ONLY" \
+            -e "ROS_AUTOMATIC_DISCOVERY_RANGE=$ROS_AUTOMATIC_DISCOVERY_RANGE" \
+            "$(benchmark_container arena)" bash --noprofile --norc -c \
+            "source /opt/ros/jazzy/setup.bash && source /opt/arena_ws/install/setup.bash && $command"
 }
 
 verify_system2_checkpoint(){
@@ -769,6 +796,7 @@ eval_inner_command(){
 }
 
 eval_docker_command(){
+    check_control_ownership --evaluation
     docker exec \
             -e "ROS_DOMAIN_ID=$ROS_DOMAIN_ID" \
             -e "RMW_IMPLEMENTATION=$RMW_IMPLEMENTATION" \
@@ -781,6 +809,7 @@ eval_docker_command(){
 }
 
 do_eval(){
+    check_control_ownership --evaluation
     # Keep the complete argv visible in plan mode.  Besides making the plan
     # useful to operators, this proves which container and ROS/DDS contract
     # the single-case evaluator will use without contacting Docker.
@@ -812,7 +841,7 @@ do_run(){
         echo "plan for '$name run' (sim=$PROFILE_EVALUATION_SIMULATOR robot=$ROBOT world=$WORLD scenario=$SCENARIO episodes=$EPISODES device=$DEVICE):"
         echo "   0. verify host/image/topology preconditions; abort on any failure"
         run_step "start containers ($BENCHMARK_SERVICES) without building" \
-            arena_docker_compose up -d --remove-orphans --no-build $BENCHMARK_SERVICES
+            arena_docker_compose up -d --no-recreate --no-build $BENCHMARK_SERVICES
         run_step_sh "wait for the arena workspace build marker /.built" "<poll docker exec ... test -f /.built>"
         run_step_sh "verify container build, model runtime, and GPU device access" \
             "<docker exec ... test /.built and /opt/internnav_venv, then open /dev/nvidia0 and run nvidia-smi -L>"
@@ -840,6 +869,7 @@ do_run(){
     check_runtime_preconditions
     abort_on_check_failures "containers may be running; no model server or evaluation was started"
     verify_system2_checkpoint
+    check_control_ownership
     mkdir -p "$(dirname "$serve_log")"
     # Cleanup must be a trap, not a trailing statement: run_step calls die() on
     # failure, which exits, so a failed evaluation would otherwise leave the GPU
@@ -936,7 +966,7 @@ do_full_eval(){
             echo "  - $case"
         done
         run_step "start containers ($BENCHMARK_SERVICES) without building" \
-            arena_docker_compose up -d --remove-orphans --no-build $BENCHMARK_SERVICES
+            arena_docker_compose up -d --no-recreate --no-build $BENCHMARK_SERVICES
         run_step_sh "start one persistent model server for the selected split" \
             "setsid env <profile server settings> bash .../features/internnav/main launch ..."
         run_step_sh "run each selected world/scenario sequentially in arena-1" \
@@ -956,6 +986,7 @@ do_full_eval(){
     check_runtime_preconditions
     abort_on_check_failures "containers may be running; no model server or evaluation was started"
     verify_system2_checkpoint
+    check_control_ownership
 
     serve_log="$(benchmark_ws_dir)/outputs/.benchmark_full_eval_serve.log"
     mkdir -p "$(dirname "$serve_log")"
@@ -1059,6 +1090,7 @@ do_density_eval(){
     check_runtime_preconditions
     abort_on_check_failures "containers may be running; no model server or evaluation was started"
     verify_system2_checkpoint
+    check_control_ownership
 
     serve_log="$(benchmark_ws_dir)/outputs/.benchmark_density_eval_serve.log"
     mkdir -p "$(dirname "$serve_log")"

@@ -238,6 +238,21 @@ def _check_model_control(run_dir: Path, manifest: dict[str, Any]) -> dict[str, A
     artifacts = manifest.get('artifacts', {}) if isinstance(manifest, dict) else {}
     result = manifest.get('result', {}) if isinstance(manifest, dict) else {}
     params = manifest.get('parameters', {}) if isinstance(manifest, dict) else {}
+    if manifest.get('model_backend') in {'lightnav', 'navila'}:
+        backend = manifest['model_backend']
+        from importlib import import_module
+        diagnostic_summary = import_module(f'arena_bringup.{backend}_support').diagnostic_summary
+        trace = Path(artifacts.get(f'{backend}_trace_path') or run_dir / f'{backend}_trace.jsonl')
+        summary = diagnostic_summary(trace)
+        teleports = _odom_teleports(run_dir)
+        evidence = (summary['inference_count'] > 0 and summary.get('path_accepted_count', summary.get('action_accepted_count', 0)) > 0
+                    and summary['commands_linked_to_inference'])
+        return {'pass': evidence and not teleports, 'trace_present': trace.is_file(),
+                'model_result_count': summary['inference_count'],
+                'direct_control_event_count': summary['command_count'],
+                'direct_cmd_vel': True, 'external_server': True,
+                'missing_model_control_loop': not evidence, 'large_teleports': teleports,
+                **summary}
     trace_path = Path(str(artifacts.get('internnav_trace_path') or run_dir / 'internnav_trace.jsonl'))
     status_path = Path(str(artifacts.get('dual_vln_status_path') or run_dir / 'internnav_status.json'))
     total, event_counts = _trace_events(trace_path)
@@ -306,7 +321,7 @@ def _check_metrics(
     try:
         manifest = _read_yaml(run_dir / 'run_manifest.yaml') or {}
         params = manifest.get('parameters', {}) if isinstance(manifest, dict) else {}
-        is_dual_vln = str(params.get('local_planner', '')).lower() == 'dual_vln'
+        is_dual_vln = str(params.get('local_planner', '')).lower() in {'dual_vln', 'lightnav', 'navila'}
     except Exception:
         is_dual_vln = False
     robot_moved = (not is_dual_vln) or path_length_m >= 0.1
@@ -446,7 +461,7 @@ def _diagnostic_warnings(checks: dict[str, Any], manifest: dict[str, Any], socia
             path_length_m = float(social_metrics.get('path_length_m') or 0.0)
         except Exception:
             path_length_m = 0.0
-        if str(params.get('local_planner', '')).lower() == 'dual_vln' and path_length_m < 0.1:
+        if str(params.get('local_planner', '')).lower() in {'dual_vln', 'lightnav', 'navila'} and path_length_m < 0.1:
             warnings.append(f'robot appears stationary: path_length_m={path_length_m:.3f}')
         legacy_social_success = social_metrics.get('legacy_social_success', social_metrics.get('social_success'))
         if legacy_social_success and not social_metrics.get('strict_social_success'):
@@ -469,7 +484,7 @@ def _diagnostic_warnings(checks: dict[str, Any], manifest: dict[str, Any], socia
 
     model_control = checks.get('model_control') if isinstance(checks.get('model_control'), dict) else {}
     if model_control.get('missing_model_control_loop'):
-        warnings.append('model-control loop missing: InternNav trace/status artifacts are incomplete')
+        warnings.append('model-control loop missing: selected backend trace/status artifacts are incomplete')
 
     videos = checks.get('videos') if isinstance(checks.get('videos'), dict) else {}
     overlay = (videos.get('videos') or {}).get('ego_debug_overlay') if isinstance(videos.get('videos'), dict) else {}

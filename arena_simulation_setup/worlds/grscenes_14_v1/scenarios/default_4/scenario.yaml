@@ -4,7 +4,7 @@ dynamic:
   pose:
   - 2.61805
   - -6.02052
-  - -0.266251897254
+  - -15.255110000005
   behavior_tree: ./BTRegularNav.xml
   velocity: 0.83
   desired_velocity: 1.07
@@ -71,7 +71,7 @@ dynamic:
   pose:
   - 2.70134
   - 0.39284
-  - -2.953371111067
+  - -169.215700000002
   behavior_tree: ./BTRegularNav.xml
   velocity: 0.72
   desired_velocity: 0.95
@@ -122,8 +122,8 @@ robots:
 - start:
   - 0.18597
   - -6.03718
-  - 1.124690868117
+  - 64.440040000009
   goal:
   - 2.2016
   - -1.82269
-  - 1.124690868117
+  - 64.440040000009

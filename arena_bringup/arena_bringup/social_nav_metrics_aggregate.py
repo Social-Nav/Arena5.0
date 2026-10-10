@@ -318,7 +318,8 @@ def summarize_run(run_dir: Path, *, prefer_canonical: bool = True) -> dict[str, 
     vln_task = read_json(run_dir / 'vln_task_metrics.json') or {}
     social = read_json(run_dir / 'social_metrics.json') or {}
     validation = read_json(run_dir / 'artifact_validation.json') or {}
-    diagnostics = read_json(run_dir / 'internnav_diagnostic_summary.json') or {}
+    backend = manifest.get('model_backend', 'internnav')
+    diagnostics = read_json(run_dir / f'{backend}_diagnostic_summary.json') or {}
     timing = read_json(run_dir / 'internnav_timing_summary.json') or {}
 
     params = manifest.get('parameters', {}) if isinstance(manifest, dict) else {}
@@ -517,8 +518,9 @@ def summarize_run(run_dir: Path, *, prefer_canonical: bool = True) -> dict[str, 
         'model_trace_record_count': _int_or_zero((checks.get('model_control') or {}).get('trace_record_count')) if isinstance(checks, dict) else 0,
         'model_control_event_count': _int_or_zero((checks.get('model_control') or {}).get('direct_control_event_count')) if isinstance(checks, dict) else 0,
         'planning_request_count': _int_or_zero(event_counts.get('planning_request_started') if isinstance(event_counts, dict) else None),
-        'trajectory_event_count': _int_or_zero(event_counts.get('trajectory') if isinstance(event_counts, dict) else None),
-        'discrete_action_event_count': _int_or_zero(event_counts.get('discrete_action') if isinstance(event_counts, dict) else None),
+        'trajectory_event_count': (_int_or_zero(diagnostics.get('path_accepted_count')) if backend == 'lightnav'
+                                   else _int_or_zero(event_counts.get('trajectory') if isinstance(event_counts, dict) else None)),
+        'discrete_action_event_count': (_int_or_zero(diagnostics.get('action_accepted_count')) if backend == 'navila' else _int_or_zero(event_counts.get('discrete_action') if isinstance(event_counts, dict) else None)),
         'video_pass': _as_bool(video_check.get('pass')) if isinstance(video_check, dict) else False,
         'metrics_complete': metrics_complete,
         'metrics_pass': _as_bool(metrics_check.get('pass')) if isinstance(metrics_check, dict) else False,

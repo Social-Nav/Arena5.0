@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import shlex
 from pathlib import Path
@@ -195,6 +196,8 @@ def _type_matches(value: Any, expected: Any) -> bool:
 def validate_profile(data: Any, *, source: str = '<profile>') -> dict[str, Any]:
     if not isinstance(data, dict):
         raise BenchmarkProfileError(f'{source}: profile root must be a mapping')
+    if data.get('schema_version') == 2:
+        return _validate_external_profile(data, source=source)
     unknown_top = sorted(set(data) - TOP_LEVEL_FIELDS)
     if unknown_top:
         raise BenchmarkProfileError(f'{source}: unknown top-level fields: {unknown_top}')
@@ -261,6 +264,75 @@ def validate_profile(data: Any, *, source: str = '<profile>') -> dict[str, Any]:
     return data
 
 
+def _validate_external_profile(data: dict, *, source: str) -> dict:
+    """V2 external clients have backend-specific fields; v1 remains unchanged."""
+    backend = data.get("server", {}).get("mode")
+    if backend not in {"lightnav", "navila"}:
+        raise BenchmarkProfileError(f"{source}: unknown external backend {backend!r}")
+    types = {
+        'runtime': {k: v for k, v in FIELD_TYPES['runtime'].items() if k != 'http_port'},
+        'server': {'mode': str, 'endpoint': str, 'model_path': str},
+        'client': {'kind': str, 'rgb_topic': str, 'odom_topic': str, 'task_mode': str,
+                   'command_timeout_sec': _is_number, 'path_timeout_sec': _is_number},
+        'execution': {'mode': str, 'timing_mode': str},
+        'evaluation': FIELD_TYPES['evaluation'], 'video': FIELD_TYPES['video'],
+    }
+    if backend == 'navila':
+        types['client'] = {'kind': str, 'rgb_topic': str, 'odom_topic': str,
+                           'command_timeout_sec': _is_number, 'request_timeout_sec': _is_number}
+    allowed = {'schema_version', 'id', 'description', *types}
+    if set(data) - allowed or not isinstance(data.get('id'), str) or not data['id'].strip():
+        raise BenchmarkProfileError(f'{source}: invalid v2 profile fields or id')
+    for section, fields in types.items():
+        actual = data.get(section)
+        if not isinstance(actual, dict) or set(actual) != set(fields):
+            raise BenchmarkProfileError(f'{source}: {section} must contain exactly {sorted(fields)}')
+        for key, expected in fields.items():
+            if not _type_matches(actual[key], expected):
+                raise BenchmarkProfileError(f'{source}: invalid {section}.{key}')
+            if isinstance(actual[key], float) and not math.isfinite(actual[key]):
+                raise BenchmarkProfileError(f'{source}: {section}.{key} must be finite')
+    from urllib.parse import urlparse
+    url = urlparse(data['server']['endpoint'])
+    try:
+        endpoint_ok = url.scheme == ('ws' if backend == 'lightnav' else 'tcp') and url.hostname == '127.0.0.1' and 0 < url.port < 65536
+    except (ValueError, TypeError):
+        endpoint_ok = False
+    if not endpoint_ok or url.username or url.password or url.path not in ('', '/') or url.query or url.fragment:
+        raise BenchmarkProfileError(f'{source}: invalid local endpoint scheme/host/port for {backend}')
+    fixed = {
+        ('server', 'mode'): backend, ('client', 'kind'): ('lightnav_native_mpc' if backend == 'lightnav' else 'navila_action_velocity'),
+        ('execution', 'mode'): 'external_direct_cmd_vel',
+        ('execution', 'timing_mode'): 'wall', ('evaluation', 'local_planner'): backend,
+        ('evaluation', 'inter_planner'): 'none', ('evaluation', 'global_planner'): 'none',
+    }
+    if backend == 'lightnav':
+        fixed[('client', 'task_mode')] = 'objnav'
+    for (section, key), value in fixed.items():
+        if data[section][key] != value:
+            raise BenchmarkProfileError(f'{source}: {section}.{key} must be {value!r}')
+    # Common choices retain their v1 meaning.
+    for section in ('runtime', 'evaluation', 'video'):
+        for key, value in data[section].items():
+            choices = CHOICES.get((section, key))
+            if choices is not None and value not in choices:
+                raise BenchmarkProfileError(f'{source}: invalid {section}.{key} choice')
+    runtime, evaluation, video = data['runtime'], data['evaluation'], data['video']
+    if runtime['ros_domain_id'] != 1 or runtime['ros_localhost_only'] != 0:
+        raise BenchmarkProfileError(f'{source}: requires ROS domain 1 and cross-container discovery')
+    if evaluation['episodes'] != 1 or evaluation['timeout_sec'] <= 0:
+        raise BenchmarkProfileError(f'{source}: requires one episode and positive timeout')
+    if not evaluation['social_eval'] or not video['enabled']:
+        raise BenchmarkProfileError(f'{source}: social evaluation and video are required')
+    for key in ('fps', 'top_down_size_px', 'top_down_window_m'):
+        if video[key] <= 0:
+            raise BenchmarkProfileError(f'{source}: video.{key} must be positive')
+    for key in ('command_timeout_sec', 'path_timeout_sec' if backend == 'lightnav' else 'request_timeout_sec'):
+        if data['client'][key] <= 0:
+            raise BenchmarkProfileError(f'{source}: client.{key} must be positive')
+    return data
+
+
 def load_profile(path: str | os.PathLike[str]) -> dict[str, Any]:
     profile_path = Path(path).expanduser().resolve()
     if not profile_path.is_file():
@@ -302,6 +374,26 @@ def manifest_record(
 
 
 def evaluation_defaults(profile: dict[str, Any]) -> dict[str, Any]:
+    if profile['schema_version'] == 2:
+        backend = profile['server']['mode']
+        defaults = {dest: profile['evaluation'][field] for field, dest in EVALUATION_FIELD_MAP.items()}
+        defaults.update({dest: profile['video'][field] for field, dest in VIDEO_EVAL_FIELD_MAP.items()})
+        defaults.update(
+            model_backend=backend, execution_mode='external_direct_cmd_vel',
+            dual_vln_mode=backend, dual_vln_model_path=profile['server']['model_path'],
+            dual_vln_device=profile['runtime']['device'],
+            dual_vln_rgb_topic=profile['client']['rgb_topic'], dual_vln_depth_topic='',
+            dual_vln_camera_info_topic='', dual_vln_adapter_target='',
+            internnav_external_server=False, internnav_direct_cmd_vel=False,
+            skip_external_server_preflight=True, dual_vln_timing_mode='wall',
+            dual_vln_status_topic=f'{backend}/status', dual_vln_model_output_topic=f'{backend}/model_output',
+            dual_vln_visualization_topic=f'{backend}/debug_image',
+            dual_vln_action_visualization_topic=f'{backend}/debug_image',
+            dual_vln_enable_visualization=True, dual_vln_visualization_rate_hz=5.0,
+            dual_vln_inference_timeout_sec=3.0, dual_vln_inference_rate_hz=4.0,
+            dual_vln_raw_cmd_vel_topic=f'{backend}/raw_cmd_vel',
+        )
+        return defaults
     defaults = {
         dest: profile['evaluation'][field]
         for field, dest in EVALUATION_FIELD_MAP.items()
@@ -331,8 +423,10 @@ def shell_assignments(path: str | os.PathLike[str], profile: dict[str, Any]) -> 
         'PROFILE_PATH': metadata['path'],
         'PROFILE_SHA256': metadata['sha256'],
     }
-    for section in FIELD_TYPES:
-        for field, value in profile[section].items():
+    for section, fields in profile.items():
+        if not isinstance(fields, dict):
+            continue
+        for field, value in fields.items():
             values[f'PROFILE_{section}_{field}'.upper()] = value
     lines = []
     for key, value in values.items():

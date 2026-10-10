@@ -299,12 +299,12 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
     def _dual_vln_command_services(self) -> list[str]:
         """Model command services this run expects, from the robot managers."""
         services: list[str] = []
-        for robot_manager in getattr(self._robots_manager, 'robots', {}).values():
+        for robot_manager in getattr(self._robots_manager, 'managers', getattr(self._robots_manager, 'robots', {})).values():
             resolver = getattr(robot_manager, '_dual_vln_command_service_name', None)
             if not callable(resolver):
                 continue
             try:
-                if not bool(robot_manager._is_dual_vln_robot()):
+                if not bool(robot_manager._is_dual_vln_robot()) or getattr(robot_manager, '_internnav_direct_cmd_vel_enabled', lambda: False)():
                     continue
                 name = str(resolver() or '')
             except Exception:
@@ -328,7 +328,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         """
         channels: dict[str, list[str]] = {'command_services': [], 'status_topics': []}
         channels['command_services'] = self._dual_vln_command_services()
-        for robot_manager in getattr(self._robots_manager, 'robots', {}).values():
+        for robot_manager in getattr(self._robots_manager, 'managers', getattr(self._robots_manager, 'robots', {})).values():
             try:
                 if not bool(robot_manager._is_dual_vln_robot()):
                     continue
@@ -352,11 +352,16 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             advertised = set()
         services_seen = [name for name in channels['command_services'] if name in advertised]
         status_seen = []
-        for robot_manager in getattr(self._robots_manager, 'robots', {}).values():
+        for robot_manager in getattr(self._robots_manager, 'managers', getattr(self._robots_manager, 'robots', {})).values():
             topic = str(getattr(robot_manager, '_dual_vln_status_topic', '') or '')
             if not topic:
                 continue
             if float(getattr(robot_manager, '_dual_vln_status_wall_time', 0.0) or 0.0) > 0.0:
+                payload = getattr(robot_manager, '_dual_vln_status_payload', {})
+                if topic.endswith(('/lightnav/status', '/navila/status')):
+                    age = time.monotonic() - robot_manager._dual_vln_status_wall_time
+                    if age > 2.5 or payload.get('backend') != topic.rsplit('/', 2)[-2] or not payload.get('backend_ready'):
+                        continue
                 status_seen.append(topic)
         return {
             'command_services_advertised': services_seen,
@@ -1037,6 +1042,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             raise
 
     def _publish_episode_outcome(self, reason: str) -> None:
+        # Close the start barrier before announcing the outcome. Direct clients
+        # must stop themselves; Arena must not create a second cmd_vel writer.
+        self._publish_eval_ready('episode', False, reason='episode_finished')
         desired = int(self.conf.General.DESIRED_EPISODES.value)
         episode_index = max(int(self._completed_episodes) - 1, 0)
         sim_time_sec = self._time_to_seconds(getattr(self, 'sim_time', None))

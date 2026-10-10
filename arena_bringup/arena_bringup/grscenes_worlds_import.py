@@ -23,7 +23,7 @@ from typing import Any
 import yaml
 
 
-CONVERSION_VERSION = 2
+CONVERSION_VERSION = 3
 WORLD_NAMES = tuple(f"grscenes_{index}" for index in range(1, 31))
 SCENARIO_NAMES = ("default", "default_1", "default_2", "default_3", "default_4")
 PEDESTRIAN_WAYPOINT_Z_METERS = 0.0
@@ -588,7 +588,9 @@ def materialize(
                     [waypoint[0], waypoint[1], PEDESTRIAN_WAYPOINT_Z_METERS] for waypoint in raw_waypoints
                 ]
                 normalized_agent = copy.deepcopy(raw_agent)
-                normalized_agent["pose"] = normalized_pose
+                # Native scenario triples use degrees; radians belong only in
+                # the explicitly named catalog analysis fields below.
+                normalized_agent["pose"] = raw_pose
                 normalized_agent["behavior_tree"] = "./BTRegularNav.xml"
                 normalized_agent["waypoints"] = emitted_waypoints
                 normalized_dynamic.append(normalized_agent)
@@ -613,7 +615,7 @@ def materialize(
             }
             if normalized_dynamic:
                 native_scenario["dynamic"] = normalized_dynamic
-            native_scenario["robots"] = [{"start": normalized_start, "goal": normalized_goal}]
+            native_scenario["robots"] = [{"start": raw_start, "goal": raw_goal}]
             generated_scenario_bytes = _yaml_bytes(native_scenario)
             generated_scenario_path = (
                 output_worlds_relative / variant_id / "scenarios" / scenario_name / "scenario.yaml"
@@ -673,9 +675,9 @@ def materialize(
                     "route_frame": "map",
                     "robot_source_xy_unit": "meters",
                     "robot_source_yaw_unit": "degrees",
-                    "robot_generated_yaw_unit": "radians",
+                    "robot_generated_yaw_unit": "degrees",
                     "dynamic_source_pose_yaw_unit": "degrees",
-                    "dynamic_generated_pose_yaw_unit": "radians",
+                    "dynamic_generated_pose_yaw_unit": "degrees",
                     "pedestrian_source_waypoint_semantics": ["x_m", "y_m", "heading_degrees"],
                     "pedestrian_generated_waypoint_semantics": ["x_m", "y_m", "z_m"],
                     "pedestrian_generated_waypoint_z_m": PEDESTRIAN_WAYPOINT_Z_METERS,
@@ -738,8 +740,8 @@ def materialize(
             "identity_kind": "scenario_case",
             "source_episode_metadata_available": False,
             "source_timestamp_metadata_available": False,
-            "robot_yaw_conversion": "degrees_to_radians_for_all_values",
-            "dynamic_pose_yaw_conversion": "degrees_to_radians_for_all_values",
+            "robot_yaw_conversion": "preserve_degrees_in_native_scenario; degrees_to_radians_in_catalog",
+            "dynamic_pose_yaw_conversion": "preserve_degrees_in_native_scenario; degrees_to_radians_in_catalog",
             "pedestrian_waypoint_policy": (
                 "preserve raw [x,y,heading_degrees] in catalog; emit native [x,y,z] with z=0.0 meters"
             ),

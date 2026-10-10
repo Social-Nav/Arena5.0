@@ -199,7 +199,7 @@ PY
 update(){
     echo "Building $name docker image..."
     arena_docker_compose build internnav
-    arena_docker_compose up -d --remove-orphans --no-start internnav
+    arena_docker_compose up -d --no-start internnav
 }
 
 install(){
@@ -342,7 +342,7 @@ launch(){
     if [ "$official_http" = "true" ] && [ -z "$internnav_http_url" ]; then
         internnav_http_url="http://$http_host:$http_port/eval_dual"
     fi
-    arena_docker_compose up -d --remove-orphans --no-recreate internnav
+    arena_docker_compose up -d --no-recreate internnav
     trap 'arena_docker_compose stop internnav || true' EXIT INT TERM
 
     local cmd
