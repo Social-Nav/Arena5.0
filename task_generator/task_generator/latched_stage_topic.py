@@ -1,65 +1,8 @@
-"""The publication contract of a depth-1 latched, stage-filtered status topic.
+"""Keep episode readiness as the final latched sample on eval_ready.
 
-Why this module exists
-----------------------
-``<task_generator>/eval_ready`` is a ``depth=1, RELIABLE, TRANSIENT_LOCAL``
-``String`` topic carrying JSON with a ``stage`` field.  Two *external* consumers
-subscribe to it, and both discard every message whose stage is not the one they
-are waiting for:
-
-* the official InternNav client
-  (``deps/InternNav/scripts/realworld/http_internvla_client.py:882``:
-  ``if payload.get('stage') != 'episode': return``), which refuses to plan while
-  its gate is unsatisfied and therefore never commands the robot; and
-* the InternNav timing manager
-  (``arena_bringup/arena_bringup/internnav_timing_manager.py:280``, identical
-  filter), which publishes 20 Hz zero velocity while its gate is unsatisfied.
-
-Both subscribe at ``depth=1`` as well, and neither is ours to change: the client
-is the official upstream component, so what it *accepts* is the contract, not a
-variable.
-
-The measured delivery semantics
--------------------------------
-The episode-start barrier added a second publication (``stage='episode_start'``)
-on this topic immediately after the ``stage='episode', ready=True`` message the
-consumers wait for.  Both consumers then stopped seeing the message they needed,
-in 4/4 evaluation runs, and the robot was never commanded at all.
-
-Rather than reason about DDS history semantics, the behaviour was measured in the
-production middleware (``rmw_fastrtps_cpp``, ROS 2 Jazzy, this workspace's own
-container) with the production QoS on both ends.  20 trials per case,
-``tmp/lane_w2_eval_ready_fix/qos_probe_replicate.py``:
-
-===========================================  ==============  ============
-case                                          publisher depth  gate satisfied
-===========================================  ==============  ============
-one publication only (pre-barrier)                        1     20/20
-a second, non-matching publication after it                1      0/20
-   ... with publisher depth raised to 10                  10      0/20
-   ... with publisher depth raised to 50                  50      0/20
-second publication on a *separate* topic                   1     20/20
-===========================================  ==============  ============
-
-Two conclusions, both measurements rather than inferences:
-
-1. **Only the final publication on such a topic is reliably obtainable.**  A
-   depth-1 subscriber's own ``KEEP_LAST(1)`` cache is overwritten by the next
-   sample before its executor takes the earlier one, and a late joiner receives
-   only the latest retained sample.  So a stage-filtering subscriber can be
-   starved by *any* later publication its filter discards.
-2. **Raising the publisher's history depth does not help**, because the binding
-   constraint is the *subscriber's* depth, which we do not own.  That design
-   alternative is rejected on measurement, not on argument.
-
-The rule this module enforces
------------------------------
-A stage may ride the contract topic only if **every** registered consumer filter
-accepts it.  Everything else goes to a sidecar diagnostics topic, so no
-information is lost and the contract topic cannot be starved *by construction* --
-not by ordering, and not by a future caller who has never read this file.
-
-Deliberately free of ROS imports so the rule can be tested without a simulator.
+External FollowPath clients consume stage='episode' with KEEP_LAST(1).
+Other stages go to eval_ready_status, so neither a late subscriber nor a
+busy executor loses the release/reset signal to an unrelated stage.
 """
 
 from __future__ import annotations
@@ -68,7 +11,7 @@ import typing
 
 import attrs
 
-#: The stage the two external ``eval_ready`` consumers filter for.  Anything else
+#: The stage the external ``eval_ready`` consumers filter for.  Anything else
 #: they discard, so anything else must not be the latched sample.
 EVAL_READY_CONSUMER_STAGE = 'episode'
 
@@ -99,21 +42,8 @@ class LatchedStageTopicContract:
 
     @classmethod
     def eval_ready(cls) -> "LatchedStageTopicContract":
-        """The live ``eval_ready`` contract: the client and the timing manager.
-
-        Both filter for the same single stage, so the contract set is that one
-        stage.  Listing them separately is deliberate: if a third consumer with a
-        different filter is ever added, the intersection shrinks and
-        :meth:`carries` starts routing the previously-contracted stage to the
-        diagnostics topic, which is a loud test failure rather than a silent
-        starvation in production.
-        """
-        return cls(
-            consumer_filters=(
-                frozenset({EVAL_READY_CONSUMER_STAGE}),  # http_internvla_client.py:882
-                frozenset({EVAL_READY_CONSUMER_STAGE}),  # internnav_timing_manager.py:280
-            )
-        )
+        """The generic external client's episode readiness contract."""
+        return cls(consumer_filters=(frozenset({EVAL_READY_CONSUMER_STAGE}),))
 
     @property
     def contract_stages(self) -> typing.FrozenSet[str]:

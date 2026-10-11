@@ -3,7 +3,6 @@ set -e
 
 export ARENA_REPO=${ARENA_REPO:-https://github.com/Social-Nav/Arena5.0.git}
 export ARENA_BRANCH=${ARENA_BRANCH:-main}
-export ARENA_BRANCH=${ARENA_BRANCH:-feature/social_yielding}
 export ARENA_ROS_DISTRO=${ARENA_ROS_DISTRO:-jazzy}
 
 declare -a ARENA_OPTIONAL_FEATURES=()
@@ -17,8 +16,8 @@ while [[ $# -gt 0 ]]; do
             shift
         ;;
         --install-internnav)
-            ARENA_OPTIONAL_FEATURES+=("internnav")
-            shift
+            echo "Model installation moved to the model repository; configure external.command in a version 3 benchmark profile." >&2
+            exit 2
         ;;
         --install-training)
             ARENA_OPTIONAL_FEATURES+=("training")
@@ -46,7 +45,6 @@ Usage: install.sh [options]
 
 Options:
   --install-isaac         Install the Isaac Docker feature after bootstrap.
-  --install-internnav     Install the InternNav model runtime feature after bootstrap.
   --install-training      Install the training feature after bootstrap.
   --install-feature NAME  Install an arbitrary Arena feature after bootstrap.
   --no-clean-install      Reuse existing build/install/.venv state instead of forcing a clean bootstrap.

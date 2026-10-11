@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 import json
 import traceback
 import time
@@ -97,6 +98,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
 
         self._reset_lock: asyncio.Lock = asyncio.Lock()
         self._start_time = self.time
+        self._vln_session_id = str(uuid.uuid4())
+        self._vln_episode = 0
         self._number_of_resets = 0
         self._completed_episodes = 0
         self._finished_published = False
@@ -104,7 +107,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         # Static world geometry is the first eval barrier.  Keep it blocked
         # until WorldManager's initial world callback has loaded/spawned the
         # environment into Isaac.  Robot/model/video consumers are only allowed
-        # to progress after this event is set, otherwise direct-control VLN can
+        # to progress after this event is set, otherwise a FollowPath client can
         # start against an empty stage or contend with the same single-threaded
         # Isaac service loop used for static-world spawning.
         self._world_geometry_ready: asyncio.Event = asyncio.Event()
@@ -189,11 +192,11 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             ),
         )
 
-        # The full readiness lifecycle, including the stages the two external
-        # eval_ready consumers discard.  It exists so that adding a publication
-        # can never again starve them: this topic is depth-1 latched and both
-        # consumers subscribe at depth 1, and *only the final sample on such a
-        # topic is reliably obtainable* (measured: 0/20 deliveries of an earlier
+        # The full readiness lifecycle, including stages external FollowPath
+        # clients discard.  It exists so that adding a publication cannot
+        # starve them: eval_ready is depth-1 latched and clients subscribe at
+        # depth 1, so *only the final sample on the topic is reliably obtainable*
+        # (measured: 0/20 deliveries of an earlier
         # sample once anything follows it, and raising the publisher's depth to
         # 10 or 50 does not change that, because the binding constraint is the
         # subscriber's own KEEP_LAST(1) cache).  So eval_ready carries only
@@ -211,8 +214,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         # The explicit episode time origin.  Published exactly once per episode,
         # at the barrier, after task_reset let the recorders open their writers
         # and after every stream reported that it is past its warm-up gate.
-        # Consumers treat the frame that carries this edge as their t=0, so all
-        # four video streams and the timeout share one origin.  Latched, because
+        # Consumers treat the frame that carries this edge as their t=0, so the
+        # three required video streams, optional debug video and timeout share
+        # one origin.  Latched, because
         # a recorder must be able to learn about it even if DDS discovery of the
         # topic completes a moment late.
         self._pub_episode_start = self.create_publisher(
@@ -296,78 +300,30 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         except Exception:
             return False
 
-    def _dual_vln_command_services(self) -> list[str]:
-        """Model command services this run expects, from the robot managers."""
-        services: list[str] = []
-        for robot_manager in getattr(self._robots_manager, 'managers', getattr(self._robots_manager, 'robots', {})).values():
-            resolver = getattr(robot_manager, '_dual_vln_command_service_name', None)
-            if not callable(resolver):
-                continue
-            try:
-                if not bool(robot_manager._is_dual_vln_robot()) or getattr(robot_manager, '_internnav_direct_cmd_vel_enabled', lambda: False)():
-                    continue
-                name = str(resolver() or '')
-            except Exception:
-                continue
-            if name:
-                services.append(name)
-        return services
+    def _waypoint_managers(self):
+        managers = getattr(getattr(self, '_robots_manager', None), 'managers', {})
+        return [m for m in managers.values() if getattr(m, '_waypoint_lifecycle', None)]
 
-    def _model_channels(self) -> dict[str, list[str]]:
-        """The observable channels through which a model can report itself live.
+    def _model_channels(self):
+        return {'command_services': [], 'status_topics': [
+            str(m.namespace('model/status')) for m in self._waypoint_managers()]}
 
-        Two exist and which one is populated depends on the eval mode, so the
-        barrier accepts either rather than hard-coding one:
+    def _model_ready_state(self, channels):
+        observed = []
+        for manager in self._waypoint_managers():
+            lifecycle = manager._waypoint_lifecycle
+            if lifecycle.session.status == 'error':
+                raise RuntimeError('External FollowPath client failed: ' + lifecycle.session.reason)
+            if lifecycle.controller_active and lifecycle.session.ready(time.monotonic()):
+                observed.append(str(manager.namespace('model/status')))
+        expected = channels['status_topics']
+        return {'command_services_advertised': [], 'status_topics_with_sample': observed,
+                'ready': bool(expected) and set(expected) <= set(observed)}
 
-        * ``command_services`` -- the Arena/external ``get_command`` service.
-          Present in the wrapper mode, where ``robot_manager`` also waits for it
-          before publishing the goal.
-        * ``status_topics`` -- the InternNav ``.../internnav/status`` topic.  This
-          is the channel the official-client (direct ``cmd_vel``) mode uses, and
-          the one ``robot_manager`` already subscribes to.
-        """
-        channels: dict[str, list[str]] = {'command_services': [], 'status_topics': []}
-        channels['command_services'] = self._dual_vln_command_services()
-        for robot_manager in getattr(self._robots_manager, 'managers', getattr(self._robots_manager, 'robots', {})).values():
-            try:
-                if not bool(robot_manager._is_dual_vln_robot()):
-                    continue
-            except Exception:
-                continue
-            topic = str(getattr(robot_manager, '_dual_vln_status_topic', '') or '')
-            if topic:
-                channels['status_topics'].append(topic)
-        return channels
-
-    def _model_ready_state(self, channels: dict[str, list[str]]) -> dict[str, object]:
-        """Observable state of every model channel, never a call that can return None.
-
-        A service call that fails yields nothing distinguishable from a model that
-        is merely slow, so readiness is derived from the ROS graph (is the service
-        advertised?) and from received status samples (did the model speak?).
-        """
-        try:
-            advertised = {name for name, _types in self.get_service_names_and_types()}
-        except Exception:
-            advertised = set()
-        services_seen = [name for name in channels['command_services'] if name in advertised]
-        status_seen = []
-        for robot_manager in getattr(self._robots_manager, 'managers', getattr(self._robots_manager, 'robots', {})).values():
-            topic = str(getattr(robot_manager, '_dual_vln_status_topic', '') or '')
-            if not topic:
-                continue
-            if float(getattr(robot_manager, '_dual_vln_status_wall_time', 0.0) or 0.0) > 0.0:
-                payload = getattr(robot_manager, '_dual_vln_status_payload', {})
-                if topic.endswith(('/lightnav/status', '/navila/status')):
-                    age = time.monotonic() - robot_manager._dual_vln_status_wall_time
-                    if age > 2.5 or payload.get('backend') != topic.rsplit('/', 2)[-2] or not payload.get('backend_ready'):
-                        continue
-                status_seen.append(topic)
-        return {
-            'command_services_advertised': services_seen,
-            'status_topics_with_sample': status_seen,
-            'ready': bool(services_seen or status_seen),
-        }
+    async def _stop_waypoint_robots(self):
+        for manager in self._waypoint_managers():
+            manager._waypoint_lifecycle.session.released = False
+            await manager._waypoint_lifecycle.stop()
 
     def _episode_start_barrier_conditions(self) -> list[BarrierCondition]:
         """The conditions that define "the episode may now begin".
@@ -403,9 +359,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         recorder_attached = self._video_recorder_attached()
         channels = self._model_channels()
         model_configured = bool(channels['command_services'] or channels['status_topics'])
-        require_model = model_configured and bool(
-            self.rosparam[bool].get('episode_start_require_model_ready', True)
-        )
+        require_model = model_configured
 
         return [
             BarrierCondition(
@@ -443,10 +397,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
                 name='model_reachable',
                 check=lambda: bool(self._model_ready_state(channels)['ready']),
                 required=require_model,
-                skip_reason=(
-                    'no_dual_vln_robot' if not model_configured
-                    else 'episode_start_require_model_ready=false'
-                ),
+                skip_reason='no_follow_path_robot',
                 detail=lambda: f'channels={channels} observed={self._model_ready_state(channels)}',
             ),
         ]
@@ -525,11 +476,18 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
                 f'satisfied={report.satisfied} still_waiting_on={report.unsatisfied}'
             )
 
+        async def poll_models(delay):
+            # BarrierCondition treats ordinary discovery exceptions as retryable.
+            # A client's terminal error must instead abort immediately.
+            self._model_ready_state(self._model_channels())
+            await asyncio.sleep(delay)
+
         try:
             report = await await_episode_start_barrier(
                 conditions,
                 timeout_sec=timeout_s,
                 on_progress=_log_progress,
+                sleep=poll_models,
             )
         except EpisodeStartBarrierTimeout as exc:
             self._last_barrier_report = exc.report
@@ -568,12 +526,11 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             episode_origin_wall_time=time.time(),
             pedestrian_clock_sec=self._pedestrian_clock.value,
         )
-        # The external model client and the timing manager are released here, at
-        # t=0, and not at task_reset.  Before the barrier existed those were the
-        # same instant, so this is the faithful translation rather than a change
-        # of contract: the client must not be able to command the robot during
-        # the recorders' warm-up, which on a second episode it otherwise could
-        # (its instruction is latched from the previous one).
+        # External FollowPath clients are released here, at t=0, after recorder
+        # warm-up.  task_reset only opens the streams; it does not allow clients
+        # to submit paths or reuse the previous episode's instruction.
+        for manager in self._waypoint_managers():
+            manager._waypoint_lifecycle.session.released = True
         self._publish_eval_ready('episode', True, reason='episode_start_published')
         self.get_logger().warn(
             '============= EPISODE START (t=0) ============= '
@@ -801,7 +758,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
     def _publish_eval_ready(self, stage: str, ready: bool, **details) -> None:
         """Publish one readiness sample, routed by the topic's stage contract.
 
-        Both external consumers of ``eval_ready`` filter on ``stage`` and both
+        External FollowPath clients filter ``eval_ready`` on ``stage`` and
         subscribe ``depth=1``, so only the *final* sample on that topic is
         reliably obtainable and any later sample their filter discards starves
         them.  That is what broke robot control in 4/4 runs when the episode-start
@@ -826,7 +783,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
                 {
                     'stage': stage,
                     'ready': bool(ready),
-                    'episode': self._number_of_resets,
+                    'episode': getattr(self, '_vln_episode', self._number_of_resets),
+                    'session_id': getattr(self, '_vln_session_id', ''),
                     'world_geometry_ready': self._world_geometry_ready.is_set(),
                     'episode_entities_ready': self._episode_entities_ready.is_set(),
                     'details': details,
@@ -900,7 +858,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
     async def _republish_vln_instruction_window(self, instruction: str, reset_index: int) -> None:
         """Bridge discovery/QoS races for late-starting external VLN clients.
 
-        The official InternNav ROS2 HTTP client can be started outside this
+        An external FollowPath client can be started outside this
         launch graph.  Publishing the instruction once at episode release is
         not sufficient if DDS discovery completes just after that edge or if a
         consumer uses volatile QoS.  Keep re-publishing the same per-episode
@@ -938,7 +896,12 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         self._robot_navigation_ready = False
         self._video_streams_ready_episode = None
         self._last_barrier_report = None
+        self._vln_session_id = str(uuid.uuid4())
+        self._vln_episode = self._number_of_resets
         self._publish_eval_ready('episode', False, reason='reset_started')
+        for manager in self._waypoint_managers():
+            manager._waypoint_lifecycle.session.released = False
+            await manager._waypoint_lifecycle.begin(self._vln_session_id, self._vln_episode)
 
         await self._simulator.before_reset_task()
 
@@ -970,12 +933,10 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         # their warm-up gates, and the barrier below waits for the result.
         #
         # No ``eval_ready(stage='episode', ready=True)`` here: that sample is the
-        # release signal for the external model client and the timing manager, and
-        # it belongs at t=0, which is the barrier below.  Publishing it here made
-        # it the *second-to-last* sample on a depth-1 latched topic and both
-        # consumers were starved by the barrier's own status message -- 4/4 runs
-        # with zero control ticks.  It is now published in
-        # ``_release_episode_start``.
+        # release signal for external FollowPath clients and belongs at t=0,
+        # which is the barrier below.  Keep it as the final latched sample by
+        # publishing it from ``_release_episode_start``; other readiness stages
+        # use the diagnostics topic.
         self._pub_task_reset.publish(Int16(data=self._number_of_resets))
 
         # The episode origin.  Everything that constitutes the episode -- the
@@ -989,7 +950,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         # Publish instruction only after the episode-start barrier so the model's
         # cold start is charged to startup rather than to the episode's first
         # seconds.  Re-publish for a short bounded window to let external
-        # InternNav clients that discover the topic slightly late still
+        # clients that discover the topic slightly late still
         # synchronize before first inference.
         self._publish_vln_instruction_for_episode(self._number_of_resets)
 
@@ -1002,7 +963,19 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
     async def reset_task(self, reason: str = 'unspecified', **kwargs):
         async with self._reset_lock:
             self.get_logger().debug(f"[Reset-reason] reset_task: {reason}")
-            await self._reset_task_unlocked(**kwargs)
+            try:
+                await self._reset_task_unlocked(**kwargs)
+            except Exception as exc:
+                self._evaluation_error = str(exc)
+                reason = ('model_error' if any(m._waypoint_lifecycle.session.status == 'error'
+                          for m in self._waypoint_managers()) else 'control_error')
+                self._publish_eval_ready('episode', False, reason=reason, error=str(exc))
+                try:
+                    await self._stop_waypoint_robots()
+                except Exception as stop_error:
+                    self._evaluation_error += f'; stopping failed: {stop_error}'
+                self._publish_episode_outcome(reason)
+                raise
 
     async def _check_task_status(self, *args, **kwargs):
         del args, kwargs
@@ -1016,13 +989,19 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         try:
             while True:
                 await asyncio.sleep(0.5)
+                if self._finished_published:
+                    continue
                 should_reset = False
                 async with self._reset_lock:
                     if await self._task.is_done:
                         done_reason = str(getattr(self._task, 'last_done_reason', 'unknown') or 'unknown')
+                        self._publish_eval_ready('episode', False, reason='episode_finishing')
+                        await self._stop_waypoint_robots()
                         self._completed_episodes += 1
                         self._publish_episode_outcome(done_reason)
-                        self._send_end_message_on_end()
+                        self._send_end_message_on_end(failed=done_reason == 'model_error')
+                        if self._finished_published:
+                            continue
 
                         if self.conf.General.DESIRED_EPISODES.value >= 0 and \
                                 self._completed_episodes >= self.conf.General.DESIRED_EPISODES.value:
@@ -1039,11 +1018,15 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             pass
         except Exception as e:
             self.get_logger().error(f"Error in task status check: {e}\n{traceback.format_exc()}")
-            raise
+            self._evaluation_error = str(e)
+            self._publish_eval_ready('episode', False, reason='control_error', error=str(e))
+            for manager in self._waypoint_managers():
+                manager._waypoint_lifecycle.session.released = False
+            self._publish_episode_outcome('control_error')
+            self._send_end_message_on_end(failed=True)
 
     def _publish_episode_outcome(self, reason: str) -> None:
-        # Close the start barrier before announcing the outcome. Direct clients
-        # must stop themselves; Arena must not create a second cmd_vel writer.
+        # The caller has closed the barrier and awaited native controller stop.
         self._publish_eval_ready('episode', False, reason='episode_finished')
         desired = int(self.conf.General.DESIRED_EPISODES.value)
         episode_index = max(int(self._completed_episodes) - 1, 0)
@@ -1052,9 +1035,14 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             sim_time_sec = self._time_to_seconds(getattr(self, 'time', None))
         payload = {
             'episode_index': episode_index,
+            'session_id': getattr(self, '_vln_session_id', ''),
             'completed_episodes': int(self._completed_episodes),
             'desired_episodes': desired,
             'reason': str(reason or 'unknown'),
+            'error': getattr(self, '_evaluation_error', '') or '; '.join(
+                m._waypoint_lifecycle.session.reason or m._waypoint_lifecycle.error
+                for m in self._waypoint_managers()
+                if m._waypoint_lifecycle.session.status == 'error' or m._waypoint_lifecycle.error),
             'finished': desired >= 0 and int(self._completed_episodes) >= desired,
             'sim_time_sec': sim_time_sec,
             'wall_time': time.time(),
@@ -1086,8 +1074,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             return TaskGenerator._time_to_seconds(clock)
         return None
 
-    def _send_end_message_on_end(self):
-        if self.conf.General.DESIRED_EPISODES.value < 0 or self._completed_episodes < self.conf.General.DESIRED_EPISODES.value:
+    def _send_end_message_on_end(self, *, failed=False):
+        if not failed and (self.conf.General.DESIRED_EPISODES.value < 0 or self._completed_episodes < self.conf.General.DESIRED_EPISODES.value):
             return
         if self._finished_published:
             return

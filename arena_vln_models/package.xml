@@ -3,7 +3,7 @@
 <package format="3">
   <name>arena_vln_models</name>
   <version>0.0.0</version>
-  <description>Arena VLN model adapters and benchmark integration helpers.</description>
+  <description>Native Nav2 FollowPath integration and benchmark lifecycle.</description>
 
   <maintainer email="dev@example.com">dev</maintainer>
   <license>MIT</license>
@@ -16,11 +16,24 @@
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
-  <exec_depend>rosnav_rl_msgs</exec_depend>
-  <exec_depend>python3-numpy</exec_depend>
-  <exec_depend>python3-pil</exec_depend>
-  <exec_depend>python3-requests</exec_depend>
 
+  <exec_depend>arena_bringup</exec_depend>
+  <exec_depend>arena_evaluation</exec_depend>
+  <exec_depend>arena_robots</exec_depend>
+  <exec_depend>arena_simulation_setup</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>nav2_costmap_2d</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+  <exec_depend>action_msgs</exec_depend>
+  <exec_depend>lifecycle_msgs</exec_depend>
+  <exec_depend>rosgraph_msgs</exec_depend>
+  <exec_depend>nav2_controller</exec_depend>
+  <exec_depend>nav2_regulated_pure_pursuit_controller</exec_depend>
+  <exec_depend>nav2_velocity_smoother</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>

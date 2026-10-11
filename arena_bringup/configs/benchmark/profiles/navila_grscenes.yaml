@@ -1,24 +1,20 @@
-schema_version: 2
+schema_version: 3
 id: navila_grscenes
-description: NaVILA RGB model with external native timed-action velocity conversion.
+description: navila experiment using an external native FollowPath client.
+model: navila
 runtime:
   ros_domain_id: 1
   rmw_implementation: rmw_fastrtps_cpp
   fastdds_builtin_transports: UDPv4
   ros_localhost_only: 0
   ros_automatic_discovery_range: SUBNET
-  device: cuda:0
-server:
-  mode: navila
-  endpoint: tcp://127.0.0.1:54321
-  model_path: /models/navila-llama3-8b-8f
 evaluation:
   simulator: isaac_eval
   human_simulator: hunav
   world: grscenes_20_v1
   scenario: default_2
   robot: Ai2_Bot2
-  local_planner: navila
+  local_planner: regulated_pure_pursuit
   inter_planner: none
   global_planner: none
   episodes: 1
@@ -40,13 +36,10 @@ video:
   top_down_size_px: 640
   top_down_window_m: 10.0
   sim_top_down_topic: top_down_camera/image
-  debug_overlay_topic: navila/debug_image
-client:
-  kind: navila_action_velocity
-  rgb_topic: head_camera/image
-  odom_topic: odom
-  command_timeout_sec: 0.5
-  request_timeout_sec: 10.0
+  debug_overlay_topic: ''
 execution:
-  mode: external_direct_cmd_vel
-  timing_mode: wall
+  mode: nav2_follow_path
+  rgb_topic: head_camera/image
+  heartbeat_timeout_sec: 2.5
+external:
+  command: []

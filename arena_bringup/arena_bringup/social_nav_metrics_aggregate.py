@@ -112,6 +112,7 @@ SUMMARY_FIELDS = [
     'model_control_pass',
     'model_trace_record_count',
     'model_control_event_count',
+    'path_count',
     'planning_request_count',
     'trajectory_event_count',
     'discrete_action_event_count',
@@ -319,8 +320,8 @@ def summarize_run(run_dir: Path, *, prefer_canonical: bool = True) -> dict[str, 
     social = read_json(run_dir / 'social_metrics.json') or {}
     validation = read_json(run_dir / 'artifact_validation.json') or {}
     backend = manifest.get('model_backend', 'internnav')
-    diagnostics = read_json(run_dir / f'{backend}_diagnostic_summary.json') or {}
-    timing = read_json(run_dir / 'internnav_timing_summary.json') or {}
+    diagnostics = read_json(run_dir / 'model_diagnostic_summary.json') or read_json(run_dir / f'{backend}_diagnostic_summary.json') or {}
+    timing = read_json(run_dir / 'timing_summary.json') or read_json(run_dir / 'internnav_timing_summary.json') or {}
 
     params = manifest.get('parameters', {}) if isinstance(manifest, dict) else {}
     result = manifest.get('result', {}) if isinstance(manifest, dict) else {}
@@ -353,6 +354,9 @@ def summarize_run(run_dir: Path, *, prefer_canonical: bool = True) -> dict[str, 
             'pedestrian_traversal_preflight_failed',
             'vln_instruction_manifest_lookup_failed',
             'infrastructure_exception',
+            'episode_model_error',
+            'episode_control_error',
+            'model_error',
             'camera_not_ready',
             'required_inputs_not_ready',
         }
@@ -373,6 +377,8 @@ def summarize_run(run_dir: Path, *, prefer_canonical: bool = True) -> dict[str, 
     )
 
     command_stats = diagnostics.get('command_stats', {}) if isinstance(diagnostics, dict) else {}
+    if params.get('execution_mode') == 'nav2_follow_path':
+        command_stats = {'stop_count': int(bool((checks.get('model_control') or {}).get('model_stop')))}
     event_counts = diagnostics.get('event_counts', {}) if isinstance(diagnostics, dict) else {}
     fault = diagnostics.get('fault_candidates', {}) if isinstance(diagnostics, dict) else {}
     stale_camera_count = fault.get('stale_record_count', 0) if isinstance(fault, dict) else 0
@@ -516,6 +522,7 @@ def summarize_run(run_dir: Path, *, prefer_canonical: bool = True) -> dict[str, 
         'model_trace_present': _as_bool((checks.get('model_control') or {}).get('trace_present')) if isinstance(checks, dict) else False,
         'model_control_pass': _as_bool((checks.get('model_control') or {}).get('pass')) if isinstance(checks, dict) else False,
         'model_trace_record_count': _int_or_zero((checks.get('model_control') or {}).get('trace_record_count')) if isinstance(checks, dict) else 0,
+        'path_count': _int_or_zero((checks.get('model_control') or {}).get('path_count')),
         'model_control_event_count': _int_or_zero((checks.get('model_control') or {}).get('direct_control_event_count')) if isinstance(checks, dict) else 0,
         'planning_request_count': _int_or_zero(event_counts.get('planning_request_started') if isinstance(event_counts, dict) else None),
         'trajectory_event_count': (_int_or_zero(diagnostics.get('path_accepted_count')) if backend == 'lightnav'

@@ -1,9 +1,7 @@
 import argparse
 import hashlib
 import json
-import math
 import os
-import re
 import shlex
 import signal
 import shutil
@@ -28,21 +26,9 @@ from arena_bringup.benchmark_profile import (
 )
 
 
-REALWORLD_HTTP_ADAPTER_TARGET = 'arena_vln_models.internnav:load_internvla_realworld_http_adapter'
-LEGACY_NATIVE_ADAPTER_TARGET = 'arena_vln_models.internnav:load_internnav_adapter'
-DEFAULT_INTERNNAV_ADAPTER_TARGET = REALWORLD_HTTP_ADAPTER_TARGET
-LEGACY_INTERNNAV_ADAPTER_TARGETS = {
-    LEGACY_NATIVE_ADAPTER_TARGET: REALWORLD_HTTP_ADAPTER_TARGET,
-    'internnav.agent.internvla_n1_agent_realworld.InternVLAN1AsyncAgent': REALWORLD_HTTP_ADAPTER_TARGET,
-}
-HTTP_ADAPTER_REPLACED_TARGETS = {
-    LEGACY_NATIVE_ADAPTER_TARGET,
-    *LEGACY_INTERNNAV_ADAPTER_TARGETS.keys(),
-}
 GENERIC_VLN_INSTRUCTIONS = {'', 'navigate', 'go', 'start', 'default', 'none', 'null'}
 SCENARIO_INSTRUCTION_SCHEMA_VERSION = 1
 SCENARIO_INSTRUCTION_FIELD = 'parsed_result.instruction'
-SYSTEM2_CHECKPOINT_REVISION_FILE = '.arena_system2_revision.json'
 
 
 def _write_yaml(path: str, data) -> None:
@@ -55,46 +41,6 @@ def _write_text(path: str, data: str) -> None:
         f.write(data)
 
 
-def _system2_checkpoint_provenance(path: str) -> dict | None:
-    raw_path = str(path or '').strip()
-    if not raw_path:
-        return None
-    checkpoint = os.path.abspath(os.path.expanduser(raw_path))
-    index_path = os.path.join(checkpoint, 'model.safetensors.index.json')
-    record = {
-        'path': checkpoint,
-        'index_path': index_path,
-        'index_sha256': None,
-        'revision': None,
-    }
-    candidate_paths = [index_path, os.path.join(checkpoint, SYSTEM2_CHECKPOINT_REVISION_FILE)]
-    if not any(os.path.exists(candidate) for candidate in candidate_paths):
-        workspace_root = _workspace_root_from_runtime()
-        container_prefix = os.path.join(os.sep, 'opt', 'arena_ws', 'deps', 'models')
-        if checkpoint == container_prefix or checkpoint.startswith(container_prefix + os.sep):
-            relative = os.path.relpath(checkpoint, container_prefix)
-            host_checkpoint = os.path.join(workspace_root, 'deps', 'models', relative)
-            index_path = os.path.join(host_checkpoint, 'model.safetensors.index.json')
-            revision_path = os.path.join(host_checkpoint, SYSTEM2_CHECKPOINT_REVISION_FILE)
-            record['host_path'] = host_checkpoint
-        else:
-            revision_path = os.path.join(checkpoint, SYSTEM2_CHECKPOINT_REVISION_FILE)
-    else:
-        revision_path = os.path.join(checkpoint, SYSTEM2_CHECKPOINT_REVISION_FILE)
-    record['index_path'] = index_path
-    try:
-        with open(index_path, 'rb') as stream:
-            record['index_sha256'] = hashlib.sha256(stream.read()).hexdigest()
-    except OSError:
-        pass
-    try:
-        with open(revision_path, encoding='utf-8') as stream:
-            revision = json.load(stream)
-        if isinstance(revision, dict):
-            record['revision'] = revision
-    except (OSError, ValueError):
-        pass
-    return record
 
 
 def _git_source_provenance(workspace_root: str) -> dict:
@@ -393,9 +339,9 @@ scenario_reset_topic = sys.argv[5] if len(sys.argv) > 5 else ''
 require_reset_for_history = (sys.argv[6].strip().lower() in {'1', 'true', 'yes'}) if len(sys.argv) > 6 else False
 rclpy.init()
 node = Node('internnav_eval_status_watcher')
-# A LightNav tick emits response, accepted path, then control back-to-back.
+# Buffer short bursts of generic client state transitions.
 # KEEP_LAST(1) loses the evidence needed to associate those events.
-qos = QoSProfile(depth=256 if topic.endswith(('/lightnav/status', '/navila/status')) else 1)
+qos = QoSProfile(depth=10)
 qos.reliability = ReliabilityPolicy.RELIABLE
 qos.durability = DurabilityPolicy.VOLATILE
 state = {'last': None, 'reset_seen': False}
@@ -711,221 +657,14 @@ def _normalize_external_ros_env(env: dict[str, str]) -> dict[str, dict[str, str]
     return resolved
 
 
-def _truncate_preflight_output(text: str, limit: int = 20000) -> str:
-    if len(text) <= limit:
-        return text
-    omitted = len(text) - limit
-    return text[:limit] + f'\n... <truncated {omitted} chars>'
 
 
-def _run_ros_list_command(env: dict[str, str], args: list[str], timeout_sec: float) -> dict:
-    started = time.monotonic()
-    try:
-        result = subprocess.run(
-            args,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=max(float(timeout_sec), 0.1),
-        )
-        return {
-            'command': args,
-            'returncode': result.returncode,
-            'stdout': _truncate_preflight_output(result.stdout),
-            'stderr': _truncate_preflight_output(result.stderr),
-            'duration_sec': time.monotonic() - started,
-            'timed_out': False,
-        }
-    except subprocess.TimeoutExpired as exc:
-        stdout = exc.stdout.decode(errors='replace') if isinstance(exc.stdout, bytes) else (exc.stdout or '')
-        stderr = exc.stderr.decode(errors='replace') if isinstance(exc.stderr, bytes) else (exc.stderr or '')
-        return {
-            'command': args,
-            'returncode': None,
-            'stdout': _truncate_preflight_output(stdout),
-            'stderr': _truncate_preflight_output(stderr),
-            'duration_sec': time.monotonic() - started,
-            'timed_out': True,
-        }
-    except Exception as exc:
-        return {
-            'command': args,
-            'returncode': None,
-            'stdout': '',
-            'stderr': repr(exc),
-            'duration_sec': time.monotonic() - started,
-            'timed_out': False,
-        }
 
 
-def _run_external_rclpy_discovery_probe(
-    env: dict[str, str],
-    *,
-    expected_service: str,
-    candidate_services: list[str] | None = None,
-    expected_status_topic: str,
-    timeout_sec: float,
-) -> dict:
-    python_bin = _eval_python_executable(env)
-    probe_code = r'''
-import json
-import sys
-import time
-
-import rclpy
-from rclpy.node import Node
-from rosnav_rl_msgs.srv import GetCommand
-
-expected_service = sys.argv[1]
-candidate_services = [name for name in json.loads(sys.argv[2]) if name]
-expected_status_topic = sys.argv[3]
-timeout_sec = float(sys.argv[4])
-
-rclpy.init(args=None)
-node = Node('internnav_eval_external_preflight_probe')
-deadline = time.monotonic() + max(timeout_sec, 0.0)
-attempts = 0
-services = []
-topics = []
-publisher_count = 0
-observed_service = ''
-service_response_ok = False
-checks = {
-    'service_visible': False,
-    'status_topic_visible': False,
-    'service_responds': False,
-}
-
-try:
-    while True:
-        attempts += 1
-        rclpy.spin_once(node, timeout_sec=0.05)
-        services = sorted(name for name, _types in node.get_service_names_and_types())
-        topics = sorted(name for name, _types in node.get_topic_names_and_types())
-        publisher_count = int(node.count_publishers(expected_status_topic) or 0)
-        observed_service = next((name for name in candidate_services if name in services), '')
-        service_response_ok = False
-        if observed_service:
-            try:
-                client = node.create_client(GetCommand, observed_service)
-                if client.wait_for_service(timeout_sec=0.0):
-                    future = client.call_async(GetCommand.Request())
-                    call_deadline = time.monotonic() + 1.0
-                    while time.monotonic() < call_deadline:
-                        rclpy.spin_once(node, timeout_sec=0.05)
-                        if future.done():
-                            try:
-                                response = future.result()
-                                service_response_ok = response is not None and getattr(response, 'twist', None) is not None
-                            except Exception:
-                                service_response_ok = False
-                            break
-                node.destroy_client(client)
-            except Exception:
-                service_response_ok = False
-        checks = {
-            'service_visible': bool(observed_service),
-            'status_topic_visible': expected_status_topic in topics and publisher_count > 0,
-            'service_responds': service_response_ok,
-        }
-        if all(checks.values()) or time.monotonic() >= deadline:
-            break
-        time.sleep(min(0.5, max(deadline - time.monotonic(), 0.0)))
-finally:
-    node.destroy_node()
-    rclpy.shutdown()
-
-print(json.dumps({
-    'attempts': attempts,
-    'checks': checks,
-    'candidate_services': candidate_services,
-    'observed_service': observed_service,
-    'service_response_ok': service_response_ok,
-    'status_topic_publisher_count': publisher_count,
-    'services': services,
-    'topics': topics,
-}))
-'''
-
-    started = time.monotonic()
-    service_candidates = candidate_services or [expected_service]
-    encoded_candidates = json.dumps(service_candidates)
-    try:
-        result = subprocess.run(
-            [python_bin, '-c', probe_code, expected_service, encoded_candidates, expected_status_topic, str(timeout_sec)],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=max(float(timeout_sec), 0.1) + 5.0,
-        )
-    except subprocess.TimeoutExpired as exc:
-        stdout = exc.stdout.decode(errors='replace') if isinstance(exc.stdout, bytes) else (exc.stdout or '')
-        stderr = exc.stderr.decode(errors='replace') if isinstance(exc.stderr, bytes) else (exc.stderr or '')
-        return {
-            'command': [python_bin, '-c', '<rclpy_external_preflight_probe>', expected_service, expected_status_topic, str(timeout_sec)],
-            'returncode': None,
-            'stdout': _truncate_preflight_output(stdout),
-            'stderr': _truncate_preflight_output(stderr),
-            'duration_sec': time.monotonic() - started,
-            'timed_out': True,
-            'probe_error': 'timeout',
-        }
-    except Exception as exc:
-        return {
-            'command': [python_bin, '-c', '<rclpy_external_preflight_probe>', expected_service, expected_status_topic, str(timeout_sec)],
-            'returncode': None,
-            'stdout': '',
-            'stderr': repr(exc),
-            'duration_sec': time.monotonic() - started,
-            'timed_out': False,
-            'probe_error': repr(exc),
-        }
-
-    payload = None
-    stdout_text = str(result.stdout or '')
-    stdout_lines = [line.strip() for line in stdout_text.splitlines() if line.strip()]
-    json_candidates = []
-    if stdout_text.strip():
-        json_candidates.append(stdout_text.strip())
-    json_candidates.extend(reversed(stdout_lines))
-    for candidate in json_candidates:
-        if not candidate.startswith('{'):
-            continue
-        try:
-            payload = json.loads(candidate)
-            break
-        except Exception:
-            continue
-
-    return {
-        'command': [python_bin, '-c', '<rclpy_external_preflight_probe>', expected_service, '<candidate_services>', expected_status_topic, str(timeout_sec)],
-        'returncode': result.returncode,
-        'stdout': _truncate_preflight_output(result.stdout),
-        'stderr': _truncate_preflight_output(result.stderr),
-        'duration_sec': time.monotonic() - started,
-        'timed_out': False,
-        'payload': payload,
-    }
 
 
-def _listed_names(command_result: dict) -> set[str]:
-    return {
-        line.strip()
-        for line in str(command_result.get('stdout') or '').splitlines()
-        if line.strip()
-    }
 
 
-def _topic_publisher_count(command_result: dict) -> int | None:
-    for line in str(command_result.get('stdout') or '').splitlines():
-        stripped = line.strip()
-        if not stripped.lower().startswith('publisher count:'):
-            continue
-        try:
-            return int(stripped.split(':', 1)[1].strip())
-        except Exception:
-            return None
-    return None
 
 
 _PEDESTRIAN_TRAVERSAL_PROBE = r'''
@@ -1122,6 +861,10 @@ print(json.dumps(out))
 '''
 
 
+def _truncate_preflight_output(value, limit=4000):
+    return str(value or "")[-limit:]
+
+
 def _run_pedestrian_traversal_preflight(
     env: dict[str, str],
     *,
@@ -1254,101 +997,8 @@ def _run_pedestrian_traversal_preflight(
     return report
 
 
-def _run_external_internnav_preflight(
-    env: dict[str, str],
-    *,
-    expected_service: str,
-    candidate_services: list[str] | None = None,
-    expected_status_topic: str,
-    timeout_sec: float,
-) -> dict:
-    probe_result = _run_external_rclpy_discovery_probe(
-        env,
-        expected_service=expected_service,
-        candidate_services=candidate_services,
-        expected_status_topic=expected_status_topic,
-        timeout_sec=timeout_sec,
-    )
-    payload = probe_result.get('payload') if isinstance(probe_result.get('payload'), dict) else {}
-    services = payload.get('services') if isinstance(payload.get('services'), list) else []
-    topics = payload.get('topics') if isinstance(payload.get('topics'), list) else []
-    checks = payload.get('checks') if isinstance(payload.get('checks'), dict) else {
-        'service_visible': expected_service in services,
-        'status_topic_visible': expected_status_topic in topics,
-        'service_responds': False,
-    }
-    attempts = int(payload.get('attempts') or 1)
-    observed_service = str(payload.get('observed_service') or '')
-    service_candidates = payload.get('candidate_services') if isinstance(payload.get('candidate_services'), list) else (candidate_services or [expected_service])
-    status_topic_publisher_count = payload.get('status_topic_publisher_count')
-    if status_topic_publisher_count is None and checks.get('status_topic_visible'):
-        status_topic_publisher_count = 1
-
-    missing = [name for name, passed in checks.items() if not passed]
-    return {
-        'pass': not missing,
-        'timeout_sec': timeout_sec,
-        'attempts': attempts,
-        'expected_service': expected_service,
-        'candidate_services': service_candidates,
-        'observed_service': observed_service,
-        'expected_status_topic': expected_status_topic,
-        'status_topic_publisher_count': status_topic_publisher_count,
-        'checks': checks,
-        'missing_checks': missing,
-        'service_list': {
-            'backend': 'rclpy_discovery_probe',
-            'command': probe_result.get('command'),
-            'returncode': probe_result.get('returncode'),
-            'stdout': probe_result.get('stdout'),
-            'stderr': probe_result.get('stderr'),
-            'duration_sec': probe_result.get('duration_sec'),
-            'timed_out': probe_result.get('timed_out'),
-            'observed_count': len(services),
-            'sample': services[:50],
-        },
-        'topic_list': {
-            'backend': 'rclpy_discovery_probe',
-            'command': probe_result.get('command'),
-            'returncode': probe_result.get('returncode'),
-            'stdout': probe_result.get('stdout'),
-            'stderr': probe_result.get('stderr'),
-            'duration_sec': probe_result.get('duration_sec'),
-            'timed_out': probe_result.get('timed_out'),
-            'observed_count': len(topics),
-            'sample': topics[:50],
-        },
-        'topic_info': {
-            'backend': 'rclpy_discovery_probe',
-            'command': probe_result.get('command'),
-            'returncode': probe_result.get('returncode'),
-            'stdout': probe_result.get('stdout'),
-            'stderr': probe_result.get('stderr'),
-            'duration_sec': probe_result.get('duration_sec'),
-            'timed_out': probe_result.get('timed_out'),
-            'publisher_count': status_topic_publisher_count,
-            'probe_error': probe_result.get('probe_error'),
-        },
-    }
 
 
-def _external_command_service_candidates(canonical_service: str, status_topic: str) -> list[str]:
-    candidates: list[str] = []
-
-    def add(name: str) -> None:
-        normalized = '/' + str(name or '').strip().strip('/')
-        if normalized != '/' and normalized not in candidates:
-            candidates.append(normalized)
-
-    add(canonical_service)
-    status = '/' + str(status_topic or '').strip().strip('/')
-    if status.endswith('/internnav/status'):
-        add(status[: -len('/internnav/status')] + '/get_command')
-    if status.endswith('/status'):
-        add(status[: -len('/status')] + '/get_command')
-    add('/get_command')
-    add('/internnav_server/get_command')
-    return candidates
 
 
 def _read_jsonl(path: str) -> list[dict]:
@@ -1369,348 +1019,10 @@ def _read_jsonl(path: str) -> list[dict]:
     return records
 
 
-def _write_internnav_diagnostic_summary(trace_path: str, output_path: str) -> dict | None:
-    records = _read_jsonl(trace_path)
-    if not records:
-        return None
-
-    def _coerce_xy(value) -> tuple[float, float] | None:
-        if isinstance(value, dict) and 'x' in value and 'y' in value:
-            try:
-                return (float(value['x']), float(value['y']))
-            except Exception:
-                return None
-        if isinstance(value, (list, tuple)) and len(value) >= 2:
-            try:
-                return (float(value[0]), float(value[1]))
-            except Exception:
-                return None
-        return None
-
-    action_counts: dict[str, int] = {}
-    no_action_status_counts: dict[str, int] = {}
-    statuses: dict[str, int] = {}
-    rotate_count = 0
-    forward_count = 0
-    stop_count = 0
-    control_record_count = 0
-    model_command_record_count = 0
-    pre_episode_ready_records = 0
-    yaw_sign_mismatch = 0
-    yaw_sign_check_count = 0
-    stale_records = 0
-    missing_rgb = 0
-    missing_depth = 0
-    official_primitive_count = 0
-    official_discrete_selected_count = 0
-    queued_action_tail_record_count = 0
-    dropped_action_tail_record_count = 0
-    dropped_action_tail_count = 0
-    action_effect_count = 0
-    yaw_sign_action_effect_match = 0
-    yaw_sign_action_effect_mismatch = 0
-    llm_raw_present_count = 0
-    llm_raw_has_digits_count = 0
-    llm_digits_present_count = 0
-    llm_digits_non_empty_count = 0
-    llm_raw_has_digits_but_digits_empty_count = 0
-    llm_symbolic_output_count = 0
-    llm_pixel_goal_output_count = 0
-    goal_distances = []
-    final_goal_distances = []
-    yaw_errors = []
-    commands = []
-    current_goal_xy: tuple[float, float] | None = None
-    odom_goal_distance_samples = []
-    event_counts: dict[str, int] = {}
-    for rec in records:
-        event_type = str(rec.get('event_type') or rec.get('event') or 'model_result')
-        event_counts[event_type] = event_counts.get(event_type, 0) + 1
-        payload = rec.get('parsed') if isinstance(rec.get('parsed'), dict) else rec
-        debug = payload.get('debug') if isinstance(payload.get('debug'), dict) else {}
-        llm = payload.get('llm') if isinstance(payload.get('llm'), dict) else {}
-        raw_llm = (
-            llm.get('raw_output_text')
-            or debug.get('raw_output_text')
-            or debug.get('subprocess_llm_output')
-            or debug.get('adapter_llm_output')
-            or debug.get('llm_output')
-        )
-        llm_digits = llm.get('llm_digits') if 'llm_digits' in llm else debug.get('llm_digits', debug.get('digit_groups'))
-        if raw_llm:
-            llm_raw_present_count += 1
-        raw_has_digits = bool(raw_llm and re.search(r'\d+', str(raw_llm)))
-        if raw_has_digits:
-            llm_raw_has_digits_count += 1
-        if llm_digits is not None:
-            llm_digits_present_count += 1
-        digits_non_empty = isinstance(llm_digits, list) and len(llm_digits) > 0
-        if digits_non_empty:
-            llm_digits_non_empty_count += 1
-        if raw_has_digits and not digits_non_empty:
-            llm_raw_has_digits_but_digits_empty_count += 1
-        output_mode = str(llm.get('output_mode') or debug.get('model_generation_output_mode') or '')
-        if output_mode == 'symbolic_action':
-            llm_symbolic_output_count += 1
-        elif output_mode == 'pixel_goal':
-            llm_pixel_goal_output_count += 1
-        status = str(payload.get('status', ''))
-        statuses[status] = statuses.get(status, 0) + 1
-
-        # ``backend_ready`` status samples are intentionally emitted by the
-        # external InternNav server before the episode starts.  They prove the
-        # backend is alive, but they often contain old sensor-age diagnostics
-        # from the previous run and no command/action.  Keep them in the raw
-        # status counts, but exclude them from command and fault ratios so the
-        # summary reflects episode-control health instead of startup readiness.
-        if status == 'backend_ready':
-            pre_episode_ready_records += 1
-            continue
-
-        control_record_count += 1
-        if status == 'internnav_command':
-            model_command_record_count += 1
-        action_info = payload.get('action') if isinstance(payload.get('action'), dict) else {}
-        if action_info.get('official_discrete_selected') or debug.get('official_discrete_selected'):
-            official_discrete_selected_count += 1
-        if action_info.get('official_discrete_primitive') or debug.get('official_discrete_primitive'):
-            official_primitive_count += 1
-        queued_tail = action_info.get('queued_action_sequence_tail', debug.get('queued_action_sequence_tail'))
-        if isinstance(queued_tail, list):
-            queued_action_tail_record_count += 1
-        dropped_tail = action_info.get('dropped_action_sequence_tail', debug.get('dropped_action_sequence_tail'))
-        if isinstance(dropped_tail, list):
-            dropped_action_tail_record_count += 1
-            dropped_action_tail_count += len(dropped_tail)
-        action_effect = payload.get('action_effect', debug.get('action_effect'))
-        if isinstance(action_effect, dict):
-            action_effect_count += 1
-            sign_match = action_effect.get('yaw_sign_matches_action')
-            if sign_match is True:
-                yaw_sign_action_effect_match += 1
-            elif sign_match is False:
-                yaw_sign_action_effect_mismatch += 1
-        action = action_info.get('selected')
-        if action is None:
-            action = debug.get('selected_action')
-        if action is None:
-            no_action_status_counts[status] = no_action_status_counts.get(status, 0) + 1
-        else:
-            key = str(action)
-            action_counts[key] = action_counts.get(key, 0) + 1
-        cmd = payload.get('command') if isinstance(payload.get('command'), dict) else {}
-        if not cmd and ('linear_x' in payload or 'angular_z' in payload):
-            cmd = payload
-        if not cmd and ('desired_v' in payload or 'desired_w' in payload):
-            cmd = {
-                'linear_x': payload.get('desired_v', 0.0),
-                'angular_z': payload.get('desired_w', 0.0),
-            }
-        vx = float(cmd.get('linear_x', 0.0) or 0.0)
-        wz = float(cmd.get('angular_z', 0.0) or 0.0)
-        commands.append({'linear_x': vx, 'angular_z': wz})
-        if abs(wz) > 0.05 and abs(vx) < 0.45:
-            rotate_count += 1
-        if vx > 0.05:
-            forward_count += 1
-        if abs(vx) <= 0.01 and abs(wz) <= 0.01:
-            stop_count += 1
-        goal = payload.get('goal') if isinstance(payload.get('goal'), dict) else {}
-        goal_xy = _coerce_xy(goal) or _coerce_xy(debug.get('goal'))
-        if goal_xy is not None:
-            current_goal_xy = goal_xy
-        dist = goal.get('goal_distance', debug.get('goal_distance'))
-        final_dist = debug.get('final_goal_distance')
-        yaw = goal.get('yaw_error', debug.get('yaw_error'))
-        odom_xy = _coerce_xy(debug.get('odom')) or _coerce_xy(payload.get('odom'))
-        if current_goal_xy is not None and odom_xy is not None:
-            odom_goal_distance = math.hypot(odom_xy[0] - current_goal_xy[0], odom_xy[1] - current_goal_xy[1])
-            odom_goal_distance_samples.append(
-                {
-                    'event_type': event_type,
-                    'status': status,
-                    'request_id': debug.get('request_id'),
-                    'http_idx': payload.get('http_idx'),
-                    'odom': [odom_xy[0], odom_xy[1]],
-                    'goal': [current_goal_xy[0], current_goal_xy[1]],
-                    'distance_m': odom_goal_distance,
-                }
-            )
-        if isinstance(dist, (float, int)):
-            goal_distances.append(float(dist))
-        if isinstance(final_dist, (float, int)):
-            final_goal_distances.append(float(final_dist))
-        if isinstance(yaw, (float, int)):
-            yaw_errors.append(float(yaw))
-            if abs(float(yaw)) > 0.25 and abs(wz) > 0.05:
-                yaw_sign_check_count += 1
-                if (float(yaw) * wz) < 0.0:
-                    yaw_sign_mismatch += 1
-        obs = payload.get('observation') if isinstance(payload.get('observation'), dict) else {}
-        missing_inputs = debug.get('missing_inputs') if isinstance(debug.get('missing_inputs'), list) else []
-        rgb_available = obs.get('rgb_available', debug.get('rgb_available'))
-        depth_available = obs.get('depth_available', debug.get('depth_available'))
-        if rgb_available is False or 'rgb' in missing_inputs:
-            missing_rgb += 1
-        if depth_available is False or 'depth' in missing_inputs:
-            missing_depth += 1
-        ages = obs.get('sensor_ages_sec') if isinstance(obs.get('sensor_ages_sec'), dict) else {}
-        if not ages and isinstance(debug.get('sensor_ages_sec'), dict):
-            ages = debug.get('sensor_ages_sec')
-        stale_after = float(obs.get('stale_after_sec', debug.get('stale_after_sec', 0.0)) or 0.0)
-        if stale_after > 0.0:
-            for value in ages.values():
-                if isinstance(value, (float, int)) and float(value) > stale_after:
-                    stale_records += 1
-                    break
-
-    total = len(records)
-    first_distance = goal_distances[0] if goal_distances else None
-    last_distance = goal_distances[-1] if goal_distances else None
-    min_distance = min(goal_distances) if goal_distances else None
-    progress = (first_distance - last_distance) if first_distance is not None and last_distance is not None else None
-    first_final_distance = final_goal_distances[0] if final_goal_distances else None
-    last_final_distance = final_goal_distances[-1] if final_goal_distances else None
-    min_final_distance = min(final_goal_distances) if final_goal_distances else None
-    final_progress = (
-        first_final_distance - last_final_distance
-        if first_final_distance is not None and last_final_distance is not None
-        else None
-    )
-    odom_goal_distances = [sample['distance_m'] for sample in odom_goal_distance_samples]
-    first_odom_goal_distance = odom_goal_distances[0] if odom_goal_distances else None
-    last_odom_goal_distance = odom_goal_distances[-1] if odom_goal_distances else None
-    min_odom_goal_distance = min(odom_goal_distances) if odom_goal_distances else None
-    odom_goal_progress = (
-        first_odom_goal_distance - last_odom_goal_distance
-        if first_odom_goal_distance is not None and last_odom_goal_distance is not None
-        else None
-    )
-    min_odom_goal_sample = None
-    if odom_goal_distance_samples:
-        min_odom_goal_sample = min(odom_goal_distance_samples, key=lambda sample: sample['distance_m'])
-    ratio_total = control_record_count or total
-    rotate_ratio = rotate_count / ratio_total if ratio_total else 0.0
-    forward_ratio = forward_count / ratio_total if ratio_total else 0.0
-    yaw_sign_mismatch_ratio = yaw_sign_mismatch / yaw_sign_check_count if yaw_sign_check_count else 0.0
-    effective_goal_progress = progress if progress is not None else odom_goal_progress
-    flags = []
-    if rotate_ratio >= 0.65 and (effective_goal_progress is None or effective_goal_progress < 0.5):
-        flags.append('rotate_heavy_low_progress')
-    if yaw_sign_mismatch_ratio >= 0.45:
-        flags.append('possible_action_or_yaw_sign_mismatch')
-    if ratio_total and stale_records / ratio_total >= 0.2:
-        flags.append('possible_stale_observations')
-    if missing_rgb or missing_depth:
-        flags.append('missing_camera_inputs')
-    if official_discrete_selected_count and official_primitive_count == 0:
-        flags.append('missing_official_discrete_primitive_conversion')
-    if dropped_action_tail_count:
-        flags.append('official_discrete_action_tail_dropped')
-    if llm_raw_has_digits_but_digits_empty_count:
-        flags.append('llm_digits_drop_suspected')
-
-    summary = {
-        'trace_path': trace_path,
-        'record_count': total,
-        'control_record_count': control_record_count,
-        'model_command_record_count': model_command_record_count,
-        'pre_episode_ready_records': pre_episode_ready_records,
-        'event_counts': event_counts,
-        'action_counts': action_counts,
-        'no_action_status_counts': no_action_status_counts,
-        'status_counts': statuses,
-        'command_stats': {
-            'rotate_count': rotate_count,
-            'rotate_ratio': rotate_ratio,
-            'forward_count': forward_count,
-            'forward_ratio': forward_ratio,
-            'stop_count': stop_count,
-        },
-        'official_discrete_stats': {
-            'official_discrete_selected_count': official_discrete_selected_count,
-            'official_discrete_primitive_count': official_primitive_count,
-            'queued_action_tail_record_count': queued_action_tail_record_count,
-            'dropped_action_tail_record_count': dropped_action_tail_record_count,
-            'dropped_action_tail_count': dropped_action_tail_count,
-            'action_effect_count': action_effect_count,
-            'yaw_sign_action_effect_match_count': yaw_sign_action_effect_match,
-            'yaw_sign_action_effect_mismatch_count': yaw_sign_action_effect_mismatch,
-        },
-        'llm_trace_stats': {
-            'raw_llm_present_count': llm_raw_present_count,
-            'raw_llm_has_digits_count': llm_raw_has_digits_count,
-            'llm_digits_present_count': llm_digits_present_count,
-            'llm_digits_non_empty_count': llm_digits_non_empty_count,
-            'raw_has_digits_but_llm_digits_empty_count': llm_raw_has_digits_but_digits_empty_count,
-            'symbolic_output_count': llm_symbolic_output_count,
-            'pixel_goal_output_count': llm_pixel_goal_output_count,
-        },
-        'goal_distance': {
-            'first': first_distance,
-            'last': last_distance,
-            'min': min_distance,
-            'progress_first_minus_last': progress,
-        },
-        'final_goal_distance': {
-            'first': first_final_distance,
-            'last': last_final_distance,
-            'min': min_final_distance,
-            'progress_first_minus_last': final_progress,
-        },
-        'odom_goal_distance': {
-            'first': first_odom_goal_distance,
-            'last': last_odom_goal_distance,
-            'min': min_odom_goal_distance,
-            'progress_first_minus_last': odom_goal_progress,
-            'sample_count': len(odom_goal_distance_samples),
-            'min_sample': min_odom_goal_sample,
-        },
-        'fault_candidates': {
-            'flags': flags,
-            'yaw_sign_check_count': yaw_sign_check_count,
-            'yaw_sign_mismatch_count': yaw_sign_mismatch,
-            'yaw_sign_mismatch_ratio': yaw_sign_mismatch_ratio,
-            'stale_record_count': stale_records,
-            'missing_rgb_count': missing_rgb,
-            'missing_depth_count': missing_depth,
-        },
-    }
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(summary, f, ensure_ascii=False, indent=2, sort_keys=True)
-    return summary
 
 
-def _is_internnav_run(args) -> bool:
-    if getattr(args, 'model_backend', '') in {'lightnav', 'navila'}:
-        return False
-    adapter_target = str(args.dual_vln_adapter_target or '').lower()
-    mode = str(args.dual_vln_mode or '').lower()
-    model_path = str(args.dual_vln_model_path or '').lower()
-    http_url = str(
-        getattr(args, 'dual_vln_http_url', '')
-        or os.environ.get('ARENA_EVAL_INTERNNAV_HTTP_URL')
-        or os.environ.get('ARENA_INTERNNAV_HTTP_URL')
-        or ''
-    ).strip()
-    return (
-        'internnav' in adapter_target
-        or mode == 'internnav'
-        or ('internvla' in model_path or 'internnav' in model_path)
-        or bool(http_url)
-    )
 
 
-def _normalize_internnav_adapter_target(adapter_target: str) -> tuple[str, str | None]:
-    normalized = str(adapter_target or '').strip()
-    if not normalized:
-        return DEFAULT_INTERNNAV_ADAPTER_TARGET, 'default'
-
-    mapped = LEGACY_INTERNNAV_ADAPTER_TARGETS.get(normalized)
-    if mapped is not None:
-        return mapped, f'legacy:{normalized}'
-
-    return normalized, None
 
 
 def _default_vision_topics(robot: str) -> tuple[str, str, str] | None:
@@ -1731,8 +1043,6 @@ def _default_eval_video_sim_top_down_topic(robot: str) -> str:
     return ''
 
 
-def _default_eval_video_debug_overlay_topic() -> str:
-    return 'internnav/debug_image'
 
 
 def _task_root_from_topic(topic: str) -> str:
@@ -3075,7 +2385,7 @@ class EvalVideoRecorder(Node):
                 fallback_overlay = PILImage.fromarray(ego_frame).convert('RGB')
                 draw = ImageDraw.Draw(fallback_overlay)
                 draw.rectangle((8, 8, min(fallback_overlay.width - 8, 430), 58), fill=(0, 0, 0), outline=(255, 180, 0), width=2)
-                draw.text((16, 18), 'InternNav debug overlay unavailable', fill=(255, 220, 80))
+                draw.text((16, 18), 'Model debug overlay unavailable', fill=(255, 220, 80))
                 draw.text((16, 36), 'showing ego camera fallback', fill=(255, 255, 255))
                 self.debug_overlay_writer.write(np.asarray(fallback_overlay, dtype=np.uint8))
                 self.debug_overlay_fallback_frame_count += 1
@@ -3456,163 +2766,20 @@ def _apply_runtime_defaults(args) -> dict:
             else:
                 adjustments['vln_instruction_manifest_not_found'] = manifest_attempts
 
-    if getattr(args, 'model_backend', '') in {'lightnav', 'navila'}:
-        args.dual_vln_status_topic = _robot_topic(args.task_reset_topic, args.robot, args.dual_vln_status_topic)
-        if not args.eval_video_sim_top_down_topic:
-            args.eval_video_sim_top_down_topic = _default_eval_video_sim_top_down_topic(args.robot)
-        return adjustments
-
-    env_python, env_python_name = _first_env_value(
-        'ARENA_VLN_MODEL_PYTHON',
-        'ARENA_INTERNNAV_PYTHON',
-        'ARENA_PYTHON',
-    )
-    if env_python and not getattr(args, 'dual_vln_python_executable', ''):
-        args.dual_vln_python_executable = env_python
-        adjustments['dual_vln_python_executable'] = f'{env_python} ({env_python_name})'
-    elif getattr(args, 'dual_vln_python_executable', ''):
-        configured_python = str(getattr(args, 'dual_vln_python_executable', '')).strip()
-        if configured_python and not os.path.exists(configured_python):
-            if env_python and os.path.exists(env_python):
-                args.dual_vln_python_executable = env_python
-                adjustments['dual_vln_python_executable'] = (
-                    f'{env_python} ({env_python_name}; replaced missing configured path {configured_python})'
-                )
-            else:
-                adjustments['dual_vln_python_executable_missing'] = configured_python
-
-    dual_vln_status_topic = str(getattr(args, 'dual_vln_status_topic', '') or '').strip()
-    if dual_vln_status_topic in {
-        '/task_generator_node/dual_vln/status',
-        '/task_generator_node/internnav/status',
-    }:
-        args.dual_vln_status_topic = f'/task_generator_node/{args.robot}/internnav/status'
-        adjustments['dual_vln_status_topic'] = args.dual_vln_status_topic
-    elif dual_vln_status_topic and not dual_vln_status_topic.startswith('/'):
-        args.dual_vln_status_topic = _robot_topic(
-            getattr(args, 'task_reset_topic', '/task_generator_node/task_reset'),
-            args.robot,
-            dual_vln_status_topic,
-        )
-        adjustments['dual_vln_status_topic'] = args.dual_vln_status_topic
-
-    if _is_internnav_run(args):
-        env_system2_path, env_system2_path_name = _first_env_value(
-            'ARENA_EVAL_INTERNNAV_SYSTEM2_MODEL_PATH',
-            'ARENA_INTERNNAV_SYSTEM2_MODEL_PATH',
-        )
-        if env_system2_path and not getattr(args, 'dual_vln_system2_model_path', ''):
-            args.dual_vln_system2_model_path = env_system2_path
-            adjustments['dual_vln_system2_model_path'] = (
-                f'{env_system2_path} ({env_system2_path_name})'
-            )
-        env_http_url, env_http_url_name = _first_env_value(
-            'ARENA_EVAL_INTERNNAV_HTTP_URL',
-            'ARENA_INTERNNAV_HTTP_URL',
-        )
-        if env_http_url and not getattr(args, 'dual_vln_http_url', ''):
-            args.dual_vln_http_url = env_http_url
-            adjustments['dual_vln_http_url'] = f'{env_http_url} ({env_http_url_name})'
-        env_http_timeout, env_http_timeout_name = _first_env_value(
-            'ARENA_EVAL_INTERNNAV_HTTP_TIMEOUT_SEC',
-            'ARENA_INTERNNAV_HTTP_TIMEOUT_SEC',
-        )
-        if env_http_timeout and float(getattr(args, 'dual_vln_http_timeout_sec', 0.0) or 0.0) <= 0.0:
-            try:
-                args.dual_vln_http_timeout_sec = float(env_http_timeout)
-                adjustments['dual_vln_http_timeout_sec'] = f'{args.dual_vln_http_timeout_sec} ({env_http_timeout_name})'
-            except (TypeError, ValueError):
-                adjustments['dual_vln_http_timeout_sec_invalid'] = f'{env_http_timeout} ({env_http_timeout_name})'
-        if getattr(args, 'dual_vln_http_url', ''):
-            raw_adapter_target = str(getattr(args, 'dual_vln_adapter_target', '') or '').strip()
-            normalized_http_target, _ = _normalize_internnav_adapter_target(raw_adapter_target)
-            if not raw_adapter_target or raw_adapter_target in HTTP_ADAPTER_REPLACED_TARGETS or normalized_http_target == DEFAULT_INTERNNAV_ADAPTER_TARGET:
-                args.dual_vln_adapter_target = REALWORLD_HTTP_ADAPTER_TARGET
-                adjustments['dual_vln_adapter_target'] = f'{REALWORLD_HTTP_ADAPTER_TARGET} (http-url)'
-            if str(getattr(args, 'dual_vln_mode', '')).strip().lower() == 'heuristic':
-                args.dual_vln_mode = 'adapter'
-                adjustments['dual_vln_mode'] = 'adapter (http-url)'
-        normalized_adapter_target, adapter_target_source = _normalize_internnav_adapter_target(
-            getattr(args, 'dual_vln_adapter_target', '')
-        )
-        if (
-            not getattr(args, 'dual_vln_adapter_target', '')
-            or normalized_adapter_target != getattr(args, 'dual_vln_adapter_target', '')
-        ):
-            args.dual_vln_adapter_target = normalized_adapter_target
-            adjustments['dual_vln_adapter_target'] = (
-                normalized_adapter_target if adapter_target_source is None else f'{normalized_adapter_target} ({adapter_target_source})'
-            )
-
-        env_model_path, env_model_path_name = _first_env_value(
-            'ARENA_INTERNNAV_MODEL_PATH',
-            'INTERNNAV_MODEL_PATH',
-            'ARENA_VLN_MODEL_PATH',
-        )
-        if env_model_path and not getattr(args, 'dual_vln_model_path', ''):
-            args.dual_vln_model_path = env_model_path
-            adjustments['dual_vln_model_path'] = f'{env_model_path} ({env_model_path_name})'
-        default_topics = _default_vision_topics(args.robot)
-        if default_topics is not None:
-            rgb_topic, depth_topic, camera_info_topic = default_topics
-            if not args.dual_vln_rgb_topic:
-                args.dual_vln_rgb_topic = rgb_topic
-                adjustments['dual_vln_rgb_topic'] = rgb_topic
-            if not args.dual_vln_depth_topic:
-                args.dual_vln_depth_topic = depth_topic
-                adjustments['dual_vln_depth_topic'] = depth_topic
-            if not args.dual_vln_camera_info_topic:
-                args.dual_vln_camera_info_topic = camera_info_topic
-                adjustments['dual_vln_camera_info_topic'] = camera_info_topic
-
-    if getattr(args, 'dual_vln_require_real_backend', False):
-        default_topics = _default_vision_topics(args.robot)
-        if default_topics is not None:
-            rgb_topic, depth_topic, camera_info_topic = default_topics
-            if not args.dual_vln_rgb_topic:
-                args.dual_vln_rgb_topic = rgb_topic
-                adjustments['dual_vln_rgb_topic'] = rgb_topic
-            if not args.dual_vln_depth_topic:
-                args.dual_vln_depth_topic = depth_topic
-                adjustments['dual_vln_depth_topic'] = depth_topic
-            if not args.dual_vln_camera_info_topic:
-                args.dual_vln_camera_info_topic = camera_info_topic
-                adjustments['dual_vln_camera_info_topic'] = camera_info_topic
-
-    if not getattr(args, 'eval_video_sim_top_down_topic', ''):
-        sim_top_down_topic = _default_eval_video_sim_top_down_topic(args.robot)
-        if sim_top_down_topic:
-            args.eval_video_sim_top_down_topic = sim_top_down_topic
-            adjustments['eval_video_sim_top_down_topic'] = sim_top_down_topic
-
-    if not getattr(args, 'eval_video_debug_overlay_topic', ''):
-        debug_overlay_topic = _default_eval_video_debug_overlay_topic()
-        if debug_overlay_topic:
-            args.eval_video_debug_overlay_topic = debug_overlay_topic
-            adjustments['eval_video_debug_overlay_topic'] = debug_overlay_topic
-
-    if getattr(args, 'save_eval_video', False):
-        args.dual_vln_enable_visualization = True
-        adjustments.setdefault('dual_vln_enable_visualization', True)
-
-    device_name = str(args.dual_vln_device).strip().lower()
-    real_backend_requested = bool(
-        getattr(args, 'dual_vln_require_real_backend', False)
-        or str(getattr(args, 'dual_vln_adapter_target', '')).strip()
-        or str(getattr(args, 'dual_vln_mode', '')).strip().lower() == 'internnav'
-    )
-    model_inference_requested = bool(
-        str(getattr(args, 'dual_vln_adapter_target', '')).strip()
-        or str(getattr(args, 'dual_vln_mode', '')).strip().lower()
-        in {'internnav', 'model', 'torchscript', 'adapter', 'python', 'python_adapter'}
-    )
-    if real_backend_requested and args.dual_vln_inference_timeout_sec <= 0.2:
-        args.dual_vln_inference_timeout_sec = 120.0
-        adjustments['dual_vln_inference_timeout_sec'] = 120.0
-    if model_inference_requested and device_name == 'cpu' and args.dual_vln_inference_rate_hz >= 10.0:
-        args.dual_vln_inference_rate_hz = 0.5
-        adjustments['dual_vln_inference_rate_hz'] = 0.5
-
+    original_status_topic = args.model_status_topic
+    args.model_status_topic = _robot_topic(args.task_reset_topic, args.robot, args.model_status_topic or 'model/status')
+    if args.model_status_topic != original_status_topic:
+        adjustments['model_status_topic'] = args.model_status_topic
+    topics = _default_vision_topics(args.robot)
+    if topics:
+        if not args.vln_rgb_topic:
+            args.vln_rgb_topic = topics[0]
+        if not args.vln_depth_topic:
+            args.vln_depth_topic = topics[1]
+        if not args.vln_camera_info_topic:
+            args.vln_camera_info_topic = topics[2]
+    if not args.eval_video_sim_top_down_topic:
+        args.eval_video_sim_top_down_topic = _default_eval_video_sim_top_down_topic(args.robot)
     return adjustments
 
 
@@ -3621,49 +2788,25 @@ def _classify_end_reason(
     finished_observed: bool,
     launch_returncode: int | None,
     timed_out: bool,
-    internnav_status,
+    model_status,
     episode_outcome=None,
-    internnav_diagnostic_summary=None,
+    model_diagnostic_summary=None,
 ):
     if finished_observed and isinstance(episode_outcome, dict):
         reason = str(episode_outcome.get('reason') or '').strip()
-        if reason in {'goal_reached', 'model_stop', 'sim_timeout', 'wall_timeout', 'force_reset'}:
+        if reason in {'goal_reached', 'model_stop', 'sim_timeout', 'wall_timeout', 'force_reset', 'model_error', 'control_error'}:
             return f'episode_{reason}'
 
     if finished_observed and not timed_out and launch_returncode in (None, 0):
-        if isinstance(internnav_diagnostic_summary, dict):
-            final_distance = internnav_diagnostic_summary.get('final_goal_distance')
+        if isinstance(model_diagnostic_summary, dict):
+            final_distance = model_diagnostic_summary.get('final_goal_distance')
             if isinstance(final_distance, dict):
                 min_final = final_distance.get('min')
                 if isinstance(min_final, (float, int)) and float(min_final) > 0.75:
                     return 'finished_without_goal_reached'
         return 'finished'
-    if isinstance(internnav_status, dict):
-        status = str(internnav_status.get('status', ''))
-        degraded = bool(internnav_status.get('degraded', False))
-        debug = internnav_status.get('debug', {}) if isinstance(internnav_status.get('debug'), dict) else {}
-        missing_inputs = debug.get('missing_inputs') if isinstance(debug.get('missing_inputs'), list) else []
-        if status in {
-            'adapter_exception',
-            'backend_unavailable',
-            'camera_timeout',
-            'invalid_adapter_output',
-            'invalid_model_output',
-            'model_unavailable',
-            'internnav_missing_rgb',
-            'internnav_missing_depth',
-            'internnav_empty_output',
-            'empty_model_output',
-        }:
-            return 'adapter_failure'
-        if degraded and status in {'waiting_for_camera', 'stale_camera'}:
-            if any(name in {'tf', 'odom', 'camera_info', 'rgb', 'depth'} for name in missing_inputs):
-                return 'required_inputs_not_ready'
-            return 'camera_not_ready'
-        if degraded and status in {'inference_timeout', 'exception'}:
-            return 'infrastructure_exception'
-        if debug.get('safe_stop'):
-            return 'safe_stop'
+    if isinstance(model_status, dict) and model_status.get('status') == 'error':
+        return 'model_error'
 
     if finished_observed:
         return 'finished'
@@ -3884,12 +3027,11 @@ def _profile_bootstrap(argv: list[str] | None = None) -> tuple[list[str], dict, 
     )
     try:
         profile = load_profile(profile_path)
-        machine = validate_machine_environment(profile)
+        validate_machine_environment(profile)
     except BenchmarkProfileError as exc:
         bootstrap.error(str(exc))
     # Device selection is deliberately the one machine-local runtime override.
     # The profile metadata/hash still describes the immutable source file.
-    profile['runtime']['device'] = machine['device']
     runtime = profile['runtime']
     for name, value in {
         'ROS_DOMAIN_ID': runtime['ros_domain_id'],
@@ -3902,41 +3044,19 @@ def _profile_bootstrap(argv: list[str] | None = None) -> tuple[list[str], dict, 
     return raw_argv, profile, profile_metadata(profile_path, profile)
 
 
-def _resolved_profile_parameters(args) -> dict:
-    return {
-        'sim': args.sim,
-        'human': args.human,
-        'world': args.world,
-        'scenario': args.scenario_file,
-        'expected_human_count': args.expected_human_count,
-        'pedestrian_seed': args.pedestrian_seed,
-        'pedestrian_pool_size': args.pedestrian_pool_size,
-        'task_generator_parameter_file': args.task_generator_parameter_file,
-        'robot': args.robot,
-        'local_planner': args.local_planner,
-        'inter_planner': args.inter_planner,
-        'global_planner': args.global_planner,
-        'episodes': args.episodes,
-        'timeout_sec': args.timeout,
-        'device': args.dual_vln_device,
-        'mode': args.dual_vln_mode,
-        'model_backend': getattr(args, 'model_backend', 'internnav'),
-        'execution_mode': getattr(args, 'execution_mode', 'external_direct_cmd_vel' if args.internnav_direct_cmd_vel else 'wrapper'),
-        'system2_model_path': args.dual_vln_system2_model_path,
-        'external_server': args.internnav_external_server or getattr(args, 'model_backend', '') in {'lightnav', 'navila'},
-        'direct_cmd_vel': args.internnav_direct_cmd_vel or getattr(args, 'model_backend', '') in {'lightnav', 'navila'},
-        'social_eval': args.social_eval,
-        'save_eval_video': args.save_eval_video,
-        'output_prefix': args.output_prefix,
-    }
+def _resolved_profile_parameters(args):
+    names = ('sim', 'human', 'world', 'robot', 'local_planner', 'inter_planner', 'global_planner',
+             'episodes', 'timeout', 'model_backend', 'execution_mode', 'social_eval',
+             'save_eval_video', 'output_prefix', 'expected_human_count', 'pedestrian_seed',
+             'pedestrian_pool_size', 'task_generator_parameter_file', 'model_status_topic')
+    return {**{name: getattr(args, name) for name in names}, 'scenario': args.scenario_file}
 
 
 def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> int:
     raw_argv, benchmark_profile, benchmark_profile_metadata = _profile_bootstrap(argv)
     parser = argparse.ArgumentParser(
         description=(
-            'Run a reproducible Arena InternNav eval from arena-1. '
-            'Real InternNav model inference is always external and must be served by internnav-1.'
+            'Run an Arena benchmark with an external native FollowPath client.'
         )
     )
     parser.add_argument(
@@ -3968,10 +3088,10 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
     )
     parser.add_argument('--world', default='map_empty')
     parser.add_argument('--robot', default='jackal')
-    parser.add_argument('--local-planner', default='dual_vln')
-    parser.add_argument('--inter-planner', default='navigate_to_pose_w_replanning_and_recovery')
-    parser.add_argument('--global-planner', default='navfn')
-    parser.add_argument('--episodes', type=int, default=2)
+    parser.add_argument('--local-planner', choices=['regulated_pure_pursuit'], default='regulated_pure_pursuit')
+    parser.add_argument('--inter-planner', choices=['none'], default='none')
+    parser.add_argument('--global-planner', choices=['none'], default='none')
+    parser.add_argument('--episodes', type=int, choices=[1], default=1)
     parser.add_argument('--timeout', type=int, default=120)
     parser.add_argument(
         '--timeout-wall-factor',
@@ -4031,136 +3151,19 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
         default='',
         help='Optional timestamp disambiguator for GRScenes instruction manifest lookup.',
     )
-    parser.add_argument('--internnav-mode', '--dual-vln-mode', dest='dual_vln_mode', default='heuristic')
-    parser.add_argument('--internnav-model-path', '--dual-vln-model-path', dest='dual_vln_model_path', default='')
-    parser.add_argument(
-        '--internnav-system2-model-path',
-        '--dual-vln-system2-model-path',
-        dest='dual_vln_system2_model_path',
-        default='',
-        help='Optional pure System2 checkpoint overlaid by the external InternNav server.',
-    )
-    parser.add_argument('--internnav-device', '--dual-vln-device', dest='dual_vln_device', default='cpu')
-    parser.add_argument(
-        '--internnav-inference-rate-hz',
-        '--dual-vln-inference-rate-hz',
-        '--internnav-planning-rate-hz',
-        '--dual-vln-planning-rate-hz',
-        dest='dual_vln_inference_rate_hz',
-        type=float,
-        default=3.3333333333,
-        help=(
-            'Outer InternNav realworld client planning request rate. '
-            'System-2 cadence is controlled separately by plan_step_gap in the InternNav server.'
-        ),
-    )
-    parser.add_argument('--internnav-inference-timeout-sec', '--dual-vln-inference-timeout-sec', dest='dual_vln_inference_timeout_sec', type=float, default=0.2)
-    parser.add_argument('--internnav-rgb-topic', '--dual-vln-rgb-topic', dest='dual_vln_rgb_topic', default='')
-    parser.add_argument('--internnav-depth-topic', '--dual-vln-depth-topic', dest='dual_vln_depth_topic', default='')
-    parser.add_argument('--internnav-camera-info-topic', '--dual-vln-camera-info-topic', dest='dual_vln_camera_info_topic', default='')
-    parser.add_argument('--internnav-python-executable', '--dual-vln-python-executable', dest='dual_vln_python_executable', default='')
-    parser.add_argument('--internnav-adapter-target', '--dual-vln-adapter-target', dest='dual_vln_adapter_target', default='')
-    parser.add_argument(
-        '--internnav-http-url',
-        '--dual-vln-http-url',
-        dest='dual_vln_http_url',
-        default='',
-        help='HTTP URL for InternVLA realworld /eval_dual adapter, e.g. http://127.0.0.1:5801/eval_dual.',
-    )
-    parser.add_argument(
-        '--internnav-http-timeout-sec',
-        '--dual-vln-http-timeout-sec',
-        dest='dual_vln_http_timeout_sec',
-        type=float,
-        default=0.0,
-        help='HTTP request timeout for InternVLA realworld adapter. Defaults to inference timeout when unset.',
-    )
-    parser.add_argument('--internnav-require-real-backend', '--dual-vln-require-real-backend', dest='dual_vln_require_real_backend', action='store_true')
-    parser.add_argument('--internnav-strict-device', '--dual-vln-strict-device', dest='dual_vln_strict_device', action='store_true')
-    parser.add_argument(
-        '--internnav-model-output-policy',
-        '--dual-vln-model-output-policy',
-        dest='dual_vln_model_output_policy',
-        choices=['trajectory', 'discrete', 'raw'],
-        default='trajectory',
-        help='Select how InternNav outputs are converted: trajectory prefers output_trajectory->cmd_vel; discrete forces action ids; raw keeps legacy precedence.',
-    )
-    parser.add_argument('--internnav-look-down', '--dual-vln-look-down', dest='dual_vln_look_down', action='store_true')
-    parser.add_argument(
-        '--internnav-enable-visualization',
-        '--dual-vln-enable-visualization',
-        dest='dual_vln_enable_visualization',
-        action=argparse.BooleanOptionalAction,
-    )
-    parser.add_argument(
-        '--internnav-external-server',
-        '--dual-vln-external-server',
-        dest='internnav_external_server',
-        action=argparse.BooleanOptionalAction,
-        help='Use the dedicated internnav-1 model server. This is the required/default mode for real InternNav eval.',
-    )
-    parser.add_argument(
-        '--internnav-official-client',
-        '--internnav-direct-cmd-vel',
-        '--dual-vln-direct-cmd-vel',
-        dest='internnav_direct_cmd_vel',
-        action=argparse.BooleanOptionalAction,
-        help='Use upstream InternNav realworld ROS2 client publishing cmd_vel directly; skip Arena get_command/status wrapper checks.',
-    )
-    parser.add_argument('--internnav-command-service', '--dual-vln-command-service', dest='dual_vln_command_service', default='')
-    parser.add_argument('--internnav-visualization-topic', '--dual-vln-visualization-topic', dest='dual_vln_visualization_topic', default='internnav/debug_image')
-    parser.add_argument('--internnav-action-visualization-topic', '--dual-vln-action-visualization-topic', dest='dual_vln_action_visualization_topic', default='internnav/action_image')
-    parser.add_argument('--internnav-visualization-rate-hz', '--dual-vln-visualization-rate-hz', dest='dual_vln_visualization_rate_hz', type=float, default=5.0)
-    parser.add_argument('--internnav-model-output-topic', '--dual-vln-model-output-topic', dest='dual_vln_model_output_topic', default='internnav/model_output')
-    parser.add_argument(
-        '--internnav-timing-mode',
-        '--dual-vln-timing-mode',
-        dest='dual_vln_timing_mode',
-        choices=['wall', 'sim_time_realworld'],
-        default='wall',
-        help='For direct official-client eval, delay raw cmd_vel in simulation time to emulate real-world model latency.',
-    )
-    parser.add_argument(
-        '--internnav-model-latency-sec',
-        '--dual-vln-model-latency-sec',
-        dest='dual_vln_model_latency_sec',
-        type=float,
-        default=0.3,
-        help='Fixed sim-time command delay used when --internnav-timing-mode=sim_time_realworld.',
-    )
-    parser.add_argument(
-        '--internnav-latency-policy',
-        '--dual-vln-latency-policy',
-        dest='dual_vln_latency_policy',
-        choices=['fixed', 'measured'],
-        default='fixed',
-        help='Latency source used by internnav_timing_manager.',
-    )
-    parser.add_argument(
-        '--internnav-raw-cmd-vel-topic',
-        '--dual-vln-raw-cmd-vel-topic',
-        dest='dual_vln_raw_cmd_vel_topic',
-        default='internnav/raw_cmd_vel',
-        help='Raw official-client command topic consumed by internnav_timing_manager.',
-    )
+    parser.add_argument('--model-backend', help='Experiment label; does not select a controller')
+    parser.add_argument('--execution-mode', choices=['nav2_follow_path'], default='nav2_follow_path')
+    parser.add_argument('--vln-rgb-topic', default='')
+    parser.add_argument('--vln-depth-topic', default='')
+    parser.add_argument('--vln-camera-info-topic', default='')
+    parser.add_argument('--model-status-topic', default='model/status')
+    parser.add_argument('--model-heartbeat-timeout-sec', type=float, default=2.5)
     parser.add_argument('--save-eval-video', action=argparse.BooleanOptionalAction)
     parser.add_argument('--eval-video-fps', type=float, default=10.0)
     parser.add_argument('--eval-video-top-down-size-px', type=int, default=640)
     parser.add_argument('--eval-video-top-down-window-m', type=float, default=10.0)
     parser.add_argument('--eval-video-sim-top-down-topic', default='')
     parser.add_argument('--eval-video-debug-overlay-topic', default='')
-    parser.add_argument('--internnav-status-topic', '--dual-vln-status-topic', dest='dual_vln_status_topic', default='/task_generator_node/internnav/status')
-    parser.add_argument(
-        '--external-server-preflight-timeout-sec',
-        type=float,
-        default=15.0,
-        help='Bounded discovery timeout for external InternNav get_command/status preflight checks.',
-    )
-    parser.add_argument(
-        '--skip-external-server-preflight',
-        action='store_true',
-        help='Skip fail-fast external InternNav discovery preflight. Intended only for diagnostics.',
-    )
     parser.add_argument('--finished-topic', default='/task_generator_node/finished')
     parser.add_argument('--task-reset-topic', default='/task_generator_node/task_reset')
     parser.add_argument('--launch-timeout-sec', type=float, default=0.0)
@@ -4181,22 +3184,11 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
     parser.set_defaults(**evaluation_defaults(benchmark_profile))
     args = parser.parse_args(raw_argv)
     args.model_backend = model_backend or getattr(args, 'model_backend', 'internnav')
-    is_external_client = args.model_backend in {'lightnav', 'navila'}
-    external_direct_cmd_vel = args.internnav_direct_cmd_vel or is_external_client
     if args.expected_human_count < -1:
         parser.error('--expected-human-count must be -1 or non-negative')
     if args.pedestrian_pool_size != -1 and args.pedestrian_pool_size < args.expected_human_count:
         parser.error('--pedestrian-pool-size must be -1 or at least --expected-human-count')
     runtime_adjustments = _apply_runtime_defaults(args)
-    if args.internnav_direct_cmd_vel:
-        args.internnav_external_server = True
-        args.skip_external_server_preflight = True
-        args.dual_vln_require_real_backend = False
-        args.dual_vln_strict_device = False
-    if str(args.dual_vln_mode).strip().lower() == 'internnav' and not str(getattr(args, 'dual_vln_http_url', '') or '').strip():
-        args.internnav_external_server = True
-        args.dual_vln_require_real_backend = False
-        args.dual_vln_strict_device = False
     explicit_tm_obstacles = any(
         value == '--tm-obstacles' or value.startswith('--tm-obstacles=')
         for value in raw_argv
@@ -4220,7 +3212,7 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
     if args.print_effective_config:
         print(json.dumps({
             'benchmark_profile': benchmark_profile_metadata,
-            'precedence': 'cli_or_case > machine_local_paths_or_device > benchmark_profile > legacy_code_defaults',
+            'precedence': 'cli_or_case > benchmark_profile > code_defaults',
             'resolved_parameters': _resolved_profile_parameters(args),
             'runtime_environment': {
                 name: os.environ.get(name)
@@ -4249,15 +3241,15 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
     sim_setup_share = get_package_share_directory('arena_simulation_setup')
 
     timestamp = os.environ.get('ARENA_EVAL_FIXED_TIMESTAMP') or datetime.now().strftime('%Y%m%d_%H%M%S')
-    run_name = f'{timestamp}_{args.world}_{args.robot}_{args.dual_vln_mode}'
+    run_name = f'{timestamp}_{args.world}_{args.robot}_{args.model_backend}'
     relative_dir = os.path.join(args.output_prefix, run_name)
     output_root = _resolve_output_root(args.output_root, arena_eval_share)
     output_dir = os.path.join(output_root, relative_dir)
     snapshots_dir = os.path.join(output_dir, 'snapshots')
     os.makedirs(snapshots_dir, exist_ok=True)
-    dual_vln_status_path = os.path.join(output_dir, f'{args.model_backend}_status.json')
-    internnav_trace_path = os.path.join(output_dir, f'{args.model_backend}_trace.jsonl')
-    internnav_diagnostic_summary_path = os.path.join(output_dir, f'{args.model_backend}_diagnostic_summary.json')
+    model_status_path = os.path.join(output_dir, 'model_status.json')
+    model_trace_path = os.path.join(output_dir, 'model_trace.jsonl')
+    model_diagnostic_summary_path = os.path.join(output_dir, 'model_diagnostic_summary.json')
     episode_outcome_path = os.path.join(output_dir, 'episode_outcome.json')
     postprocess_commands_path = os.path.join(output_dir, 'postprocess_commands.txt')
     videos_dir = os.path.join(output_dir, 'videos')
@@ -4265,35 +3257,26 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
     video_error_path = os.path.join(output_dir, 'video_recording_error.txt')
 
     env = os.environ.copy()
-    if is_external_client:
-        env.update(ARENA_MODEL_BACKEND=args.model_backend, ARENA_MODEL_EXECUTION_MODE='external_direct_cmd_vel',
-                   ARENA_MODEL_STATUS_TOPIC=args.dual_vln_status_topic)
     if args.scenario_file:
         env['ARENA_SCENARIO_FILE'] = str(args.scenario_file)
     if str(args.world or '').startswith('grscenes_'):
         env.setdefault('ARENA_ISAAC_LOAD_USD_TIMEOUT_SEC', '1800.0')
-    resolved_ros_env = _normalize_external_ros_env(env) if args.internnav_external_server else {
-        key: {'value': str(env.get(key, '')).strip(), 'source': 'environment' if str(env.get(key, '')).strip() else 'unset'}
-        for key in ('ROS_DOMAIN_ID', 'RMW_IMPLEMENTATION', 'ROS_LOCALHOST_ONLY')
-    }
+    resolved_ros_env = _normalize_external_ros_env(env)
 
-    if args.save_eval_video and not args.dual_vln_rgb_topic:
+    if args.save_eval_video and not args.vln_rgb_topic:
         raise SystemExit(
             'save_eval_video requires a resolvable RGB topic. '
-            'Pass --internnav-rgb-topic explicitly or use a robot/mode with runtime defaults.'
+            'Pass --vln-rgb-topic explicitly or use a robot/mode with runtime defaults.'
         )
 
-    robot_ego_topic = _robot_topic(args.task_reset_topic, args.robot, args.dual_vln_rgb_topic)
-    robot_depth_topic = _robot_topic(args.task_reset_topic, args.robot, args.dual_vln_depth_topic)
-    robot_camera_info_topic = _robot_topic(args.task_reset_topic, args.robot, args.dual_vln_camera_info_topic)
+    robot_ego_topic = _robot_topic(args.task_reset_topic, args.robot, args.vln_rgb_topic)
+    robot_depth_topic = _robot_topic(args.task_reset_topic, args.robot, args.vln_depth_topic)
+    robot_camera_info_topic = _robot_topic(args.task_reset_topic, args.robot, args.vln_camera_info_topic)
     robot_debug_overlay_topic = _robot_topic(args.task_reset_topic, args.robot, args.eval_video_debug_overlay_topic)
-    robot_model_output_topic = _robot_topic(args.task_reset_topic, args.robot, args.dual_vln_model_output_topic)
-    robot_raw_cmd_vel_topic = _robot_topic(args.task_reset_topic, args.robot, args.dual_vln_raw_cmd_vel_topic)
     robot_sim_top_down_topic = _robot_topic(args.task_reset_topic, args.robot, args.eval_video_sim_top_down_topic)
     robot_odom_topic = _robot_topic(args.task_reset_topic, args.robot, 'odom')
-    robot_goal_topic = _robot_topic(args.task_reset_topic, args.robot, 'episode_goal_pose')
+    robot_goal_topic = _robot_topic(args.task_reset_topic, args.robot, 'episode_goal_pose_metadata')
     robot_scan_topic = _robot_topic(args.task_reset_topic, args.robot, 'scan')
-    robot_command_service = str(args.dual_vln_command_service or '').strip() or _robot_topic(args.task_reset_topic, args.robot, 'get_command')
     robot_scenario_reset_topic = _scenario_reset_topic(args.task_reset_topic, args.robot)
     episode_outcome_topic = _episode_outcome_topic(args.finished_topic, args.task_reset_topic)
     map_yaml_path = _world_map_yaml_path(sim_setup_share, args.world)
@@ -4305,7 +3288,7 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
     snapshot_files = {}
     for label, src in {
         'task_generator': effective_task_generator_file,
-        'internnav_controller': os.path.join(sim_setup_share, 'configs', 'nav2', 'controllers', 'dual_vln', 'controller_config.yaml'),
+        'tracking_config': os.path.join(get_package_share_directory('arena_vln_models'), 'tracking_config.py'),
         'benchmark_profile': benchmark_profile_metadata['path'],
     }.items():
         copied = _copy_if_exists(src, os.path.join(snapshots_dir, _snapshot_name(label, src)))
@@ -4341,32 +3324,9 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
         f'expected_human_count:={args.expected_human_count}',
         'episode_start_delay_sec:=1.0',
         f'vln_instruction:={args.vln_instruction}',
-        f'dual_vln_mode:={args.dual_vln_mode}',
-        f'dual_vln_device:={args.dual_vln_device}',
-        f'dual_vln_inference_rate_hz:={args.dual_vln_inference_rate_hz}',
-        f'dual_vln_inference_timeout_sec:={args.dual_vln_inference_timeout_sec}',
-        f'dual_vln_enable_visualization:={str(args.dual_vln_enable_visualization).lower()}',
-        f'internnav_external_server:={str(args.internnav_external_server).lower()}',
-        f'dual_vln_external_server:={str(args.internnav_external_server).lower()}',
-        f'internnav_direct_cmd_vel:={str(args.internnav_direct_cmd_vel).lower()}',
-        f'dual_vln_direct_cmd_vel:={str(args.internnav_direct_cmd_vel).lower()}',
-        f'dual_vln_require_real_backend:={str(args.dual_vln_require_real_backend).lower()}',
-        f'dual_vln_strict_device:={str(args.dual_vln_strict_device).lower()}',
-        f'dual_vln_visualization_topic:={args.dual_vln_visualization_topic}',
-        f'dual_vln_action_visualization_topic:={args.dual_vln_action_visualization_topic}',
-        f'dual_vln_visualization_rate_hz:={args.dual_vln_visualization_rate_hz}',
-        f'dual_vln_model_output_topic:={args.dual_vln_model_output_topic}',
-        f'internnav_timing_mode:={args.dual_vln_timing_mode}',
-        f'dual_vln_timing_mode:={args.dual_vln_timing_mode}',
-        f'internnav_model_latency_sec:={args.dual_vln_model_latency_sec}',
-        f'dual_vln_model_latency_sec:={args.dual_vln_model_latency_sec}',
-        f'internnav_latency_policy:={args.dual_vln_latency_policy}',
-        f'dual_vln_latency_policy:={args.dual_vln_latency_policy}',
-        f'internnav_raw_cmd_vel_topic:={args.dual_vln_raw_cmd_vel_topic}',
-        f'dual_vln_raw_cmd_vel_topic:={args.dual_vln_raw_cmd_vel_topic}',
+        'execution_mode:=nav2_follow_path',
+        f'model_heartbeat_timeout_sec:={args.model_heartbeat_timeout_sec}',
     ]
-    if args.local_planner in {'dual_vln', 'lightnav', 'navila'}:
-        launch_cmd.append('enable_collision_monitor:=false')
     # Only forwarded when a mode was actually requested.  An empty value means
     # "leave configs/hunav/default.yaml in charge", and ros2launch rejects a
     # trailing ':=' outright (parse_launch_arguments raises RuntimeError on
@@ -4374,36 +3334,12 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
     # aborts every default-flag run before the launch service starts.  A
     # non-empty value changes how long pedestrians keep walking, which changes
     # scene dynamics, so it is also recorded under `parameters` below.
+    if args.vln_rgb_topic:
+        launch_cmd.append(f'vln_rgb_topic:={args.vln_rgb_topic}')
     if args.pedestrian_goal_traversal:
         launch_cmd.append(f'pedestrian_goal_traversal:={args.pedestrian_goal_traversal}')
-    if external_direct_cmd_vel:
-        launch_cmd.append('robot_launch_file:=' + ('external_direct_eval.launch.py' if is_external_client else 'internnav_async_eval.launch.py'))
-    if args.dual_vln_rgb_topic:
-        launch_cmd.append(f'dual_vln_rgb_topic:={args.dual_vln_rgb_topic}')
-    if args.dual_vln_depth_topic:
-        launch_cmd.append(f'dual_vln_depth_topic:={args.dual_vln_depth_topic}')
-    if args.dual_vln_camera_info_topic:
-        launch_cmd.append(f'dual_vln_camera_info_topic:={args.dual_vln_camera_info_topic}')
-    if args.dual_vln_python_executable:
-        launch_cmd.append(f'dual_vln_python_executable:={args.dual_vln_python_executable}')
-    if args.dual_vln_adapter_target:
-        launch_cmd.append(f'dual_vln_adapter_target:={args.dual_vln_adapter_target}')
-    if args.dual_vln_http_url:
-        launch_cmd.append(f'dual_vln_http_url:={args.dual_vln_http_url}')
-    if args.dual_vln_http_timeout_sec and args.dual_vln_http_timeout_sec > 0.0:
-        launch_cmd.append(f'dual_vln_http_timeout_sec:={args.dual_vln_http_timeout_sec}')
-    if args.dual_vln_model_output_policy:
-        launch_cmd.append(f'dual_vln_model_output_policy:={args.dual_vln_model_output_policy}')
-    if args.dual_vln_command_service:
-        launch_cmd.append(f'dual_vln_command_service:={args.dual_vln_command_service}')
-    if args.dual_vln_status_topic:
-        launch_cmd.append(f'dual_vln_status_topic:={args.dual_vln_status_topic}')
-    if args.dual_vln_look_down:
-        launch_cmd.append('dual_vln_look_down:=true')
     if args.vln_instruction_file:
         launch_cmd.append(f'vln_instruction_file:={args.vln_instruction_file}')
-    if args.dual_vln_model_path:
-        launch_cmd.append(f'dual_vln_model_path:={args.dual_vln_model_path}')
     if args.scenario_file:
         launch_cmd.append(f'scenario_file:={args.scenario_file}')
     if args.task_generator_parameter_file:
@@ -4487,7 +3423,7 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
                 'expected_human_count': args.expected_human_count,
                 'required_videos': [
                     'ego_observation',
-                    'ego_debug_overlay',
+                    *(['ego_debug_overlay'] if args.eval_video_debug_overlay_topic else []),
                     'sim_top_down',
                     'map_top_down_follow',
                 ],
@@ -4503,40 +3439,7 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
             'vln_instruction_manifest': args.vln_instruction_manifest,
             'vln_instruction_episode': args.vln_instruction_episode,
             'vln_instruction_timestamp': args.vln_instruction_timestamp,
-            'dual_vln_mode': args.dual_vln_mode,
-            'dual_vln_model_path': args.dual_vln_model_path,
-            'dual_vln_system2_model_path': args.dual_vln_system2_model_path,
-            'dual_vln_device': args.dual_vln_device,
-            'internnav_planning_rate_hz': args.dual_vln_inference_rate_hz,
-            'dual_vln_inference_rate_hz': args.dual_vln_inference_rate_hz,
-            'dual_vln_inference_timeout_sec': args.dual_vln_inference_timeout_sec,
-            'dual_vln_rgb_topic': args.dual_vln_rgb_topic,
-            'dual_vln_depth_topic': args.dual_vln_depth_topic,
-            'dual_vln_camera_info_topic': args.dual_vln_camera_info_topic,
-            'dual_vln_python_executable': args.dual_vln_python_executable,
             'eval_python_executable': sys.executable,
-            'dual_vln_adapter_target': args.dual_vln_adapter_target,
-            'dual_vln_http_url': args.dual_vln_http_url,
-            'dual_vln_http_timeout_sec': args.dual_vln_http_timeout_sec,
-            'dual_vln_require_real_backend': args.dual_vln_require_real_backend,
-            'dual_vln_strict_device': args.dual_vln_strict_device,
-            'dual_vln_model_output_policy': args.dual_vln_model_output_policy,
-            'dual_vln_look_down': args.dual_vln_look_down,
-            'dual_vln_enable_visualization': args.dual_vln_enable_visualization,
-            'internnav_external_server': args.internnav_external_server,
-            'internnav_direct_cmd_vel': args.internnav_direct_cmd_vel,
-            'external_server_preflight_timeout_sec': args.external_server_preflight_timeout_sec,
-            'skip_external_server_preflight': args.skip_external_server_preflight,
-            'dual_vln_visualization_topic': args.dual_vln_visualization_topic,
-            'dual_vln_action_visualization_topic': args.dual_vln_action_visualization_topic,
-            'dual_vln_visualization_rate_hz': args.dual_vln_visualization_rate_hz,
-            'dual_vln_model_output_topic': args.dual_vln_model_output_topic,
-            'dual_vln_model_output_topic_resolved': robot_model_output_topic,
-            'dual_vln_timing_mode': args.dual_vln_timing_mode,
-            'dual_vln_model_latency_sec': args.dual_vln_model_latency_sec,
-            'dual_vln_latency_policy': args.dual_vln_latency_policy,
-            'dual_vln_raw_cmd_vel_topic': args.dual_vln_raw_cmd_vel_topic,
-            'dual_vln_raw_cmd_vel_topic_resolved': robot_raw_cmd_vel_topic,
             'save_eval_video': args.save_eval_video,
             'eval_video_fps': args.eval_video_fps,
             'eval_video_top_down_size_px': args.eval_video_top_down_size_px,
@@ -4551,9 +3454,6 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
             'eval_video_scan_topic': robot_scan_topic if args.save_eval_video else None,
             'eval_video_scenario_reset_topic': robot_scenario_reset_topic if args.save_eval_video else None,
             'eval_video_map_yaml_path': map_yaml_path if args.save_eval_video else None,
-            'dual_vln_status_topic': args.dual_vln_status_topic,
-            'dual_vln_model_output_topic': robot_model_output_topic,
-            'dual_vln_command_service': robot_command_service,
             'finished_topic': args.finished_topic,
             'episode_outcome_topic': episode_outcome_topic,
             'task_reset_topic': args.task_reset_topic,
@@ -4567,22 +3467,16 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
         'runtime_environment': {
             'ros_discovery': resolved_ros_env,
         },
-        'model_provenance': {
-            'base_model_path': args.dual_vln_model_path,
-            'system2_checkpoint': _system2_checkpoint_provenance(
-                args.dual_vln_system2_model_path
-            ),
-        },
+        'model_provenance': {'model': args.model_backend, 'interface': 'nav2_msgs/action/FollowPath'},
         'provenance': _git_source_provenance(_workspace_root_from_runtime()),
         'snapshots': snapshot_files,
         'artifacts': {
             'snapshots_dir': snapshots_dir,
-            'dual_vln_status_path': dual_vln_status_path,
-            'internnav_trace_path': internnav_trace_path,
-            'internnav_diagnostic_summary_path': internnav_diagnostic_summary_path,
+            'model_status_path': model_status_path,
+            'path_execution_trace_path': os.path.join(output_dir, 'path_execution.jsonl'),
+            'model_trace_path': model_trace_path,
+            'model_diagnostic_summary_path': model_diagnostic_summary_path,
             'episode_outcome_path': episode_outcome_path,
-            'internnav_timing_trace_path': os.path.join(output_dir, 'internnav_timing_trace.jsonl'),
-            'internnav_timing_summary_path': os.path.join(output_dir, 'internnav_timing_summary.json'),
             'rtf_csv_path': os.path.join(output_dir, 'rtf.csv'),
             'social_metrics_path': os.path.join(output_dir, 'social_metrics.json') if args.social_eval else None,
             'vln_task_metrics_path': os.path.join(output_dir, 'vln_task_metrics.json') if args.social_eval else None,
@@ -4610,14 +3504,9 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
 
     manifest['model_backend'] = args.model_backend
     manifest['parameters'].update(model_backend=args.model_backend,
-        execution_mode='external_direct_cmd_vel' if external_direct_cmd_vel else 'wrapper',
-        controller={'lightnav': 'lightnav_mpc', 'navila': 'navila_action_velocity'}.get(args.model_backend, 'internnav_native'))
-    if is_external_client:
-        from importlib import import_module
-        runtime_identity = import_module(f'arena_bringup.{args.model_backend}_support').runtime_identity
-        manifest['model_provenance'] = runtime_identity(args.robot)
-        manifest['artifacts'][f'{args.model_backend}_trace_path'] = manifest['artifacts'].pop('internnav_trace_path')
-        manifest['artifacts'][f'{args.model_backend}_diagnostic_summary_path'] = manifest['artifacts'].pop('internnav_diagnostic_summary_path')
+        execution_mode='nav2_follow_path', controller='regulated_pure_pursuit',
+        model_status_topic=args.model_status_topic,
+        model_heartbeat_timeout_sec=args.model_heartbeat_timeout_sec)
     manifest_path = os.path.join(output_dir, 'run_manifest.yaml')
     _write_yaml(manifest_path, manifest)
     if manifest_binding_failure:
@@ -4646,47 +3535,6 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
 
     env.setdefault('RCUTILS_LOGGING_BUFFERED_STREAM', '1')
     env.setdefault('ARENA_EVAL_PYTHON', sys.executable)
-    env['ARENA_EVAL_INTERNNAV_MODE'] = str(args.dual_vln_mode)
-    env['ARENA_EVAL_INTERNNAV_MODEL_PATH'] = str(args.dual_vln_model_path or '')
-    env['ARENA_EVAL_INTERNNAV_SYSTEM2_MODEL_PATH'] = str(
-        args.dual_vln_system2_model_path or ''
-    )
-    env['ARENA_EVAL_INTERNNAV_DEVICE'] = str(args.dual_vln_device)
-    env['ARENA_EVAL_INTERNNAV_RGB_TOPIC'] = str(args.dual_vln_rgb_topic or '')
-    env['ARENA_EVAL_INTERNNAV_DEPTH_TOPIC'] = str(args.dual_vln_depth_topic or '')
-    env['ARENA_EVAL_INTERNNAV_CAMERA_INFO_TOPIC'] = str(args.dual_vln_camera_info_topic or '')
-    env['ARENA_EVAL_INTERNNAV_ADAPTER_TARGET'] = str(args.dual_vln_adapter_target or '')
-    if args.dual_vln_http_url:
-        env['ARENA_EVAL_INTERNNAV_HTTP_URL'] = str(args.dual_vln_http_url)
-    else:
-        # Do not export an empty high-priority override: launch files also look
-        # at ARENA_INTERNNAV_HTTP_URL, and an empty ARENA_EVAL_* value would mask
-        # that fallback in EnvironmentVariable substitutions.
-        env.pop('ARENA_EVAL_INTERNNAV_HTTP_URL', None)
-    env['ARENA_EVAL_INTERNNAV_HTTP_TIMEOUT_SEC'] = str(
-        args.dual_vln_http_timeout_sec
-        if float(args.dual_vln_http_timeout_sec or 0.0) > 0.0
-        else args.dual_vln_inference_timeout_sec
-    )
-    env['ARENA_EVAL_INTERNNAV_REQUIRE_REAL_BACKEND'] = str(bool(args.dual_vln_require_real_backend)).lower()
-    env['ARENA_EVAL_INTERNNAV_STRICT_DEVICE'] = str(bool(args.dual_vln_strict_device)).lower()
-    env['ARENA_EVAL_INTERNNAV_MODEL_OUTPUT_POLICY'] = str(args.dual_vln_model_output_policy or 'trajectory')
-    env['ARENA_EVAL_INTERNNAV_LOOK_DOWN'] = str(bool(args.dual_vln_look_down)).lower()
-    env['ARENA_EVAL_INTERNNAV_ENABLE_VISUALIZATION'] = str(bool(args.dual_vln_enable_visualization)).lower()
-    env['ARENA_EVAL_INTERNNAV_VISUALIZATION_TOPIC'] = str(args.dual_vln_visualization_topic)
-    env['ARENA_EVAL_INTERNNAV_ACTION_VISUALIZATION_TOPIC'] = str(args.dual_vln_action_visualization_topic)
-    env['ARENA_EVAL_INTERNNAV_VISUALIZATION_RATE_HZ'] = str(args.dual_vln_visualization_rate_hz)
-    env['ARENA_EVAL_INTERNNAV_MODEL_OUTPUT_TOPIC'] = str(args.dual_vln_model_output_topic)
-    env['ARENA_EVAL_INTERNNAV_TIMING_MODE'] = str(args.dual_vln_timing_mode)
-    env['ARENA_EVAL_INTERNNAV_MODEL_LATENCY_SEC'] = str(args.dual_vln_model_latency_sec)
-    env['ARENA_EVAL_INTERNNAV_LATENCY_POLICY'] = str(args.dual_vln_latency_policy)
-    env['ARENA_EVAL_INTERNNAV_RAW_CMD_VEL_TOPIC'] = str(args.dual_vln_raw_cmd_vel_topic)
-    env['ARENA_EVAL_INTERNNAV_PLANNING_RATE_HZ'] = str(args.dual_vln_inference_rate_hz)
-    env['ARENA_EVAL_INTERNNAV_INFERENCE_RATE_HZ'] = str(args.dual_vln_inference_rate_hz)
-    env['ARENA_EVAL_INTERNNAV_INFERENCE_TIMEOUT_SEC'] = str(args.dual_vln_inference_timeout_sec)
-    env['ARENA_EVAL_INTERNNAV_TRACE_PATH'] = internnav_trace_path
-    env['ARENA_INTERNNAV_EXTERNAL_SERVER'] = '1' if args.internnav_external_server else '0'
-    env['ARENA_INTERNNAV_DIRECT_CMD_VEL'] = '1' if args.internnav_direct_cmd_vel else '0'
     # SECOND, INDEPENDENT DELIVERY CHANNEL for the pedestrian traversal mode.
     # The launch argument alone was not enough: it reached arena.launch.py and was
     # forwarded, but the included task_generator launch description neither declared
@@ -4697,16 +3545,6 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
     # not arrive. Exported unconditionally (empty when nothing is requested) so that
     # 'not requested' and 'requested but undelivered' are distinguishable there.
     env['ARENA_EVAL_PEDESTRIAN_GOAL_TRAVERSAL'] = str(args.pedestrian_goal_traversal or '')
-    if args.dual_vln_python_executable:
-        # The InternNav adapter itself looks for these variables when deciding
-        # whether to launch the heavy model in a separate Python environment.
-        # Set them in the ros2 launch process environment as a robust fallback
-        # to launch_ros Node.additional_env, which can be bypassed by legacy
-        # launch aliases in nested robot launch files.
-        env['ARENA_VLN_MODEL_PYTHON'] = str(args.dual_vln_python_executable)
-        env['ARENA_INTERNNAV_PYTHON'] = str(args.dual_vln_python_executable)
-        env['ARENA_PYTHON'] = str(args.dual_vln_python_executable)
-
     # Hard precondition, checked before Isaac starts: if this run asked for a
     # pedestrian traversal mode, the build that is about to run must actually
     # honour it. A stale install would ignore the request, resolve to `once`, and
@@ -4752,52 +3590,6 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
         )
         _finalize_run_result(output_dir, manifest_path, manifest, 2)
         return 2
-
-    if args.internnav_external_server and not args.skip_external_server_preflight:
-        command_service_candidates = _external_command_service_candidates(robot_command_service, args.dual_vln_status_topic)
-        external_preflight = _run_external_internnav_preflight(
-            env,
-            expected_service=robot_command_service,
-            candidate_services=command_service_candidates,
-            expected_status_topic=args.dual_vln_status_topic,
-            timeout_sec=args.external_server_preflight_timeout_sec,
-        )
-        manifest['result']['external_server_preflight'] = external_preflight
-        _write_yaml(manifest_path, manifest)
-        if not external_preflight.get('pass'):
-            manifest['result'].update(
-                {
-                    'launch_returncode': None,
-                    'metrics_returncode': None,
-                    'social_metrics_returncode': None,
-                    'vln_task_metrics_returncode': None,
-                    'artifact_validation_returncode': None,
-                    'evaluator_returncode': 2,
-                    'timed_out': False,
-                    'end_reason': 'external_preflight_failed',
-                }
-            )
-            _finalize_run_result(output_dir, manifest_path, manifest, 2)
-            return 2
-        observed_service = str(external_preflight.get('observed_service') or '').strip()
-        if observed_service and observed_service != robot_command_service:
-            args.dual_vln_command_service = observed_service
-            robot_command_service = observed_service
-            launch_cmd.append(f'dual_vln_command_service:={observed_service}')
-            manifest['parameters']['dual_vln_command_service'] = observed_service
-            postprocess_commands[0] = shlex.join(launch_cmd)
-            _write_text(postprocess_commands_path, '\n'.join(postprocess_commands) + '\n')
-            _write_yaml(manifest_path, manifest)
-    elif args.internnav_external_server:
-        manifest['result']['external_server_preflight'] = {
-            'pass': None,
-            'skipped': True,
-            'reason': 'internnav_direct_cmd_vel' if args.internnav_direct_cmd_vel else 'skip_external_server_preflight',
-            'expected_service': robot_command_service,
-            'expected_status_topic': args.dual_vln_status_topic,
-            'timeout_sec': args.external_server_preflight_timeout_sec,
-        }
-        _write_yaml(manifest_path, manifest)
 
     launch_timeout_sec = args.launch_timeout_sec
     if launch_timeout_sec <= 0.0:
@@ -4874,12 +3666,12 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
         # long-lived external client was started with a different trace path.
         status_proc = _start_status_watcher(
             env,
-            args.dual_vln_status_topic,
-            dual_vln_status_path,
-            internnav_trace_path,
+            args.model_status_topic,
+            model_status_path,
+            model_trace_path,
             task_reset_topic=args.task_reset_topic,
             scenario_reset_topic=robot_scenario_reset_topic,
-            require_reset_for_history=bool(args.internnav_direct_cmd_vel or getattr(args, 'model_backend', '') in {'lightnav', 'navila'}),
+            require_reset_for_history=True,
         )
         launch_proc = subprocess.Popen(
             launch_cmd,
@@ -5015,16 +3807,12 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
         if cleanup_error is not None and not active_exception:
             raise cleanup_error
 
-    dual_vln_status = _read_json_if_exists(dual_vln_status_path)
+    model_status = _read_json_if_exists(model_status_path)
     episode_outcome = _read_json_if_exists(episode_outcome_path)
-    summarize_model = _write_internnav_diagnostic_summary
-    if is_external_client:
-        from importlib import import_module
-        diagnostic_summary = import_module(f'arena_bringup.{args.model_backend}_support').diagnostic_summary
-        summarize_model = diagnostic_summary
-    internnav_diagnostic_summary = summarize_model(
-        internnav_trace_path,
-        internnav_diagnostic_summary_path,
+    from arena_vln_models.diagnostics import summarize_status as summarize_model
+    model_diagnostic_summary = summarize_model(
+        model_trace_path,
+        model_diagnostic_summary_path,
     )
     video_index = _read_json_if_exists(video_index_path) if args.save_eval_video else None
     video_error = _read_text_if_exists(video_error_path) if args.save_eval_video else None
@@ -5040,7 +3828,7 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
             for episode in episodes:
                 if not isinstance(episode, dict):
                     continue
-                for field in ('ego_frames', 'debug_overlay_frames', 'top_down_frames'):
+                for field in ('ego_frames', 'top_down_frames', *(['debug_overlay_frames'] if args.eval_video_debug_overlay_topic else [])):
                     if int(episode.get(field, 0) or 0) <= 0:
                         video_artifacts_complete = False
                         video_artifact_issues.append(f'{field}_empty')
@@ -5051,24 +3839,24 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
         if video_returncode != 0:
             video_artifacts_complete = False
             video_artifact_issues.append(f'video_recorder_returncode_{video_returncode}')
-    if internnav_diagnostic_summary is not None and video_artifact_issues:
-        flags = internnav_diagnostic_summary.setdefault('fault_candidates', {}).setdefault('flags', [])
+    if model_diagnostic_summary is not None and video_artifact_issues:
+        flags = model_diagnostic_summary.setdefault('fault_candidates', {}).setdefault('flags', [])
         if 'missing_or_empty_video_artifacts' not in flags:
             flags.append('missing_or_empty_video_artifacts')
-        with open(internnav_diagnostic_summary_path, 'w', encoding='utf-8') as f:
-            json.dump(internnav_diagnostic_summary, f, ensure_ascii=False, indent=2, sort_keys=True)
+        with open(model_diagnostic_summary_path, 'w', encoding='utf-8') as f:
+            json.dump(model_diagnostic_summary, f, ensure_ascii=False, indent=2, sort_keys=True)
     end_reason = _classify_end_reason(
         finished_observed=finished_observed,
         launch_returncode=launch_returncode,
         timed_out=timed_out,
-        internnav_status=dual_vln_status,
+        model_status=model_status,
         episode_outcome=episode_outcome,
-        internnav_diagnostic_summary=internnav_diagnostic_summary,
+        model_diagnostic_summary=model_diagnostic_summary,
     )
 
-    manifest['artifacts'][f'{args.model_backend}_status_present'] = dual_vln_status is not None
-    manifest['artifacts'][f'{args.model_backend}_trace_present'] = os.path.exists(internnav_trace_path)
-    manifest['artifacts'][f'{args.model_backend}_diagnostic_summary_present'] = internnav_diagnostic_summary is not None
+    manifest['artifacts']['model_status_present'] = model_status is not None
+    manifest['artifacts']['model_trace_present'] = os.path.exists(model_trace_path)
+    manifest['artifacts']['model_diagnostic_summary_present'] = model_diagnostic_summary is not None
     manifest['artifacts']['episode_outcome_present'] = episode_outcome is not None
     manifest['artifacts']['snapshot_files'] = sorted(snapshot_files.values())
     manifest['artifacts']['video_index_present'] = video_index is not None
@@ -5091,8 +3879,7 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
             'timed_out': timed_out,
             'end_reason': end_reason,
             'episode_outcome': episode_outcome,
-            'dual_vln_status': dual_vln_status,
-            f'{args.model_backend}_diagnostic_summary': internnav_diagnostic_summary,
+            'model_diagnostic_summary': model_diagnostic_summary,
             'video_recorder_returncode': video_returncode,
         }
     )
@@ -5101,6 +3888,10 @@ def main(argv: list[str] | None = None, *, model_backend: str | None = None) -> 
     if finished_observed and launch_returncode not in (None, 0):
         launch_returncode = 0
         manifest['result']['launch_returncode'] = 0
+
+    if end_reason in {'episode_model_error', 'episode_control_error', 'model_error'}:
+        run_social_postprocess()
+        return _finalize_run_result(output_dir, manifest_path, manifest, 2)
 
     if timed_out:
         run_social_postprocess()

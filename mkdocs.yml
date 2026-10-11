@@ -1,5 +1,5 @@
 site_name: Arena Benchmark
-site_description: Minimal documentation for the current Docker, Isaac Sim, and InternNav benchmark flow.
+site_description: Model integration and evaluation with Arena, Docker, Isaac Sim, and native FollowPath.
 site_url: https://social-nav.github.io/Arena5.0/
 repo_url: https://github.com/Social-Nav/Arena5.0
 repo_name: Social-Nav/Arena5.0
@@ -13,14 +13,16 @@ theme:
 nav:
   - Home: index.md
   - Installation: installation.md
-  - Benchmark:
-      - Run Current Benchmarks: benchmark/running-benchmarks.md
-      - Artifacts and Validation: benchmark/outputs-and-metrics.md
-      - Troubleshooting: benchmark/troubleshooting.md
+  - 模型接入与评估: Model_Evaluation.md
+  - Artifacts and Validation: benchmark/outputs-and-metrics.md
 markdown_extensions:
   - admonition
   - toc:
       permalink: true
   - tables
   - pymdownx.highlight
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format

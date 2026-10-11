@@ -35,12 +35,8 @@ def generate_launch_description():
     local_planner = LaunchArgument('local_planner')
     inter_planner = LaunchArgument('inter_planner')
     enable_collision_monitor = LaunchArgument('enable_collision_monitor', default_value='true')
-    internnav_direct_cmd_vel = LaunchArgument('internnav_direct_cmd_vel', default_value='false')
-    dual_vln_direct_cmd_vel = LaunchArgument('dual_vln_direct_cmd_vel', default_value='false')
 
-    controller_config_dir = PythonExpression(
-        ['"model_wrapper" if "', local_planner.substitution, '" == "dual_vln" else "', local_planner.substitution, '"']
-    )
+    controller_config_dir = local_planner.substitution
 
     amcl = LaunchArgument('amcl')
     train_mode = LaunchArgument('train_mode', default_value='false')
@@ -133,18 +129,10 @@ def generate_launch_description():
                 'frame': frame.substitution,
                 **task_generator_node.dict,
                 'namespace': namespace.substitution,
-                # In train_mode and upstream InternNav direct-cmd_vel mode an
-                # external policy publishes cmd_vel directly. Redirect Nav2's
-                # output chain to a dead topic so controller/behavior recovery
-                # commands never interleave with the policy commands consumed
-                # by Isaac's diff-drive graph.
-                'cmd_vel_out_topic': PythonExpression(
-                    [
-                        '"cmd_vel_sink" if ("', train_mode.substitution, '".lower() == "true" or "',
-                        internnav_direct_cmd_vel.substitution, '".lower() == "true" or "',
-                        dual_vln_direct_cmd_vel.substitution, '".lower() == "true") else "cmd_vel"'
-                    ]
-                ),
+                # Training policies own their output channel.
+                'cmd_vel_out_topic': PythonExpression([
+                    '"cmd_vel_sink" if "', train_mode.substitution,
+                    '".lower() == "true" else "cmd_vel"']),
                 'default_nav_to_pose_bt_xml': YAMLRetrieveSubstitution(
                     YAMLFileSubstitution(
                         PathJoinSubstitution([
@@ -247,11 +235,8 @@ def generate_launch_description():
         ('map', PathJoinSubstitution([task_generator_node.substitution, 'map'])),
         (
             'cmd_vel',
-            PythonExpression([
-                '"cmd_vel_sink" if ("', train_mode.substitution, '".lower() == "true" or "',
-                internnav_direct_cmd_vel.substitution, '".lower() == "true" or "',
-                dual_vln_direct_cmd_vel.substitution, '".lower() == "true") else "cmd_vel"'
-            ]),
+            PythonExpression(['"cmd_vel_sink" if "', train_mode.substitution,
+                              '".lower() == "true" else "cmd_vel"']),
         ),
     ]
 

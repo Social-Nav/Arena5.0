@@ -2,6 +2,8 @@
 
 Current benchmark runs are accepted only when the runtime evidence is complete
 enough to audit the episode after ROS and Isaac have exited.
+For model setup, commands, and the execution contract, start with
+[Model Integration and Evaluation](../Model_Evaluation.md).
 
 ## Core Run Directory
 
@@ -32,9 +34,11 @@ short.
 Use `benchmark_result.json` as the stable machine-readable interface. Detailed
 JSON and CSV files remain the evidence from which it is derived. The result is
 written automatically at every normal or classified early-failure exit from
-`internnav_eval`; generate it for an older run inside `arena-1` with:
+`internnav_eval`.
 The versioned [JSON Schema](benchmark-result.schema.json) is published with this
 site for downstream validation.
+
+Generate it for an older run inside `arena-1` with:
 
 ```bash
 ros2 run arena_bringup benchmark_result --dir "$RUN_DIR"
@@ -74,7 +78,7 @@ sampled distance. SPL uses an 8-connected A* path over the static occupancy map
 inflated by the robot radius; diagonal corner cutting is forbidden. nDTW compares
 distance-resampled executed and A* reference paths, and SDTW sets nDTW to zero on
 task failure. The exact path source and resolution are recorded under
-`metrics.task.reference_path_*`; the default goal tolerance is 0.75 m. Social
+`metrics.task.reference_path_*`; the default goal tolerance is 0.75 m.
 These path scores measure geometric route quality against the static map; they
 do not by themselves prove that every landmark or language clause was followed.
 Social success requires a moving, interacting HuNav scene and rejects footprint
@@ -83,26 +87,19 @@ personal-space violations, static-map collisions, commanded-stuck intervals,
 and large odometry teleports. Exact thresholds are embedded under
 `metrics.thresholds` in every canonical result.
 
-## InternNav Evidence
-
-Direct official-client mode does not rely on the timing manager to relay
-`internnav/raw_cmd_vel`. A zero `raw_cmd_count` in
-`internnav_timing_summary.json` is not sufficient evidence that the model was
-inactive.
-
-Use these files together:
+## Path execution evidence
 
 | Artifact | Check |
 | --- | --- |
-| `internnav_status.json` | Latest official client status for the run. |
-| `internnav_trace.jsonl` | Run-local status history after reset. |
-| `internnav_diagnostic_summary.json` | Aggregated model/control diagnostics when generated. |
-| `feature_trace.jsonl` | External feature/client trace when the benchmark wrapper captures it. |
-| `cmd_vel.csv` | Command output actually observed by Arena. |
-| Videos | Visual confirmation of motion, observation, and top-down scene state. |
+| `model_status.json` | Latest generic client status. |
+| `model_trace.jsonl` | Status heartbeats carrying session and episode. |
+| `model_diagnostic_summary.json` | Generic status counts and session IDs. |
+| `path_execution.jsonl` | Native FollowPath UUID/status and controller lifecycle observations. |
+| `episode_outcome.json` | Session, episode end reason and any model/control error. |
+| `timing_summary.json`, `rtf.csv` | Passive simulation timing observations. |
+| `cmd_vel.csv` | Final smoother output observed by the existing recorder. |
 
-For reproducible sweeps, keep external feature/client traces inside the run
-directory or copy them there during cleanup.
+Validation matches execution evidence to the completed session. A legitimate model STOP may complete without a path. Path success does not itself end an episode. Historical result readers still accept archived model-specific artifacts.
 
 ## Social-Eval Outputs
 
@@ -117,17 +114,20 @@ This is expected behavior, not a postprocess failure.
 
 ## Required Videos
 
-Video-enabled runs should include four videos for each episode:
+The standard video-enabled profile requires three videos for each episode:
 
 | Video | Meaning |
 | --- | --- |
 | `ego_observation.mp4` | Robot ego RGB observation. |
-| `ego_debug_overlay.mp4` | Ego view with InternNav action and command diagnostics. |
 | `map_top_down_follow.mp4` | Abstract map/odom/goal/scan follow view. |
 | `sim_top_down.mp4` | Isaac-rendered top-down scene view. |
 
-At minimum, `video_index.json` should report non-zero frame counts and
-`finalization_status: complete`.
+`ego_debug_overlay.mp4` is optional model-provided diagnostic imagery. Leave
+`video.debug_overlay_topic` empty when the client does not publish it; this stream
+then does not block readiness or artifact validation.
+
+For every required video, `video_index.json` should report non-zero frame counts
+and `finalization_status: complete`.
 
 ## Fast Acceptance Check
 
@@ -152,7 +152,8 @@ For a valid, scoreable benchmark run, require:
 
 - launch and metrics return codes are `0`
 - video index exists and all required videos have frames
-- run-local InternNav status/trace evidence exists for direct-client runs
+- run-local model status and FollowPath execution evidence match the completed
+  session; a valid model STOP may finish without submitting a path
 - `artifact_validation.json` exists
 - `verdict.valid_run` is `true` in `benchmark_result.json`
 

@@ -1,8 +1,4 @@
-"""Arena VLN model wrapper and benchmark server package.
-
-The package exposes lightweight adapter entry points and the consolidated
-``arena_vln_models.backends.PythonAdapterBackend`` benchmark integration.
-"""
+"""Model-independent native Nav2 FollowPath integration."""
 
 __all__ = ['__version__']
 

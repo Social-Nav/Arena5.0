@@ -160,7 +160,7 @@ def _episode_videos(video_index: dict[str, Any] | None) -> dict[str, Any]:
     return episodes[0] if episodes else {}
 
 
-def _check_videos(run_dir: Path, video_index: dict[str, Any] | None) -> dict[str, Any]:
+def _check_videos(run_dir: Path, video_index: dict[str, Any] | None, *, require_overlay=True) -> dict[str, Any]:
     ep = _episode_videos(video_index)
     required = {
         "ego_observation": ("ego_video", "ego_frames"),
@@ -169,6 +169,8 @@ def _check_videos(run_dir: Path, video_index: dict[str, Any] | None) -> dict[str
         "map_top_down_follow": ("map_top_down_video", "top_down_frames"),
     }
     results = {}
+    if not require_overlay:
+        required.pop('ego_debug_overlay')
     for label, (path_key, frame_key) in required.items():
         path = Path(str(ep.get(path_key) or '')) if ep else Path('')
         if path and not path.is_absolute():
@@ -238,18 +240,23 @@ def _check_model_control(run_dir: Path, manifest: dict[str, Any]) -> dict[str, A
     artifacts = manifest.get('artifacts', {}) if isinstance(manifest, dict) else {}
     result = manifest.get('result', {}) if isinstance(manifest, dict) else {}
     params = manifest.get('parameters', {}) if isinstance(manifest, dict) else {}
+    if params.get('execution_mode') == 'nav2_follow_path':
+        from arena_vln_models.diagnostics import execution_evidence
+        evidence = execution_evidence(run_dir)
+        teleports = _odom_teleports(run_dir)
+        return {**evidence, 'pass': evidence['pass'] and not teleports,
+                'large_teleports': teleports, 'missing_model_control_loop': not evidence['pass'],
+                'direct_cmd_vel': False, 'external_server': True}
     if manifest.get('model_backend') in {'lightnav', 'navila'}:
         backend = manifest['model_backend']
-        from importlib import import_module
-        diagnostic_summary = import_module(f'arena_bringup.{backend}_support').diagnostic_summary
         trace = Path(artifacts.get(f'{backend}_trace_path') or run_dir / f'{backend}_trace.jsonl')
-        summary = diagnostic_summary(trace)
+        summary = _read_json(run_dir / f'{backend}_diagnostic_summary.json') or {}
         teleports = _odom_teleports(run_dir)
-        evidence = (summary['inference_count'] > 0 and summary.get('path_accepted_count', summary.get('action_accepted_count', 0)) > 0
-                    and summary['commands_linked_to_inference'])
+        evidence = (summary.get('inference_count', 0) > 0 and summary.get('path_accepted_count', summary.get('action_accepted_count', 0)) > 0
+                    and summary.get('commands_linked_to_inference', False))
         return {'pass': evidence and not teleports, 'trace_present': trace.is_file(),
-                'model_result_count': summary['inference_count'],
-                'direct_control_event_count': summary['command_count'],
+                'model_result_count': summary.get('inference_count', 0),
+                'direct_control_event_count': summary.get('command_count', 0),
                 'direct_cmd_vel': True, 'external_server': True,
                 'missing_model_control_loop': not evidence, 'large_teleports': teleports,
                 **summary}
@@ -513,7 +520,8 @@ def generate_artifact_validation(run_dir: str | os.PathLike[str]) -> dict[str, A
         "environment": _check_environment(manifest),
         "humans": _check_humans(run_path, social_metrics, expected_human_count),
         "model_control": _check_model_control(run_path, manifest),
-        "videos": _check_videos(run_path, video_index),
+        "videos": _check_videos(run_path, video_index, require_overlay=(
+            params.get('execution_mode') != 'nav2_follow_path' or bool(params.get('eval_video_debug_overlay_topic')))),
         "metrics": _check_metrics(run_path, social_metrics, expected_human_count),
         "dynamic_scene": _check_dynamic_scene(social_metrics, expected_human_count),
     }

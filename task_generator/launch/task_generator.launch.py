@@ -18,11 +18,6 @@ def generate_launch_description():
     ld_items = []
     LaunchArgument.auto_append(ld_items)
 
-    def declare_legacy_alias(name: str, target: LaunchArgument) -> LaunchArgument:
-        return LaunchArgument(
-            name=name,
-            default_value=target.substitution,
-        )
 
     namespace = LaunchArgument(name="namespace", default_value="task_generator_node")
 
@@ -83,6 +78,9 @@ def generate_launch_description():
         name="timeout_wall_sec",
         default_value="0.0",
     )
+    execution_mode = LaunchArgument('execution_mode', default_value='navigation')
+    vln_rgb_topic = LaunchArgument('vln_rgb_topic', default_value='')
+    model_heartbeat_timeout_sec = LaunchArgument('model_heartbeat_timeout_sec', default_value='2.5')
     vln_instruction = LaunchArgument(
         name="vln_instruction",
         default_value="navigate",
@@ -91,172 +89,6 @@ def generate_launch_description():
         name="vln_instruction_file",
         default_value="",
     )
-    internnav_mode = LaunchArgument(
-        name="internnav_mode",
-        default_value="heuristic",
-    )
-    dual_vln_mode = declare_legacy_alias("dual_vln_mode", internnav_mode)
-    internnav_model_path = LaunchArgument(
-        name="internnav_model_path",
-        default_value=launch.substitutions.EnvironmentVariable(
-            'ARENA_INTERNNAV_MODEL_PATH',
-            default_value=launch.substitutions.EnvironmentVariable(
-                'INTERNNAV_MODEL_PATH',
-                default_value=launch.substitutions.EnvironmentVariable('ARENA_VLN_MODEL_PATH', default_value=''),
-            ),
-        ),
-    )
-    dual_vln_model_path = declare_legacy_alias("dual_vln_model_path", internnav_model_path)
-    internnav_device = LaunchArgument(
-        name="internnav_device",
-        default_value="cpu",
-    )
-    dual_vln_device = declare_legacy_alias("dual_vln_device", internnav_device)
-    internnav_inference_rate_hz = LaunchArgument(
-        name="internnav_inference_rate_hz",
-        default_value="3.3333333333",
-    )
-    dual_vln_inference_rate_hz = declare_legacy_alias("dual_vln_inference_rate_hz", internnav_inference_rate_hz)
-    internnav_inference_timeout_sec = LaunchArgument(
-        name="internnav_inference_timeout_sec",
-        default_value="0.2",
-    )
-    dual_vln_inference_timeout_sec = declare_legacy_alias("dual_vln_inference_timeout_sec", internnav_inference_timeout_sec)
-    internnav_rgb_topic = LaunchArgument(
-        name="internnav_rgb_topic",
-        default_value="",
-    )
-    dual_vln_rgb_topic = declare_legacy_alias("dual_vln_rgb_topic", internnav_rgb_topic)
-    internnav_depth_topic = LaunchArgument(
-        name="internnav_depth_topic",
-        default_value="",
-    )
-    dual_vln_depth_topic = declare_legacy_alias("dual_vln_depth_topic", internnav_depth_topic)
-    internnav_camera_info_topic = LaunchArgument(
-        name="internnav_camera_info_topic",
-        default_value="",
-    )
-    dual_vln_camera_info_topic = declare_legacy_alias("dual_vln_camera_info_topic", internnav_camera_info_topic)
-    internnav_python_executable = LaunchArgument(
-        name="internnav_python_executable",
-        default_value=launch.substitutions.EnvironmentVariable(
-            'ARENA_VLN_MODEL_PYTHON',
-            default_value=launch.substitutions.EnvironmentVariable(
-                'ARENA_INTERNNAV_PYTHON',
-                default_value=launch.substitutions.EnvironmentVariable('ARENA_PYTHON', default_value=''),
-            ),
-        ),
-    )
-    dual_vln_python_executable = declare_legacy_alias("dual_vln_python_executable", internnav_python_executable)
-    internnav_adapter_target = LaunchArgument(
-        name="internnav_adapter_target",
-        default_value="",
-    )
-    dual_vln_adapter_target = declare_legacy_alias("dual_vln_adapter_target", internnav_adapter_target)
-    internnav_http_url = LaunchArgument(
-        name="internnav_http_url",
-        default_value=launch.substitutions.EnvironmentVariable(
-            "ARENA_EVAL_INTERNNAV_HTTP_URL",
-            default_value=launch.substitutions.EnvironmentVariable("ARENA_INTERNNAV_HTTP_URL", default_value=""),
-        ),
-    )
-    dual_vln_http_url = declare_legacy_alias("dual_vln_http_url", internnav_http_url)
-    internnav_http_timeout_sec = LaunchArgument(
-        name="internnav_http_timeout_sec",
-        # Avoid launch-time float conversion of arbitrary env strings; runtime
-        # nodes read ARENA_*_HTTP_TIMEOUT_SEC and apply their own fallback.
-        default_value="0.0",
-    )
-    dual_vln_http_timeout_sec = declare_legacy_alias("dual_vln_http_timeout_sec", internnav_http_timeout_sec)
-    internnav_require_real_backend = LaunchArgument(
-        name="internnav_require_real_backend",
-        default_value="false",
-    )
-    dual_vln_require_real_backend = declare_legacy_alias("dual_vln_require_real_backend", internnav_require_real_backend)
-    internnav_strict_device = LaunchArgument(
-        name="internnav_strict_device",
-        default_value="false",
-    )
-    dual_vln_strict_device = declare_legacy_alias("dual_vln_strict_device", internnav_strict_device)
-    internnav_look_down = LaunchArgument(
-        name="internnav_look_down",
-        default_value="false",
-    )
-    dual_vln_look_down = declare_legacy_alias("dual_vln_look_down", internnav_look_down)
-    internnav_model_output_policy = LaunchArgument(
-        name="internnav_model_output_policy",
-        default_value="trajectory",
-    )
-    dual_vln_model_output_policy = declare_legacy_alias(
-        "dual_vln_model_output_policy", internnav_model_output_policy
-    )
-    internnav_enable_visualization = LaunchArgument(
-        name="internnav_enable_visualization",
-        default_value="false",
-    )
-    dual_vln_enable_visualization = declare_legacy_alias("dual_vln_enable_visualization", internnav_enable_visualization)
-    internnav_visualization_topic = LaunchArgument(
-        name="internnav_visualization_topic",
-        default_value="internnav/debug_image",
-    )
-    dual_vln_visualization_topic = declare_legacy_alias("dual_vln_visualization_topic", internnav_visualization_topic)
-    internnav_action_visualization_topic = LaunchArgument(
-        name="internnav_action_visualization_topic",
-        default_value="internnav/action_image",
-    )
-    dual_vln_action_visualization_topic = declare_legacy_alias(
-        "dual_vln_action_visualization_topic", internnav_action_visualization_topic
-    )
-    internnav_visualization_rate_hz = LaunchArgument(
-        name="internnav_visualization_rate_hz",
-        default_value="5.0",
-    )
-    dual_vln_visualization_rate_hz = declare_legacy_alias("dual_vln_visualization_rate_hz", internnav_visualization_rate_hz)
-    internnav_model_output_topic = LaunchArgument(
-        name="internnav_model_output_topic",
-        default_value="internnav/model_output",
-    )
-    dual_vln_model_output_topic = declare_legacy_alias("dual_vln_model_output_topic", internnav_model_output_topic)
-    internnav_external_server = LaunchArgument(
-        name="internnav_external_server",
-        default_value="false",
-    )
-    dual_vln_external_server = declare_legacy_alias("dual_vln_external_server", internnav_external_server)
-    internnav_direct_cmd_vel = LaunchArgument(
-        name="internnav_direct_cmd_vel",
-        default_value="false",
-    )
-    dual_vln_direct_cmd_vel = declare_legacy_alias("dual_vln_direct_cmd_vel", internnav_direct_cmd_vel)
-    internnav_command_service = LaunchArgument(
-        name="internnav_command_service",
-        default_value="",
-    )
-    dual_vln_command_service = declare_legacy_alias("dual_vln_command_service", internnav_command_service)
-    internnav_status_topic = LaunchArgument(
-        name="internnav_status_topic",
-        default_value="",
-    )
-    dual_vln_status_topic = declare_legacy_alias("dual_vln_status_topic", internnav_status_topic)
-    internnav_timing_mode = LaunchArgument(
-        name="internnav_timing_mode",
-        default_value="wall",
-    )
-    dual_vln_timing_mode = declare_legacy_alias("dual_vln_timing_mode", internnav_timing_mode)
-    internnav_model_latency_sec = LaunchArgument(
-        name="internnav_model_latency_sec",
-        default_value="0.3",
-    )
-    dual_vln_model_latency_sec = declare_legacy_alias("dual_vln_model_latency_sec", internnav_model_latency_sec)
-    internnav_latency_policy = LaunchArgument(
-        name="internnav_latency_policy",
-        default_value="fixed",
-    )
-    dual_vln_latency_policy = declare_legacy_alias("dual_vln_latency_policy", internnav_latency_policy)
-    internnav_raw_cmd_vel_topic = LaunchArgument(
-        name="internnav_raw_cmd_vel_topic",
-        default_value="internnav/raw_cmd_vel",
-    )
-    dual_vln_raw_cmd_vel_topic = declare_legacy_alias("dual_vln_raw_cmd_vel_topic", internnav_raw_cmd_vel_topic)
     enable_collision_monitor = LaunchArgument(
         name="enable_collision_monitor",
         default_value="true",
@@ -398,68 +230,11 @@ def generate_launch_description():
                 **timeout.param(int),
                 **timeout_wall_factor.param(float),
                 **timeout_wall_sec.param(float),
+                **execution_mode.str_param,
+                **vln_rgb_topic.str_param,
+                **model_heartbeat_timeout_sec.param(float),
                 **vln_instruction.str_param,
                 **vln_instruction_file.str_param,
-                'internnav_mode': dual_vln_mode.param_value(str),
-                'internnav_model_path': dual_vln_model_path.param_value(str),
-                'internnav_device': dual_vln_device.param_value(str),
-                'internnav_inference_rate_hz': dual_vln_inference_rate_hz.param_value(float),
-                'internnav_inference_timeout_sec': dual_vln_inference_timeout_sec.param_value(float),
-                'internnav_rgb_topic': dual_vln_rgb_topic.param_value(str),
-                'internnav_depth_topic': dual_vln_depth_topic.param_value(str),
-                'internnav_camera_info_topic': dual_vln_camera_info_topic.param_value(str),
-                'internnav_python_executable': dual_vln_python_executable.param_value(str),
-                'internnav_adapter_target': dual_vln_adapter_target.param_value(str),
-                'internnav_http_url': dual_vln_http_url.param_value(str),
-                'internnav_http_timeout_sec': dual_vln_http_timeout_sec.param_value(float),
-                'internnav_require_real_backend': dual_vln_require_real_backend.param_value(bool),
-                'internnav_strict_device': dual_vln_strict_device.param_value(bool),
-                'internnav_look_down': dual_vln_look_down.param_value(bool),
-                'internnav_model_output_policy': dual_vln_model_output_policy.param_value(str),
-                'internnav_enable_visualization': dual_vln_enable_visualization.param_value(bool),
-                'internnav_visualization_topic': dual_vln_visualization_topic.param_value(str),
-                'internnav_action_visualization_topic': dual_vln_action_visualization_topic.param_value(str),
-                'internnav_visualization_rate_hz': dual_vln_visualization_rate_hz.param_value(float),
-                'internnav_model_output_topic': dual_vln_model_output_topic.param_value(str),
-                'internnav_external_server': internnav_external_server.param_value(bool),
-                'internnav_direct_cmd_vel': internnav_direct_cmd_vel.param_value(bool),
-                'internnav_command_service': dual_vln_command_service.param_value(str),
-                'internnav_status_topic': dual_vln_status_topic.param_value(str),
-                'internnav_timing_mode': dual_vln_timing_mode.param_value(str),
-                'internnav_model_latency_sec': dual_vln_model_latency_sec.param_value(float),
-                'internnav_latency_policy': dual_vln_latency_policy.param_value(str),
-                'internnav_raw_cmd_vel_topic': dual_vln_raw_cmd_vel_topic.param_value(str),
-                **dual_vln_mode.str_param,
-                **dual_vln_model_path.str_param,
-                **dual_vln_device.str_param,
-                **dual_vln_inference_rate_hz.param(float),
-                **dual_vln_inference_timeout_sec.param(float),
-                **dual_vln_rgb_topic.str_param,
-                **dual_vln_depth_topic.str_param,
-                **dual_vln_camera_info_topic.str_param,
-                **dual_vln_python_executable.str_param,
-                **dual_vln_adapter_target.str_param,
-                **dual_vln_http_url.str_param,
-                **dual_vln_http_timeout_sec.param(float),
-                **dual_vln_require_real_backend.param(bool),
-                **dual_vln_strict_device.param(bool),
-                **dual_vln_look_down.param(bool),
-                **dual_vln_model_output_policy.str_param,
-                **dual_vln_enable_visualization.param(bool),
-                **dual_vln_visualization_topic.str_param,
-                **dual_vln_action_visualization_topic.str_param,
-                **dual_vln_visualization_rate_hz.param(float),
-                **dual_vln_model_output_topic.str_param,
-                **dual_vln_command_service.str_param,
-                **dual_vln_status_topic.str_param,
-                **dual_vln_timing_mode.str_param,
-                **dual_vln_model_latency_sec.param(float),
-                **dual_vln_latency_policy.str_param,
-                **dual_vln_raw_cmd_vel_topic.str_param,
-                **internnav_external_server.param(bool),
-                **dual_vln_external_server.param(bool),
-                **internnav_direct_cmd_vel.param(bool),
-                **dual_vln_direct_cmd_vel.param(bool),
                 **enable_collision_monitor.param(bool),
                 **robot_launch_file.str_param,
                 **reference.param(typing.List[float]),
@@ -478,76 +253,15 @@ def generate_launch_description():
             {"use_sim_time": False},
             parameter_file.substitution,
             {
-                # Keep CLI/launch-time InternNav selection authoritative even
-                # when the task_generator YAML contains older defaults.  This
-                # block intentionally comes after ``parameter_file`` because ROS
-                # 2 parameter sources are applied in order and the YAML carries
-                # legacy empty dual_vln_* defaults that otherwise erase the
-                # runtime camera/model arguments before robot_manager launches
-                # the InternNav wrapper.
+                # Explicit launch settings override defaults in the parameter file.
+                **execution_mode.str_param,
+                **vln_rgb_topic.str_param,
+                **model_heartbeat_timeout_sec.param(float),
                 'task': {
                     'scenario': {
                         'file': scenario_file.param_value(str),
                     },
                 },
-                'internnav_mode': dual_vln_mode.param_value(str),
-                'internnav_model_path': dual_vln_model_path.param_value(str),
-                'internnav_device': dual_vln_device.param_value(str),
-                'internnav_inference_rate_hz': dual_vln_inference_rate_hz.param_value(float),
-                'internnav_inference_timeout_sec': dual_vln_inference_timeout_sec.param_value(float),
-                'internnav_rgb_topic': dual_vln_rgb_topic.param_value(str),
-                'internnav_depth_topic': dual_vln_depth_topic.param_value(str),
-                'internnav_camera_info_topic': dual_vln_camera_info_topic.param_value(str),
-                'internnav_python_executable': dual_vln_python_executable.param_value(str),
-                'internnav_adapter_target': dual_vln_adapter_target.param_value(str),
-                'internnav_http_url': dual_vln_http_url.param_value(str),
-                'internnav_http_timeout_sec': dual_vln_http_timeout_sec.param_value(float),
-                'internnav_require_real_backend': dual_vln_require_real_backend.param_value(bool),
-                'internnav_strict_device': dual_vln_strict_device.param_value(bool),
-                'internnav_look_down': dual_vln_look_down.param_value(bool),
-                'internnav_model_output_policy': dual_vln_model_output_policy.param_value(str),
-                'internnav_enable_visualization': dual_vln_enable_visualization.param_value(bool),
-                'internnav_visualization_topic': dual_vln_visualization_topic.param_value(str),
-                'internnav_action_visualization_topic': dual_vln_action_visualization_topic.param_value(str),
-                'internnav_visualization_rate_hz': dual_vln_visualization_rate_hz.param_value(float),
-                'internnav_model_output_topic': dual_vln_model_output_topic.param_value(str),
-                'internnav_external_server': internnav_external_server.param_value(bool),
-                'internnav_direct_cmd_vel': internnav_direct_cmd_vel.param_value(bool),
-                'internnav_command_service': dual_vln_command_service.param_value(str),
-                'internnav_status_topic': dual_vln_status_topic.param_value(str),
-                'internnav_timing_mode': dual_vln_timing_mode.param_value(str),
-                'internnav_model_latency_sec': dual_vln_model_latency_sec.param_value(float),
-                'internnav_latency_policy': dual_vln_latency_policy.param_value(str),
-                'internnav_raw_cmd_vel_topic': dual_vln_raw_cmd_vel_topic.param_value(str),
-                **dual_vln_mode.str_param,
-                **dual_vln_model_path.str_param,
-                **dual_vln_device.str_param,
-                **dual_vln_inference_rate_hz.param(float),
-                **dual_vln_inference_timeout_sec.param(float),
-                **dual_vln_rgb_topic.str_param,
-                **dual_vln_depth_topic.str_param,
-                **dual_vln_camera_info_topic.str_param,
-                **dual_vln_python_executable.str_param,
-                **dual_vln_adapter_target.str_param,
-                **dual_vln_http_url.str_param,
-                **dual_vln_http_timeout_sec.param(float),
-                **dual_vln_require_real_backend.param(bool),
-                **dual_vln_strict_device.param(bool),
-                **dual_vln_look_down.param(bool),
-                **dual_vln_model_output_policy.str_param,
-                **dual_vln_enable_visualization.param(bool),
-                **dual_vln_visualization_topic.str_param,
-                **dual_vln_action_visualization_topic.str_param,
-                **dual_vln_visualization_rate_hz.param(float),
-                **dual_vln_model_output_topic.str_param,
-                **dual_vln_command_service.str_param,
-                **dual_vln_status_topic.str_param,
-                **dual_vln_timing_mode.str_param,
-                **dual_vln_model_latency_sec.param(float),
-                **dual_vln_latency_policy.str_param,
-                **dual_vln_raw_cmd_vel_topic.str_param,
-                'dual_vln_external_server': dual_vln_external_server.param_value(bool),
-                'dual_vln_direct_cmd_vel': dual_vln_direct_cmd_vel.param_value(bool),
                 **enable_collision_monitor.param(bool),
                 **robot_launch_file.str_param,
             },

@@ -52,10 +52,9 @@ DEFAULT_SOCIAL_METRICS = [
     'crowd_freezing_time_sec',
 ]
 DEFAULT_DIAGNOSTICS = [
-    'internnav_status',
-    'internnav_trace_summary',
-    'command_stats',
-    'stale_camera_count',
+    'model_status',
+    'model_trace',
+    'path_execution',
     'artifact_validation',
     'real_time_factor',
 ]
@@ -154,7 +153,7 @@ class SocialNavScenario:
 
         robot = self.data.setdefault('robot', {})
         if isinstance(robot, dict):
-            robot.setdefault('local_planner', 'dual_vln')
+            robot.setdefault('local_planner', 'regulated_pure_pursuit')
             robot.setdefault('command_interface', {})
             if robot.get('name'):
                 ns = f"/task_generator_node/{robot['name']}"
@@ -275,8 +274,7 @@ class SocialNavScenario:
             '--tm-robots', 'scenario',
             '--tm-obstacles', 'scenario',
             '--social-eval',
-            '--internnav-mode', 'internnav',
-            '--internnav-external-server',
+            '--execution-mode', 'nav2_follow_path',
             '--vln-instruction', str(language.get('instruction') or 'navigate'),
         ]
         if self.scenario_id:
@@ -291,7 +289,6 @@ class SocialNavScenario:
             argv.extend(['--output-prefix', output_prefix])
         if save_eval_video:
             argv.append('--save-eval-video')
-            argv.append('--internnav-enable-visualization')
         if extra_args:
             argv.extend(extra_args)
         return argv

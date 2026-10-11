@@ -1,11 +1,8 @@
 import asyncio
-import json
 import math
 import os
 import time
 import typing
-
-import yaml
 
 import action_msgs.msg
 import ament_index_python
@@ -20,14 +17,12 @@ import rclpy.logging
 import rclpy.publisher
 import rclpy.timer
 import sensor_msgs.msg as sensor_msgs
-from std_msgs.msg import String
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 import tf2_ros
 from arena_rclpy_mixins.shared import Namespace
 from arena_robots.Robot import RobotView
 from nav2_msgs.action import NavigateToPose
 from nav2_msgs.srv import ClearCostmapAroundRobot, ClearEntireCostmap
-from rosnav_rl_msgs.srv import GetCommand
 from rcl_interfaces.srv import SetParameters
 from rcl_interfaces.msg import Parameter as ParameterMsg, ParameterValue, ParameterType
 
@@ -40,18 +35,6 @@ from task_generator.manager.environment_manager import EnvironmentManager
 from task_generator.shared import Orientation, Pose, Position, Robot
 
 import rclpy.node
-
-REALWORLD_HTTP_ADAPTER_TARGET = 'arena_vln_models.internnav:load_internvla_realworld_http_adapter'
-LEGACY_NATIVE_ADAPTER_TARGET = 'arena_vln_models.internnav:load_internnav_adapter'
-DEFAULT_INTERNNAV_ADAPTER_TARGET = REALWORLD_HTTP_ADAPTER_TARGET
-LEGACY_INTERNNAV_ADAPTER_TARGETS = {
-    LEGACY_NATIVE_ADAPTER_TARGET,
-    'internnav.agent.internvla_n1_agent_realworld.InternVLAN1AsyncAgent',
-}
-HTTP_ADAPTER_REPLACED_TARGETS = {
-    LEGACY_NATIVE_ADAPTER_TARGET,
-    *LEGACY_INTERNNAV_ADAPTER_TARGETS,
-}
 
 try:
     import yaml
@@ -167,22 +150,9 @@ class RobotManager(NodeInterface):
         self._camera_ready_topics: dict[str, str] = {}
         self._camera_ready_seen: dict[str, bool] = {}
         self._camera_ready_seen_wall_time: dict[str, float] = {}
-        self._dual_vln_status_topic: str | None = None
-        self._dual_vln_command_service: str | None = None
-        self._dual_vln_status_subscription = None
-        self._dual_vln_status: str = 'startup'
-        self._dual_vln_status_wall_time: float = 0.0
-        self._dual_vln_status_payload: dict = {}
-        self._dual_vln_episode_ready = None
         self._model_declared_stop = False
-        self._model_declared_stop_payload: dict = {}
-        self._direct_dual_vln_client: rclpy.client.Client | None = None
-        self._direct_dual_vln_timer: rclpy.timer.Timer | None = None
-        self._direct_dual_vln_future = None
-        self._direct_dual_vln_status_bridge_active = False
-        self._direct_dual_vln_last_status_twist: geometry_msgs.msg.Twist | None = None
-        self._direct_dual_vln_map_bounds: tuple[float, float, float, float] | None = None
-        self._direct_dual_vln_bounds_warning_emitted = False
+        self._model_declared_stop_payload = {}
+        self._waypoint_lifecycle = None
 
         self._publish_goal_task: typing.Optional[asyncio.Task] = None
 
@@ -216,19 +186,15 @@ class RobotManager(NodeInterface):
             goal_qos,
         )
 
-        # External clients own both motion and stopping. Do not compete with
-        # their controller on cmd_vel, including the legacy InternNav mode.
-        if not self._internnav_direct_cmd_vel_enabled():
+        # The velocity smoother is the only final publisher in FollowPath mode.
+        if not self._uses_waypoints():
             self._cmd_vel_pub = self.node.create_publisher(
                 geometry_msgs.msg.Twist,
                 self.namespace('cmd_vel'),
                 1,
             )
 
-        self._stop_vel_timer = self.node.create_timer(
-            0.1,
-            self._stop_vel_timer_cb,
-        )
+            self._stop_vel_timer = self.node.create_timer(0.1, self._stop_vel_timer_cb)
 
         self.node.create_subscription(
             nav_msgs.Odometry,
@@ -237,19 +203,28 @@ class RobotManager(NodeInterface):
             10
         )
 
-        self.node.create_subscription(
-            action_msgs.msg.GoalStatusArray,
-            self.namespace('navigate_to_pose', '_action', 'status'),
-            self._goal_status_callback,
-            1
-        )
+        if not self._uses_waypoints():
+            self.node.create_subscription(
+                action_msgs.msg.GoalStatusArray,
+                self.namespace('navigate_to_pose', '_action', 'status'),
+                self._goal_status_callback,
+                1
+            )
 
         self._setup_camera_readiness_subscriptions()
-        self._ensure_dual_vln_status_subscription()
-
+        if self._uses_waypoints():
+            from arena_vln_models.lifecycle import WaypointLifecycle
+            self._waypoint_lifecycle = WaypointLifecycle(
+                self.node, self.namespace,
+                heartbeat_timeout=self.node.rosparam[float].get('model_heartbeat_timeout_sec', 2.5),
+                record_dir=self._robot.record_data_dir or '',
+            )
         await self._launch_robot(node_names)
+        if self._waypoint_lifecycle:
+            await self._waypoint_lifecycle.begin(self.node._vln_session_id, self.node._number_of_resets)
 
-        if self._internnav_direct_cmd_vel_enabled():
+
+        if self._uses_waypoints():
             self._navigate_to_pose_client = None
         else:
             self._navigate_to_pose_client = rclpy.action.ActionClient(
@@ -315,20 +290,27 @@ class RobotManager(NodeInterface):
 
     @property
     async def is_done(self) -> bool:
-        """Check if the robot has reached its goal.
-
-        Returns:
-            bool: True if the goal is reached, False otherwise.
-        """
+        if self._waypoint_lifecycle and self._waypoint_lifecycle.session.released:
+            try:
+                if self._waypoint_lifecycle.session.terminal:
+                    self.node._publish_eval_ready('episode', False, reason='model_terminal')
+                    self._waypoint_lifecycle.session.released = False
+                reason = await self._waypoint_lifecycle.poll()
+            except Exception as exc:
+                self._waypoint_lifecycle.error = str(exc)
+                raise
+            if reason in {'model_stop', 'model_error'}:
+                self._model_declared_stop = True
+                self._model_declared_stop_payload = {'reason': reason, 'detail': self._waypoint_lifecycle.session.reason}
         return self._is_goal_reached or self._model_declared_stop
+
 
     @property
     def done_reason(self) -> str:
-        if self._is_goal_reached:
-            return 'goal_reached'
         if self._model_declared_stop:
-            return 'model_stop'
-        return 'running'
+            return self._model_declared_stop_payload.get('reason', 'model_stop')
+        return 'goal_reached' if self._is_goal_reached else 'running'
+
 
     async def move_robot_to_pos(self, pose: Pose):
         """Move the robot to the specified pose.
@@ -414,10 +396,8 @@ class RobotManager(NodeInterface):
         Returns:
             bool: True if the costmap was cleared successfully, False otherwise.
         """
-        if self._internnav_direct_cmd_vel_enabled():
-            self._logger.debug(
-                'InternNav direct cmd_vel mode is active; skipping local costmap clear because Nav2 is not launched.'
-            )
+        if self._uses_waypoints():
+            # The tracking costmap has no obstacle layers and is reset by lifecycle.
             return True
 
         node_name = self.node.service_namespace(self.name, 'local_costmap/local_costmap')
@@ -463,7 +443,7 @@ class RobotManager(NodeInterface):
 
     async def _clear_global_costmap(self) -> bool:
         """Clear the entire global costmap (removes dynamic obstacle marks from previous episode)."""
-        if self._internnav_direct_cmd_vel_enabled():
+        if self._uses_waypoints():
             return True
         node_name = self.node.service_namespace(self.name, 'global_costmap/global_costmap')
         srv_name = os.path.abspath(node_name('../clear_entirely_global_costmap'))
@@ -559,7 +539,7 @@ class RobotManager(NodeInterface):
         preset takes effect immediately without a relaunch.
         No-op when attributes is falsy (caller resolves the default profile).
         """
-        if not attributes or self._internnav_direct_cmd_vel_enabled():
+        if not attributes or self._uses_waypoints():
             return True
         by_node = self._load_social_attributes(attributes)
         if not by_node:
@@ -585,7 +565,7 @@ class RobotManager(NodeInterface):
 
         No-op when vel is None (field absent -> the profile's value stands).
         """
-        if vel is None or self._internnav_direct_cmd_vel_enabled():
+        if vel is None or self._uses_waypoints():
             return True
 
         if vel <= 0.0:
@@ -831,7 +811,6 @@ class RobotManager(NodeInterface):
                 raise RuntimeError('Odometry did not reach reset start pose before goal publish.')
 
         self._reset_navigation_readiness_state()
-        self._ensure_dual_vln_status_subscription()
         camera_ready_timeout_s = float(
             self.node.rosparam[float].get(
                 'camera_ready_before_navigation_timeout_sec',
@@ -840,11 +819,10 @@ class RobotManager(NodeInterface):
         )
         if not await self._wait_for_camera_ready_before_navigation(timeout_s=camera_ready_timeout_s):
             raise RuntimeError('Timed out waiting for real camera topics before publishing VLN navigation goal.')
-        if not self._internnav_direct_cmd_vel_enabled():
-            if not await self._wait_for_dual_vln_status_before_navigation(timeout_s=120.0):
-                raise RuntimeError('Timed out waiting for InternNav backend_ready status with fresh real inputs.')
-            if not await self._wait_for_dual_vln_command_service_before_navigation(timeout_s=180.0):
-                raise RuntimeError('Timed out waiting for dual_vln get_command service before publishing navigation goal.')
+        if self._waypoint_lifecycle:
+            await self._waypoint_lifecycle.activate()
+            self._goal_start_time = self.node.sim_time
+            return
 
         self._logger.info(
             f"Publishing goal once: x={goal.position.x}, y={goal.position.y}, orientation={goal.orientation.to_yaw()}"
@@ -856,8 +834,6 @@ class RobotManager(NodeInterface):
         self._goal_pub.publish(goal_msg)
         self._last_goal_msg = goal_msg
         self._goal_republish_ticks = 10
-        if not self._internnav_direct_cmd_vel_enabled():
-            self._start_direct_dual_vln_command_bridge()
 
         if self._goal_timer is None:
             self._goal_timer = self.node.create_timer(
@@ -888,7 +864,7 @@ class RobotManager(NodeInterface):
                 self._logger.warn(f'Ignoring goal republish timer {action_name} failure during reset: {exc}')
 
     def _default_camera_topics_for_readiness(self) -> dict[str, str] | None:
-        if not self._is_dual_vln_robot():
+        if not self._uses_waypoints():
             return None
 
         model_name = str(self.model_name or '').strip().lower()
@@ -910,55 +886,25 @@ class RobotManager(NodeInterface):
             'camera_info': str(self.namespace('head_camera', 'camera_info')),
         }
 
-    def _internnav_direct_cmd_vel_enabled(self) -> bool:
-        # Compatibility entry point shared by the two explicit direct clients.
-        if os.environ.get('ARENA_MODEL_EXECUTION_MODE') == 'external_direct_cmd_vel':
-            return True
-        if os.environ.get('ARENA_INTERNNAV_DIRECT_CMD_VEL', '').strip().lower() in {'1', 'true', 'yes', 'on'}:
-            return True
-        return self._get_compat_rosparam(bool, 'internnav_direct_cmd_vel', 'dual_vln_direct_cmd_vel', False)
+    def _uses_waypoints(self) -> bool:
+        return self.node.rosparam[str].get('execution_mode', '') == 'nav2_follow_path'
 
-    def _configured_camera_topics_for_readiness(self) -> dict[str, str] | None:
-        if not self._is_dual_vln_robot():
+
+    def _configured_camera_topics_for_readiness(self):
+        if not self._uses_waypoints():
             return None
-
         defaults = self._default_camera_topics_for_readiness() or {}
-        topics = {}
-        for key, primary_name, legacy_name in (
-            ('rgb', 'internnav_rgb_topic', 'dual_vln_rgb_topic'),
-            ('depth', 'internnav_depth_topic', 'dual_vln_depth_topic'),
-            ('camera_info', 'internnav_camera_info_topic', 'dual_vln_camera_info_topic'),
-        ):
-            configured = self._get_compat_rosparam(str, primary_name, legacy_name, '', empty_is_missing=True)
-            if configured:
-                configured = str(configured)
-                topics[key] = configured if configured.startswith('/') else str(self.namespace(configured))
-            else:
-                topics[key] = defaults.get(key, '')
-        if os.environ.get('ARENA_MODEL_BACKEND') in {'lightnav', 'navila'}:
-            return {'rgb': topics['rgb']}
-        return topics
+        # Arena records RGB; model repositories decide whether depth is needed.
+        configured = self.node.rosparam[str].get('vln_rgb_topic', '') or defaults.get('rgb', '')
+        return {'rgb': configured if configured.startswith('/') else str(self.namespace(configured))}
 
-    def _reset_navigation_readiness_state(self) -> None:
-        if self._camera_ready_seen:
-            self._camera_ready_seen = {key: False for key in self._camera_ready_seen}
-            self._camera_ready_seen_wall_time = {key: 0.0 for key in self._camera_ready_seen}
-        self._dual_vln_status = 'startup'
-        self._dual_vln_status_wall_time = 0.0
-        self._dual_vln_status_payload = {}
-        self._dual_vln_episode_ready = None
+
+    def _reset_navigation_readiness_state(self):
+        self._camera_ready_seen = {key: False for key in self._camera_ready_seen}
+        self._camera_ready_seen_wall_time = {key: 0.0 for key in self._camera_ready_seen}
         self._model_declared_stop = False
         self._model_declared_stop_payload = {}
-        self._direct_dual_vln_last_status_twist = None
 
-    def _is_dual_vln_robot(self) -> bool:
-        """Return true when this robot is configured for the dual_vln planner."""
-        candidates = [getattr(self._robot, 'local_planner', '')]
-        try:
-            candidates.append(self._get_compat_rosparam(str, 'local_planner', 'local_planner', ''))
-        except Exception:
-            pass
-        return any(str(value).strip().lower() in {'dual_vln', 'lightnav', 'navila'} for value in candidates)
 
     def _setup_camera_readiness_subscriptions(self) -> None:
         camera_topics = self._configured_camera_topics_for_readiness()
@@ -995,284 +941,18 @@ class RobotManager(NodeInterface):
                 lambda _msg: self._mark_camera_ready('camera_info'),
                 sensor_qos,
             )
-        self._ensure_dual_vln_status_subscription()
 
-    def _ensure_dual_vln_status_subscription(self) -> None:
-        if self._dual_vln_status_subscription is not None:
-            return
-        if not self._is_dual_vln_robot():
-            return
 
-        configured_status_topic = self._get_compat_rosparam(
-            str,
-            'internnav_status_topic',
-            'dual_vln_status_topic',
-            '',
-            empty_is_missing=True,
-        )
-        if os.environ.get('ARENA_MODEL_BACKEND') in {'lightnav', 'navila'}:
-            # InternNav's primary launch parameter has a nonempty default and
-            # therefore masks the legacy alias supplied by the shared evaluator.
-            configured_status_topic = os.environ.get('ARENA_MODEL_STATUS_TOPIC') or self.namespace(os.environ['ARENA_MODEL_BACKEND'], 'status')
-        self._dual_vln_status_topic = str(configured_status_topic or self.namespace('internnav', 'status'))
-        status_qos = QoSProfile(depth=1)
-        status_qos.reliability = ReliabilityPolicy.RELIABLE
-        status_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
-        self._dual_vln_status_subscription = self.node.create_subscription(
-            String,
-            self._dual_vln_status_topic,
-            self._on_dual_vln_status,
-            status_qos,
-        )
-
-    def _recreate_dual_vln_status_subscription(self) -> None:
-        if self._dual_vln_status_subscription is not None:
-            try:
-                self.node.destroy_subscription(self._dual_vln_status_subscription)
-            except Exception:
-                pass
-            self._dual_vln_status_subscription = None
-        self._ensure_dual_vln_status_subscription()
-
-    def _dual_vln_command_service_name(self) -> str:
-        if self._dual_vln_command_service:
-            return self._dual_vln_command_service
-        configured = self._get_compat_rosparam(
-            str,
-            'internnav_command_service',
-            'dual_vln_command_service',
-            '',
-            empty_is_missing=True,
-        )
-        self._dual_vln_command_service = str(configured or self.namespace('get_command'))
-        return self._dual_vln_command_service
-
-    def _requires_real_internnav_backend(self) -> bool:
-        return bool(self._get_compat_rosparam(
-            bool,
-            'internnav_require_real_backend',
-            'dual_vln_require_real_backend',
-            False,
-        ))
 
     def _mark_camera_ready(self, key: str) -> None:
         if key in self._camera_ready_seen:
             self._camera_ready_seen[key] = True
             self._camera_ready_seen_wall_time[key] = time.monotonic()
 
-    def _on_dual_vln_status(self, msg: String) -> None:
-        try:
-            payload = json.loads(msg.data)
-        except Exception:
-            return
-        self._dual_vln_status = str(payload.get('status', '') or 'unknown')
-        self._dual_vln_status_wall_time = time.monotonic()
-        self._dual_vln_status_payload = payload
-        status = self._dual_vln_status
-        if status == 'episode_ready' and bool(payload.get('episode_started')):
-            self._dual_vln_episode_ready = payload.get('episode')
-        elif status == 'resetting' and not bool(payload.get('episode_started')):
-            self._dual_vln_episode_ready = None
-            self._model_declared_stop = False
-            self._model_declared_stop_payload = {}
 
-        terminal_model_stop = (
-            status == 'stop'
-            and payload.get('terminal') is True
-            and str(payload.get('termination_reason', '') or '') == 'model_stop'
-            and self._dual_vln_episode_ready is not None
-            and payload.get('episode') == self._dual_vln_episode_ready
-        )
-        if terminal_model_stop:
-            self._model_declared_stop = True
-            self._model_declared_stop_payload = payload
-            self._stop_direct_dual_vln_command_bridge()
-            self._publish_direct_dual_vln_stop()
-            self._nav_stop_ticks = max(self._nav_stop_ticks, 15)
-        self._update_direct_dual_vln_status_twist(payload)
-        self._publish_direct_dual_vln_status_command(payload)
 
-    def _dual_vln_status_payload_is_command(self, payload: dict) -> bool:
-        """Return true when an InternNav status payload carries a Twist command.
 
-        Heuristic InternNav backends use semantic control statuses such as
-        ``drive_to_goal`` / ``arc_to_goal`` rather than the legacy generic
-        ``internnav_command`` status.  Treat the presence of finite velocity
-        fields as the command contract, while excluding readiness / waiting /
-        error states that may also include diagnostic zero values.
-        """
-        status = str(payload.get('status', '') or '')
-        non_command_statuses = {
-            'startup',
-            'backend_ready',
-            'waiting_for_camera',
-            'waiting_for_real_backend',
-            'camera_waiting',
-            'inference_in_progress',
-            'missing_pose_or_goal',
-            'goal_reached',
-            'error',
-        }
-        if status in non_command_statuses:
-            return False
-        if 'linear_x' not in payload or 'angular_z' not in payload:
-            return False
-        try:
-            linear_x = float(payload.get('linear_x', 0.0) or 0.0)
-            angular_z = float(payload.get('angular_z', 0.0) or 0.0)
-        except (TypeError, ValueError):
-            return False
-        return math.isfinite(linear_x) and math.isfinite(angular_z)
 
-    def _dual_vln_status_has_fresh_sensors(self, payload: dict) -> bool:
-        debug = payload.get('debug') if isinstance(payload.get('debug'), dict) else {}
-        ages = debug.get('sensor_ages_sec') if isinstance(debug.get('sensor_ages_sec'), dict) else {}
-        topics = debug.get('topics') if isinstance(debug.get('topics'), dict) else {}
-        missing_inputs = set(debug.get('missing_inputs') or []) if isinstance(debug.get('missing_inputs'), list) else set()
-        if debug.get('tf_ready') is False:
-            return False
-        stale_after = debug.get('stale_after_sec', 2.0)
-        try:
-            stale_after = float(stale_after)
-        except (TypeError, ValueError):
-            stale_after = 2.0
-        required_keys = [
-            key for key in ('rgb', 'depth', 'camera_info', 'odom')
-            if str(topics.get(key, '') or '').strip()
-        ]
-        if not required_keys:
-            required_keys = ['rgb', 'depth', 'odom']
-        for key in required_keys:
-            if key in missing_inputs:
-                return False
-            value = ages.get(key)
-            if not isinstance(value, (float, int)):
-                return False
-            if stale_after > 0.0 and float(value) > stale_after:
-                return False
-        return True
-
-    def _update_direct_dual_vln_status_twist(self, payload: dict) -> None:
-        if not self._dual_vln_status_payload_is_command(payload) and str(payload.get('status', '') or '') != 'internnav_command':
-            return
-        try:
-            linear_x = float(payload.get('linear_x', 0.0) or 0.0)
-            angular_z = float(payload.get('angular_z', 0.0) or 0.0)
-        except (TypeError, ValueError):
-            return
-        if not (math.isfinite(linear_x) and math.isfinite(angular_z)):
-            return
-
-        twist = geometry_msgs.msg.Twist()
-        twist.linear.x = linear_x
-        twist.angular.z = angular_z
-        self._direct_dual_vln_last_status_twist = twist
-
-    def _publish_direct_dual_vln_status_command(self, payload: dict) -> None:
-        """Publish InternNav status commands directly to cmd_vel when active.
-
-        Nav2's dual_vln controller may successfully call get_command and update
-        the InternNav status stream while still not emitting a Twist on cmd_vel.
-        The status payload already contains the converted linear/angular command,
-        so mirror it to cmd_vel during an active dual_vln episode.
-        """
-        if not self._direct_dual_vln_status_bridge_active:
-            return
-        if self._cmd_vel_pub is None or self._is_goal_reached or self._nav_stop_ticks > 0:
-            return
-        if not self._dual_vln_status_payload_is_command(payload) and str(payload.get('status', '') or '') != 'internnav_command':
-            return
-        twist = self._direct_dual_vln_last_status_twist
-        if twist is None:
-            return
-        if not self._direct_dual_vln_pose_inside_map_bounds():
-            self._publish_direct_dual_vln_stop()
-            return
-        self._cmd_vel_pub.publish(twist)
-
-    def _publish_direct_dual_vln_stop(self) -> None:
-        if self._cmd_vel_pub is None:
-            return
-        self._direct_dual_vln_last_status_twist = None
-        self._cmd_vel_pub.publish(geometry_msgs.msg.Twist())
-
-    def _load_direct_dual_vln_map_bounds(self) -> tuple[float, float, float, float] | None:
-        if self._direct_dual_vln_map_bounds is not None:
-            return self._direct_dual_vln_map_bounds
-        if yaml is None:
-            return None
-        try:
-            world = str(self.node.conf.Arena.WORLD.value)
-            share = ament_index_python.packages.get_package_share_directory('arena_simulation_setup')
-            map_yaml = os.path.join(share, 'worlds', world, 'map', 'map.yaml')
-            with open(map_yaml, 'r', encoding='utf-8') as map_file:
-                metadata = yaml.safe_load(map_file) or {}
-            resolution = float(metadata.get('resolution', 0.0) or 0.0)
-            origin = metadata.get('origin') or [0.0, 0.0, 0.0]
-            image_path = str(metadata.get('image', '') or '')
-            if not os.path.isabs(image_path):
-                image_path = os.path.join(os.path.dirname(map_yaml), image_path)
-            if resolution <= 0.0 or len(origin) < 2 or not image_path:
-                return None
-            width, height = self._read_map_image_dimensions(image_path)
-            min_x = float(origin[0])
-            min_y = float(origin[1])
-            max_x = min_x + width * resolution
-            max_y = min_y + height * resolution
-            self._direct_dual_vln_map_bounds = (min_x, max_x, min_y, max_y)
-        except Exception as exc:
-            if not self._direct_dual_vln_bounds_warning_emitted:
-                self._logger.warn(f'Failed to load map bounds for direct dual_vln bridge safety guard: {exc}')
-                self._direct_dual_vln_bounds_warning_emitted = True
-            return None
-        return self._direct_dual_vln_map_bounds
-
-    def _read_map_image_dimensions(self, image_path: str) -> tuple[int, int]:
-        with open(image_path, 'rb') as image_file:
-            signature = image_file.read(24)
-            if signature.startswith(b'\x89PNG\r\n\x1a\n'):
-                return int.from_bytes(signature[16:20], 'big'), int.from_bytes(signature[20:24], 'big')
-
-            image_file.seek(0)
-            magic = image_file.readline().strip()
-            if magic not in {b'P2', b'P5'}:
-                raise ValueError(f'unsupported map image format {magic!r}')
-            tokens: list[bytes] = []
-            while len(tokens) < 2:
-                line = image_file.readline()
-                if not line:
-                    break
-                line = line.split(b'#', 1)[0]
-                tokens.extend(line.split())
-            if len(tokens) < 2:
-                raise ValueError('PGM header does not contain width/height')
-            return int(tokens[0]), int(tokens[1])
-
-    def _direct_dual_vln_pose_inside_map_bounds(self) -> bool:
-        if not self._is_dual_vln_robot():
-            return True
-        # Map bounds guard is disabled by default.  The simulation's
-        # wall collision and spawn logic already guarantee the robot
-        # stays inside the navigable area.  Keeping the code path
-        # available so it can be re-enabled via rosparam if needed.
-        if not self.node.rosparam[bool].get('direct_dual_vln_map_bounds_enabled', False):
-            return True
-        bounds = self._load_direct_dual_vln_map_bounds()
-        if bounds is None:
-            return True
-        margin = self.node.rosparam[float].get('direct_dual_vln_map_bounds_margin_m', 0.5)
-        min_x, max_x, min_y, max_y = bounds
-        x = float(self._pose.position.x)
-        y = float(self._pose.position.y)
-        inside = (min_x + margin) <= x <= (max_x - margin) and (min_y + margin) <= y <= (max_y - margin)
-        if not inside and not self._direct_dual_vln_bounds_warning_emitted:
-            self._logger.warn(
-                'Direct dual_vln bridge stopped because robot pose is outside the safe map bounds: '
-                f'pose=({x:.2f}, {y:.2f}), bounds=({min_x:.2f}, {max_x:.2f}, {min_y:.2f}, {max_y:.2f}), '
-                f'margin={margin:.2f}'
-            )
-            self._direct_dual_vln_bounds_warning_emitted = True
-        return inside
 
     async def _wait_for_camera_ready_before_navigation(self, *, timeout_s: float) -> bool:
         if not self._camera_ready_seen:
@@ -1301,237 +981,16 @@ class RobotManager(NodeInterface):
         )
         return False
 
-    async def _wait_for_dual_vln_status_before_navigation(self, *, timeout_s: float) -> bool:
-        if not self._is_dual_vln_robot():
-            return True
-
-        status_topic = self._dual_vln_status_topic or str(self.namespace('internnav', 'status'))
-        external_server_param = self._get_compat_rosparam(
-            bool,
-            'internnav_external_server',
-            'dual_vln_external_server',
-            False,
-        )
-        configured_command_service = self._get_compat_rosparam(
-            str,
-            'internnav_command_service',
-            'dual_vln_command_service',
-            '',
-            empty_is_missing=True,
-        )
-        # Some launch paths can lose the compatibility boolean even though the
-        # external command endpoint is configured explicitly.  The next barrier
-        # still waits for the real service, so this only avoids a stale status
-        # circular wait; it does not synthesize backend/sensor readiness.
-        external_server = bool(external_server_param) or bool(
-            str(configured_command_service or '').strip().startswith('/')
-        )
-        command_client = None
-        if external_server:
-            command_client = self.node.create_client(GetCommand, self._dual_vln_command_service_name())
-        require_real_backend = self._requires_real_internnav_backend()
-        accepted_statuses = {'backend_ready'}
-        self._logger.info(
-            'Waiting for InternNav status before publishing VLN navigation goal: '
-            f'{status_topic} (accepted={sorted(accepted_statuses)})'
-        )
-        try:
-            loop = asyncio.get_running_loop()
-            start_time = loop.time()
-            deadline = start_time + max(float(timeout_s), 0.0)
-            last_status = self._dual_vln_status
-            status_subscription_recreated = False
-            while loop.time() < deadline:
-                last_status = self._dual_vln_status
-                status_age = time.monotonic() - self._dual_vln_status_wall_time if self._dual_vln_status_wall_time > 0.0 else float('inf')
-                if (
-                    self._dual_vln_status in accepted_statuses
-                    and self._dual_vln_status_wall_time > 0.0
-                    and status_age <= 2.5
-                    and self._dual_vln_status_has_fresh_sensors(self._dual_vln_status_payload)
-                ):
-                    self._logger.info(
-                        f'InternNav status barrier passed with status={self._dual_vln_status}; publishing VLN navigation goal.'
-                    )
-                    return True
-
-                if (
-                    not status_subscription_recreated
-                    and self._dual_vln_status_wall_time <= 0.0
-                    and (loop.time() - start_time) >= 2.0
-                ):
-                    # Long-running external InternNav servers can already be
-                    # publishing before task_generator reaches this barrier.
-                    # Rejoin the TRANSIENT_LOCAL status topic once after reset so
-                    # DDS redelivers the current latched backend_ready heartbeat
-                    # instead of waiting out the entire goal-readiness timeout.
-                    self._logger.warn(
-                        'No InternNav status sample received within 2s; recreating status subscription to rejoin '
-                        f'{status_topic} before continuing the backend_ready barrier.'
-                    )
-                    self._recreate_dual_vln_status_subscription()
-                    status_subscription_recreated = True
-
-                # The external InternNav server exposes get_command as the true
-                # actuation interface.  In long-running Docker eval sessions DDS
-                # can occasionally discover the service while the latched status
-                # sample is missed by late-joining task_generator subscriptions;
-                # blocking here consumes the whole episode timeout before the
-                # direct get_command->cmd_vel bridge can even start.  Once the
-                # external service is visible for a few seconds, let the service
-                # readiness barrier below be authoritative and proceed.
-                if external_server and (loop.time() - start_time) >= 5.0:
-                    # The following get_command service barrier is the
-                    # authoritative readiness check.  Do not let a missed/stale
-                    # transient status sample consume the whole episode before
-                    # the direct command bridge can start; DDS can expose the
-                    # service to the eval preflight while a just-created client
-                    # here still needs discovery time.  This timeout is short
-                    # enough to preserve startup diagnostics while avoiding the
-                    # old circular wait.
-                    service_visible = False
-                    if command_client is not None:
-                        try:
-                            service_visible = bool(command_client.wait_for_service(timeout_sec=0.0))
-                        except Exception:
-                            service_visible = False
-                    if service_visible or not require_real_backend:
-                        self._logger.warn(
-                            'InternNav status did not publish a fresh backend_ready sample within 5s, but an external '
-                            f'server is configured; proceeding with service-readiness gating. '
-                            f'service_visible_now={service_visible} require_real_backend={require_real_backend} '
-                            f'last_status={last_status!r}'
-                        )
-                        return True
-                await asyncio.sleep(0.1)
-
-            self._logger.warn(
-                'Timed out waiting for fresh InternNav backend_ready status before VLN navigation goal; '
-                f'last_status={last_status!r}. Failing fast because real backend status is required.'
-            )
-            return False
-        finally:
-            if command_client is not None:
-                try:
-                    self.node.destroy_client(command_client)
-                except Exception:
-                    pass
-
-    async def _wait_for_dual_vln_command_service_before_navigation(self, *, timeout_s: float) -> bool:
-        if not self._is_dual_vln_robot():
-            return True
-
-        service_name = self._dual_vln_command_service_name()
-        client = self.node.create_client(GetCommand, service_name)
-        try:
-            self._logger.info(f'Waiting for dual_vln get_command service before publishing navigation goal: {service_name}')
-            deadline = asyncio.get_running_loop().time() + max(float(timeout_s), 0.0)
-            while asyncio.get_running_loop().time() < deadline:
-                if client.wait_for_service(timeout_sec=0.1):
-                    self._logger.info('dual_vln get_command service is ready; publishing VLN navigation goal.')
-                    return True
-                await asyncio.sleep(0.1)
-            self._logger.warn(
-                f'Timed out waiting for dual_vln get_command service {service_name}; failing fast.'
-            )
-            return False
-        finally:
-            try:
-                self.node.destroy_client(client)
-            except Exception:
-                pass
-
 
     async def wait_for_pending_goal(self, timeout_s: float) -> bool:
-        if self._internnav_direct_cmd_vel_enabled():
-            # Direct InternNav eval does not use Nav2's navigation goal as the
-            # episode release barrier.  The external client starts from
-            # task_reset/eval_ready and handles camera/backend readiness itself;
-            # waiting here can otherwise form a startup loop before task_reset.
-            return True
-
         task = self._publish_goal_task
         if task is None:
             return True
         try:
-            await asyncio.wait_for(asyncio.shield(task), timeout=max(float(timeout_s), 0.0))
+            await asyncio.wait_for(asyncio.shield(task), timeout=timeout_s)
             return True
         except asyncio.TimeoutError as exc:
-            raise RuntimeError(
-                f'Timed out waiting for navigation goal readiness for robot {self.name}. '
-                'Required TF/odom/camera inputs did not become ready in time.'
-            ) from exc
-        finally:
-            if self._publish_goal_task is task and task.done():
-                self._publish_goal_task = None
-
-    def _start_direct_dual_vln_command_bridge(self) -> None:
-        """Poll dual_vln get_command and publish its Twist directly.
-
-        In external InternNav Isaac evals the model server can produce valid
-        command responses while Nav2's controller path emits no cmd_vel.  The
-        namespaced cmd_vel topic is the command source consumed by both the
-        Isaac robot graph and the Arena fallback odom bridge, so publish the
-        service response directly for the active episode.
-        """
-        if self._cmd_vel_pub is None:
-            return
-        self._ensure_dual_vln_status_subscription()
-        if self._direct_dual_vln_client is None:
-            self._direct_dual_vln_client = self.node.create_client(GetCommand, self._dual_vln_command_service_name())
-        self._direct_dual_vln_status_bridge_active = True
-        if self._direct_dual_vln_timer is None:
-            self._logger.info('Starting direct dual_vln get_command -> cmd_vel bridge')
-            self._direct_dual_vln_timer = self.node.create_timer(0.1, self._direct_dual_vln_timer_cb)
-
-    def _stop_direct_dual_vln_command_bridge(self) -> None:
-        if self._direct_dual_vln_timer is not None:
-            try:
-                self._direct_dual_vln_timer.cancel()
-                self._direct_dual_vln_timer.destroy()
-            except Exception:
-                pass
-            self._direct_dual_vln_timer = None
-        self._direct_dual_vln_future = None
-        self._direct_dual_vln_status_bridge_active = False
-
-    def _direct_dual_vln_timer_cb(self) -> None:
-        if self._cmd_vel_pub is None or self._is_goal_reached or self._nav_stop_ticks > 0:
-            return
-        if self._direct_dual_vln_last_status_twist is not None:
-            if self._direct_dual_vln_pose_inside_map_bounds():
-                self._cmd_vel_pub.publish(self._direct_dual_vln_last_status_twist)
-            else:
-                self._publish_direct_dual_vln_stop()
-                return
-        client = self._direct_dual_vln_client
-        if client is None:
-            return
-        if self._direct_dual_vln_future is not None and not self._direct_dual_vln_future.done():
-            return
-        if not client.service_is_ready():
-            return
-
-        future = client.call_async(GetCommand.Request())
-        self._direct_dual_vln_future = future
-
-        def _publish_response(done_future) -> None:
-            if self._cmd_vel_pub is None or self._is_goal_reached or self._nav_stop_ticks > 0:
-                return
-            try:
-                response = done_future.result()
-                twist = getattr(response, 'twist', None)
-                if twist is None:
-                    return
-                self._direct_dual_vln_last_status_twist = twist
-                if not self._direct_dual_vln_pose_inside_map_bounds():
-                    self._publish_direct_dual_vln_stop()
-                    return
-                self._cmd_vel_pub.publish(twist)
-            except Exception as exc:
-                self._logger.warn(f'direct dual_vln get_command bridge failed: {exc}')
-
-        future.add_done_callback(_publish_response)
+            raise RuntimeError('Robot sensors/controller were not ready before episode deadline') from exc
 
     def _republish_goal_timer_cb(self) -> None:
         if self._goal_republish_ticks <= 0 or self._last_goal_msg is None:
@@ -1571,8 +1030,7 @@ class RobotManager(NodeInterface):
         return future.result()
 
     async def _send_navigation_goal(self, goal_msg: geometry_msgs.msg.PoseStamped) -> None:
-        if self._internnav_direct_cmd_vel_enabled():
-            self._logger.info('InternNav direct cmd_vel mode is active; skipping Nav2 navigate_to_pose goal')
+        if self._uses_waypoints():
             return
         if self._navigate_to_pose_client is None:
             self._logger.warn('navigate_to_pose action client is not initialized; goal will only be published for observers')
@@ -1636,255 +1094,38 @@ class RobotManager(NodeInterface):
         self._navigate_result_future.add_done_callback(_done_callback)
 
     async def _launch_robot(self, node_paths: set[str]):
-        """Launch the robot external nodes.
-        """
-        self._logger.info(f"LAUNCH ROBOT {self.name}")
+        if Utils.get_arena_type() == Constants.ArenaType.TRAINING:
+            return
+        ld = launch.LaunchDescription()
+        level = rclpy.logging.get_logger_effective_level(self.node.get_logger().name).name.lower()
+        ld.add_action(SetGlobalLogLevelAction(level))
+        waypoint_mode = self._uses_waypoints()
+        package = 'arena_vln_models' if waypoint_mode else 'arena_simulation_setup'
+        filename = ('follow_path.launch.py' if waypoint_mode else
+                    os.path.basename(self.node.rosparam[str].get('robot_launch_file', 'robot.launch.py')))
+        arguments = {
+            'robot': self.model_name,
+            'task_generator_node': os.path.join(self.node.get_namespace(), self.node.get_name()),
+            'namespace': str(self.namespace), 'frame': f'{self._robot.frame}/',
+            'inter_planner': str(self._robot.inter_planner),
+            'global_planner': str(self._robot.global_planner),
+            'local_planner': 'regulated_pure_pursuit' if waypoint_mode else str(self._robot.local_planner),
+            'train_mode': str(self.node._train_mode).lower(),
+            'agent_name': str(self._robot.agent), 'use_sim_time': 'true',
+            'amcl': 'true' if self.node.conf.Arena.SIM.value == Constants.SimSimulator.GAZEBO else 'false',
+            'enable_collision_monitor': str(self.node.rosparam[bool].get('enable_collision_monitor', True)).lower(),
+            'record_data_dir': str(self._robot.record_data_dir or ''),
+        }
+        ld.add_action(launch.actions.IncludeLaunchDescription(
+            launch.launch_description_sources.PythonLaunchDescriptionSource(os.path.join(
+                ament_index_python.packages.get_package_share_directory(package), 'launch', filename)),
+            launch_arguments=arguments.items()))
+        await self.node.do_launch(ld)
+        if not waypoint_mode:
+            bt_path = str(self.namespace('bt_navigator'))
+            while bt_path not in node_paths:
+                await asyncio.sleep(.01)
 
-        if Utils.get_arena_type() != Constants.ArenaType.TRAINING:
-            launch_description = launch.LaunchDescription()
-            current_log_level = rclpy.logging.get_logger_effective_level(self.node.get_logger().name).name.lower()
-            launch_description.add_action(SetGlobalLogLevelAction(current_log_level))
-
-            internnav_mode = self._get_compat_rosparam(str, 'internnav_mode', 'dual_vln_mode', 'heuristic')
-            internnav_model_path = self._get_compat_rosparam(
-                str, 'internnav_model_path', 'dual_vln_model_path', '', empty_is_missing=True
-            )
-            internnav_device = self._get_compat_rosparam(str, 'internnav_device', 'dual_vln_device', 'cpu')
-            internnav_inference_rate_hz = self._get_compat_rosparam(
-                float, 'internnav_inference_rate_hz', 'dual_vln_inference_rate_hz', 3.3333333333
-            )
-            internnav_inference_timeout_sec = self._get_compat_rosparam(
-                float, 'internnav_inference_timeout_sec', 'dual_vln_inference_timeout_sec', 0.2
-            )
-            internnav_rgb_topic = self._get_compat_rosparam(
-                str, 'internnav_rgb_topic', 'dual_vln_rgb_topic', '', empty_is_missing=True
-            )
-            internnav_depth_topic = self._get_compat_rosparam(
-                str, 'internnav_depth_topic', 'dual_vln_depth_topic', '', empty_is_missing=True
-            )
-            internnav_camera_info_topic = self._get_compat_rosparam(
-                str, 'internnav_camera_info_topic', 'dual_vln_camera_info_topic', '', empty_is_missing=True
-            )
-            internnav_python_executable = self._get_compat_rosparam(
-                str, 'internnav_python_executable', 'dual_vln_python_executable', '', empty_is_missing=True
-            )
-            internnav_adapter_target = self._get_compat_rosparam(
-                str, 'internnav_adapter_target', 'dual_vln_adapter_target', '', empty_is_missing=True
-            )
-            internnav_http_url = self._get_compat_rosparam(
-                str, 'internnav_http_url', 'dual_vln_http_url', '', empty_is_missing=True
-            )
-            internnav_http_timeout_sec = self._get_compat_rosparam(
-                float, 'internnav_http_timeout_sec', 'dual_vln_http_timeout_sec', 0.0
-            )
-            if internnav_http_url:
-                if internnav_mode.strip().lower() != 'internnav':
-                    internnav_mode = 'internnav'
-                if not internnav_adapter_target or internnav_adapter_target.strip() in HTTP_ADAPTER_REPLACED_TARGETS:
-                    internnav_adapter_target = REALWORLD_HTTP_ADAPTER_TARGET
-            internnav_require_real_backend = self._get_compat_rosparam(
-                bool, 'internnav_require_real_backend', 'dual_vln_require_real_backend', False
-            )
-            internnav_strict_device = self._get_compat_rosparam(
-                bool, 'internnav_strict_device', 'dual_vln_strict_device', False
-            )
-            internnav_look_down = self._get_compat_rosparam(
-                bool, 'internnav_look_down', 'dual_vln_look_down', False
-            )
-            internnav_model_output_policy = self._get_compat_rosparam(
-                str,
-                'internnav_model_output_policy',
-                'dual_vln_model_output_policy',
-                'trajectory',
-                empty_is_missing=True,
-            )
-            internnav_enable_visualization = self._get_compat_rosparam(
-                bool, 'internnav_enable_visualization', 'dual_vln_enable_visualization', False
-            )
-            internnav_visualization_topic = self._get_compat_rosparam(
-                str,
-                'internnav_visualization_topic',
-                'dual_vln_visualization_topic',
-                'internnav/debug_image',
-                empty_is_missing=True,
-            )
-            internnav_visualization_rate_hz = self._get_compat_rosparam(
-                float, 'internnav_visualization_rate_hz', 'dual_vln_visualization_rate_hz', 5.0
-            )
-            internnav_action_visualization_topic = self._get_compat_rosparam(
-                str,
-                'internnav_action_visualization_topic',
-                'dual_vln_action_visualization_topic',
-                'internnav/action_image',
-                empty_is_missing=True,
-            )
-            internnav_model_output_topic = self._get_compat_rosparam(
-                str,
-                'internnav_model_output_topic',
-                'dual_vln_model_output_topic',
-                'internnav/model_output',
-                empty_is_missing=True,
-            )
-            internnav_timing_mode = self._get_compat_rosparam(
-                str,
-                'internnav_timing_mode',
-                'dual_vln_timing_mode',
-                'wall',
-                empty_is_missing=True,
-            )
-            internnav_timing_mode = os.environ.get('ARENA_EVAL_INTERNNAV_TIMING_MODE', internnav_timing_mode)
-            internnav_model_latency_sec = self._get_compat_rosparam(
-                float,
-                'internnav_model_latency_sec',
-                'dual_vln_model_latency_sec',
-                0.3,
-            )
-            internnav_model_latency_sec = float(
-                os.environ.get('ARENA_EVAL_INTERNNAV_MODEL_LATENCY_SEC', internnav_model_latency_sec)
-            )
-            internnav_latency_policy = self._get_compat_rosparam(
-                str,
-                'internnav_latency_policy',
-                'dual_vln_latency_policy',
-                'fixed',
-                empty_is_missing=True,
-            )
-            internnav_latency_policy = os.environ.get('ARENA_EVAL_INTERNNAV_LATENCY_POLICY', internnav_latency_policy)
-            internnav_raw_cmd_vel_topic = self._get_compat_rosparam(
-                str,
-                'internnav_raw_cmd_vel_topic',
-                'dual_vln_raw_cmd_vel_topic',
-                'internnav/raw_cmd_vel',
-                empty_is_missing=True,
-            )
-            internnav_raw_cmd_vel_topic = os.environ.get(
-                'ARENA_EVAL_INTERNNAV_RAW_CMD_VEL_TOPIC',
-                internnav_raw_cmd_vel_topic,
-            )
-            internnav_external_server = self._get_compat_rosparam(
-                bool, 'internnav_external_server', 'dual_vln_external_server', False
-            )
-            internnav_direct_cmd_vel = self._internnav_direct_cmd_vel_enabled()
-            robot_launch_file = self.node.rosparam[str].get('robot_launch_file', 'robot.launch.py') or 'robot.launch.py'
-            robot_launch_file = os.path.basename(str(robot_launch_file))
-            if (
-                (internnav_mode.strip().lower() == 'internnav' and not internnav_http_url)
-                or os.environ.get('ARENA_INTERNNAV_EXTERNAL_SERVER', '').strip().lower() in {'1', 'true', 'yes', 'on'}
-                or internnav_direct_cmd_vel
-            ):
-                internnav_external_server = True
-
-            launch_arguments = {
-                'robot': self.model_name,
-                # 'simulator': self.node.conf.Arena.SIM.value.value,
-                # 'name': self.name,
-                'task_generator_node': os.path.join(self.node.get_namespace(), self.node.get_name()),
-                'namespace': self.namespace,
-                # 'use_namespace': 'True',
-                'frame': f'{self._robot.frame}/',
-                'inter_planner': self._robot.inter_planner,
-                'global_planner': self._robot.global_planner,
-                'local_planner': self._robot.local_planner,
-                # 'complexity': self.node.declare_parameter('complexity', 1).value,
-                'train_mode': str(self.node._train_mode).lower(),
-                'agent_name': self._robot.agent,
-                'use_sim_time': 'True',
-                'amcl': 'true' if self.node.conf.Arena.SIM.value in (Constants.SimSimulator.GAZEBO,) else 'false',
-                'internnav_mode': internnav_mode,
-                'dual_vln_mode': internnav_mode,
-                'internnav_model_path': internnav_model_path,
-                'dual_vln_model_path': internnav_model_path,
-                'internnav_device': internnav_device,
-                'dual_vln_device': internnav_device,
-                'internnav_inference_rate_hz': str(internnav_inference_rate_hz),
-                'dual_vln_inference_rate_hz': str(internnav_inference_rate_hz),
-                'internnav_inference_timeout_sec': str(internnav_inference_timeout_sec),
-                'dual_vln_inference_timeout_sec': str(internnav_inference_timeout_sec),
-                'internnav_rgb_topic': internnav_rgb_topic,
-                'dual_vln_rgb_topic': internnav_rgb_topic,
-                'internnav_depth_topic': internnav_depth_topic,
-                'dual_vln_depth_topic': internnav_depth_topic,
-                'internnav_camera_info_topic': internnav_camera_info_topic,
-                'dual_vln_camera_info_topic': internnav_camera_info_topic,
-                'internnav_python_executable': internnav_python_executable,
-                'dual_vln_python_executable': internnav_python_executable,
-                'internnav_adapter_target': internnav_adapter_target,
-                'dual_vln_adapter_target': internnav_adapter_target,
-                'internnav_http_url': internnav_http_url,
-                'dual_vln_http_url': internnav_http_url,
-                'internnav_http_timeout_sec': str(internnav_http_timeout_sec),
-                'dual_vln_http_timeout_sec': str(internnav_http_timeout_sec),
-                'internnav_require_real_backend': str(internnav_require_real_backend).lower(),
-                'dual_vln_require_real_backend': str(internnav_require_real_backend).lower(),
-                'internnav_strict_device': str(internnav_strict_device).lower(),
-                'dual_vln_strict_device': str(internnav_strict_device).lower(),
-                'internnav_look_down': str(internnav_look_down).lower(),
-                'dual_vln_look_down': str(internnav_look_down).lower(),
-                'internnav_model_output_policy': internnav_model_output_policy,
-                'dual_vln_model_output_policy': internnav_model_output_policy,
-                'internnav_enable_visualization': str(internnav_enable_visualization).lower(),
-                'dual_vln_enable_visualization': str(internnav_enable_visualization).lower(),
-                'internnav_visualization_topic': internnav_visualization_topic,
-                'dual_vln_visualization_topic': internnav_visualization_topic,
-                'internnav_action_visualization_topic': internnav_action_visualization_topic,
-                'dual_vln_action_visualization_topic': internnav_action_visualization_topic,
-                'internnav_visualization_rate_hz': str(internnav_visualization_rate_hz),
-                'dual_vln_visualization_rate_hz': str(internnav_visualization_rate_hz),
-                'internnav_model_output_topic': internnav_model_output_topic,
-                'dual_vln_model_output_topic': internnav_model_output_topic,
-                'internnav_timing_mode': internnav_timing_mode,
-                'dual_vln_timing_mode': internnav_timing_mode,
-                'internnav_model_latency_sec': str(internnav_model_latency_sec),
-                'dual_vln_model_latency_sec': str(internnav_model_latency_sec),
-                'internnav_latency_policy': internnav_latency_policy,
-                'dual_vln_latency_policy': internnav_latency_policy,
-                'internnav_raw_cmd_vel_topic': internnav_raw_cmd_vel_topic,
-                'dual_vln_raw_cmd_vel_topic': internnav_raw_cmd_vel_topic,
-                'internnav_external_server': str(internnav_external_server).lower(),
-                'dual_vln_external_server': str(internnav_external_server).lower(),
-                'internnav_direct_cmd_vel': str(internnav_direct_cmd_vel).lower(),
-                'dual_vln_direct_cmd_vel': str(internnav_direct_cmd_vel).lower(),
-                # Nav2 Jazzy collision_monitor currently rejects the model-wrapper
-                # polygon parameters during lifecycle configure on the dual_vln /
-                # InternNav path. Disable it for that local planner so eval bringup
-                # is gated by the actual controller/model readiness instead of an
-                # unrelated parameter typing issue inside collision_monitor.
-                'enable_collision_monitor': str(
-                    self.node.rosparam[bool].get(
-                        'enable_collision_monitor',
-                        not self._is_dual_vln_robot(),
-                    )
-                ).lower(),
-            }
-
-            if self._robot.record_data_dir:
-                launch_arguments.update({
-                    'record_data_dir': self._robot.record_data_dir,
-                })
-
-            launch_description.add_action(
-                launch.actions.IncludeLaunchDescription(
-                    launch.launch_description_sources.PythonLaunchDescriptionSource(
-                        os.path.join(
-                            ament_index_python.packages.get_package_share_directory('arena_simulation_setup'),
-                            'launch',
-                            robot_launch_file,
-                        )
-                    ),
-                    launch_arguments=launch_arguments.items(),
-                )
-            )
-            await self.node.do_launch(launch_description)
-
-            if internnav_direct_cmd_vel:
-                self._logger.info(
-                    f'{robot_launch_file} selected for InternNav direct cmd_vel; not waiting for Nav2 bt_navigator'
-                )
-            else:
-                bt_node_path = str(self.namespace('bt_navigator'))
-                self._logger.info(f'waiting for {bt_node_path}')
-                while bt_node_path not in node_paths:
-                    await asyncio.sleep(0.01)
 
     def _robot_pos_callback(self, data: nav_msgs.Odometry):
         """Callback for robot position updates.
@@ -1930,32 +1171,6 @@ class RobotManager(NodeInterface):
         except Exception:
             return float('inf')
 
-    def _get_compat_rosparam(
-        self,
-        type_: type,
-        primary_name: str,
-        legacy_name: str,
-        default,
-        *,
-        empty_is_missing: bool = False,
-    ):
-        value = self.node.rosparam[type_].get(primary_name, None)
-        legacy_value = self.node.rosparam[type_].get(legacy_name, None)
-        if (
-            legacy_value is not None
-            and (not empty_is_missing or legacy_value != '')
-            and value == default
-            and legacy_value != default
-        ):
-            return legacy_value
-
-        if value is not None and (not empty_is_missing or value != ''):
-            return value
-
-        if legacy_value is not None and (not empty_is_missing or legacy_value != ''):
-            return legacy_value
-
-        return default
 
     def _stop_vel_timer_cb(self):
         """Publish zero velocity when the robot should be stopped."""
@@ -2020,13 +1235,12 @@ class RobotManager(NodeInterface):
         if status in _TERMINAL_NAV_STATUSES:
             self._active_navigation_goal_uuid = None
             self._goal_republish_ticks = 0
-            # In dual_vln / InternNav mode Nav2 may report SUCCEEDED
+            # Nav2 may report SUCCEEDED
             # while the physical robot is still far from the goal.
             # Only tear down the command bridge when the robot has
             # actually reached the goal or the navigation was aborted
             # / cancelled.
             if status != action_msgs.msg.GoalStatus.STATUS_SUCCEEDED or reached:
-                self._stop_direct_dual_vln_command_bridge()
                 if self._cmd_vel_pub is not None:
                     self._cmd_vel_pub.publish(geometry_msgs.msg.Twist())
                 self._nav_stop_ticks = 15  # 1.5 s at 10 Hz
@@ -2039,19 +1253,15 @@ class RobotManager(NodeInterface):
         # TODO implement record data dir
 
     async def destroy(self):
-        """Destroy robot and remove from simulation and navigation stack.
-        """
         self._destroy_goal_republish_timer()
-        self._stop_direct_dual_vln_command_bridge()
-        if self._direct_dual_vln_client is not None:
-            try:
-                self.node.destroy_client(self._direct_dual_vln_client)
-            except Exception:
-                pass
-            self._direct_dual_vln_client = None
+        if self._waypoint_lifecycle:
+            await self._waypoint_lifecycle.stop()
+            self._waypoint_lifecycle.destroy()
+        await self._cancel_navigation_goal()
         if self._stop_vel_timer is not None:
             self._stop_vel_timer.cancel()
             self._stop_vel_timer.destroy()
             self._stop_vel_timer = None
         await self._environment_manager.remove_robot((self.robot,))
+
         # TODO kill node in navigation stack

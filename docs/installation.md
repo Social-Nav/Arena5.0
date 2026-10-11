@@ -1,9 +1,8 @@
 # Installation
 
 This guide installs the current Arena benchmark on a clean Ubuntu workstation.
-The supported runtime is Docker Compose with three services: ROS 2 Jazzy in
-`arena-1`, Isaac Sim 5.1 in `isaac-1`, and the real InternNav model in
-`internnav-1`. Do not install or run ROS 2 on the host, and do not use Gazebo as
+Arena manages two Docker Compose services: ROS 2 Jazzy in `arena-1` and
+Isaac Sim 5.1 in `isaac-1`. The model repository owns its external FollowPath client. Do not install or run ROS 2 on the host, and do not use Gazebo as
 an installation test or fallback.
 
 Commands below assume an x86-64 Ubuntu host and use `~/arena_jazzy_ws` as the
@@ -103,65 +102,34 @@ docker run --rm --runtime=nvidia --gpus all ubuntu nvidia-smi
     `nvcr.io/nvidia/isaac-sim:5.1.0` requires authentication, sign in to NGC
     with `docker login nvcr.io` and accept the applicable NVIDIA license terms.
 
-## 2. Clone Arena and InternNav
+## 2. Clone Arena
 
-The temporary installation branch is `feat/internnav-eval-progress`; change this
-to `jazzy` after the feature is merged. Arena initializes its own Git submodules
-inside the Docker bootstrap. The external InternNav runtime is kept under the
-workspace `deps` directory.
+The following `main` clone is for the general Arena installation. Unified
+FollowPath evaluation currently requires the local `skz/vln-integration`
+adaptation, which has not been pushed; remote `main` does not provide this
+adaptation. If you already have that source checkout, set `ARENA_WS_DIR` to its
+workspace and skip cloning. Do not try to clone this unpublished branch from
+GitHub. Record the commit of the checkout you actually use.
 
 ```bash
 export ARENA_WS_DIR="$HOME/arena_jazzy_ws"
-export ARENA_BRANCH=feat/internnav-eval-progress
-mkdir -p "$ARENA_WS_DIR/src" "$ARENA_WS_DIR/deps/models"
-
+export ARENA_BRANCH=main
+mkdir -p "$ARENA_WS_DIR/src"
 git clone --branch "$ARENA_BRANCH" \
-  https://github.com/Social-Nav/Arena5.0.git \
-  "$ARENA_WS_DIR/src/Arena"
-
-git clone --branch arena_interation --recurse-submodules \
-  https://github.com/Social-Nav/InternNav.git \
-  "$ARENA_WS_DIR/deps/InternNav"
-git -C "$ARENA_WS_DIR/deps/InternNav" submodule update --init --recursive
-```
-
-For a reproducible run, record the resolved revisions before building:
-
-```bash
+  https://github.com/Social-Nav/Arena5.0.git "$ARENA_WS_DIR/src/Arena"
 git -C "$ARENA_WS_DIR/src/Arena" rev-parse HEAD
-git -C "$ARENA_WS_DIR/deps/InternNav" rev-parse HEAD
 ```
 
-## 3. Download model checkpoints
+Arena initializes its own submodules during Docker bootstrap. Install model weights and clients according to the chosen model repository; Arena does not install or stage them.
 
-Create an isolated host-side download environment. It is only a file downloader;
-the model itself runs in `internnav-1`.
+## 3. Prepare the asset downloader
+
+This host environment only downloads the external scene files used below:
 
 ```bash
 export DOWNLOAD_VENV="$HOME/.venvs/arena-downloads"
 python3 -m venv "$DOWNLOAD_VENV"
 "$DOWNLOAD_VENV/bin/pip" install --upgrade pip huggingface_hub gdown
-```
-
-Download the public InternVLA-N1 DualVLN checkpoint and depth checkpoint into
-the paths mounted by the InternNav container:
-
-```bash
-"$DOWNLOAD_VENV/bin/hf" download \
-  InternRobotics/InternVLA-N1-DualVLN \
-  --local-dir "$ARENA_WS_DIR/deps/models/InternVLA-N1-DualVLN"
-
-"$DOWNLOAD_VENV/bin/hf" download \
-  depth-anything/Depth-Anything-V2-Metric-Hypersim-Small \
-  depth_anything_v2_metric_hypersim_vits.pth \
-  --local-dir "$ARENA_WS_DIR/deps/models/depth-anything-v2-metric-hypersim-small"
-```
-
-Verify the two entry-point files:
-
-```bash
-test -f "$ARENA_WS_DIR/deps/models/InternVLA-N1-DualVLN/config.json"
-test -f "$ARENA_WS_DIR/deps/models/depth-anything-v2-metric-hypersim-small/depth_anything_v2_metric_hypersim_vits.pth"
 ```
 
 ## 4. Install GRScenes commercial assets
@@ -331,61 +299,33 @@ docker run --rm \
 
 That sample is the asset used by `grscenes_20_v1`.
 
-## 6. Build the three-container environment
+## 6. Build the simulation environment
 
-The installer builds the ROS 2 Jazzy evaluator image, validates the bootstrap,
-then builds the Isaac Sim and InternNav feature images. A cold build and the
-InternNav Python environment installation can take a long time. Run it from the
-repository checkout:
+Install the Jazzy evaluator and Isaac Sim features:
 
 ```bash
 cd "$ARENA_WS_DIR/src/Arena"
-ARENA_WS_DIR="$ARENA_WS_DIR" \
-ARENA_BRANCH="$ARENA_BRANCH" \
-HOST_SCENES_DIR="$GRSCENES_DIR" \
-./install.sh --install-isaac --install-internnav
+./install.sh --install-isaac
 ```
 
-The standard workspace name used by the benchmark produces these services:
-
-```text
-arena-arena_jazzy_ws-arena-1
-arena-arena_jazzy_ws-isaac-1
-arena-arena_jazzy_ws-internnav-1
-```
-
-The host should not have `/opt/ros` and does not need `ros2` or `colcon`. The
-installer routes compilation and validation into `arena-1`; the Isaac image owns
-simulation/rendering, and the InternNav image owns CUDA/PyTorch model inference.
+Arena no longer installs model images, weights or clients. Follow
+[Model Integration and Evaluation](Model_Evaluation.md) to download and run the
+chosen model. New clients implement the shared [FollowPath interface](Model_Evaluation.md#interface).
 
 ## 7. Acceptance checks
 
-Run the bootstrap validation through the Arena Docker wrapper:
+Validate the common installation:
 
 ```bash
 cd "$ARENA_WS_DIR"
 source arena -c 'arena validate bootstrap'
 ```
 
-Check the installed features and images from the host:
+Only for the unified FollowPath adaptation described in section 2, also run:
 
 ```bash
-grep -Fx isaac "$ARENA_WS_DIR/src/Arena/.installed"
-grep -Fx internnav "$ARENA_WS_DIR/src/Arena/.installed"
-docker image inspect arena:dev arena_isaac arena_internnav >/dev/null
-docker ps -a --filter "name=arena-arena_jazzy_ws-"
-```
-
-Finally run the benchmark preflight. It checks the expected containers, GPU,
-model files, dataset mount, ROS environment, and supported evaluation contract:
-
-```bash
-cd "$ARENA_WS_DIR"
 src/Arena/_meta/docker/features/benchmark/main doctor
 src/Arena/_meta/docker/features/benchmark/main plan run
 ```
 
-Do not treat installation as benchmark acceptance until `doctor` succeeds. Then
-continue with [Run Current Benchmarks](benchmark/running-benchmarks.md), which
-starts the external InternNav server in `internnav-1` and runs ROS 2 evaluation
-inside `arena-1`.
+`doctor` checks Arena/Nav2 package availability. Actual external-client readiness is checked at the episode barrier. Continue with [Model Integration and Evaluation](Model_Evaluation.md#benchmark-commands).

@@ -1,8 +1,6 @@
 import asyncio
 import importlib.util
 import json
-import os
-import struct
 import sys
 import time
 import types
@@ -195,225 +193,14 @@ def _robot_manager_stub(*, rosparams=None):
     manager = RobotManager.__new__(RobotManager)
     logger = _Logger()
     manager._NodeInterface__node = SimpleNamespace(rosparam=_RosParamAccessor(rosparams or {}), get_logger=lambda: logger)
-    manager._direct_dual_vln_map_bounds = None
-    manager._direct_dual_vln_bounds_warning_emitted = False
-    manager._direct_dual_vln_last_status_twist = None
-    manager._direct_dual_vln_status_bridge_active = True
-    manager._dual_vln_episode_ready = None
+    manager._waypoint_lifecycle = None
     manager._model_declared_stop = False
     manager._model_declared_stop_payload = {}
-    manager._dual_vln_status = 'startup'
-    manager._dual_vln_status_wall_time = 0.0
-    manager._dual_vln_status_payload = {}
     manager._cmd_vel_pub = _Publisher()
     manager._is_goal_reached = False
     manager._nav_stop_ticks = 0
     manager._pose = SimpleNamespace(position=SimpleNamespace(x=1.0, y=1.0))
-    manager._is_dual_vln_robot = lambda: True
     return manager
-
-
-def test_compat_rosparam_prefers_non_default_legacy_alias_over_primary_default():
-    manager = _robot_manager_stub(rosparams={
-        'internnav_timing_mode': 'wall',
-        'dual_vln_timing_mode': 'sim_time_realworld',
-    })
-
-    assert manager._get_compat_rosparam(
-        str,
-        'internnav_timing_mode',
-        'dual_vln_timing_mode',
-        'wall',
-        empty_is_missing=True,
-    ) == 'sim_time_realworld'
-
-
-def test_compat_rosparam_keeps_primary_non_default_over_legacy_alias():
-    manager = _robot_manager_stub(rosparams={
-        'internnav_timing_mode': 'sim_time_realworld',
-        'dual_vln_timing_mode': 'wall',
-    })
-
-    assert manager._get_compat_rosparam(
-        str,
-        'internnav_timing_mode',
-        'dual_vln_timing_mode',
-        'wall',
-        empty_is_missing=True,
-    ) == 'sim_time_realworld'
-
-
-def test_eval_env_can_override_timing_mode_after_compat_lookup(monkeypatch):
-    manager = _robot_manager_stub(rosparams={
-        'internnav_timing_mode': 'wall',
-        'dual_vln_timing_mode': 'wall',
-    })
-    monkeypatch.setenv('ARENA_EVAL_INTERNNAV_TIMING_MODE', 'sim_time_realworld')
-
-    selected = manager._get_compat_rosparam(
-        str,
-        'internnav_timing_mode',
-        'dual_vln_timing_mode',
-        'wall',
-        empty_is_missing=True,
-    )
-
-    assert os.environ.get('ARENA_EVAL_INTERNNAV_TIMING_MODE', selected) == 'sim_time_realworld'
-
-
-def test_dual_vln_status_sensor_freshness_accepts_only_fresh_rgb_and_depth():
-    manager = _robot_manager_stub()
-
-    assert manager._dual_vln_status_has_fresh_sensors({
-        'debug': {
-            'stale_after_sec': 2.0,
-            'sensor_ages_sec': {'rgb': 0.1, 'depth': 0.2, 'odom': 0.1, 'camera_info': None},
-        }
-    }) is True
-
-    assert manager._dual_vln_status_has_fresh_sensors({
-        'debug': {
-            'stale_after_sec': 2.0,
-            'sensor_ages_sec': {'rgb': 0.1, 'depth': 2.5},
-        }
-    }) is False
-
-    assert manager._dual_vln_status_has_fresh_sensors({
-        'debug': {'stale_after_sec': 2.0, 'sensor_ages_sec': {'rgb': 0.1}}
-    }) is False
-
-
-def test_direct_dual_vln_status_twist_filters_invalid_payloads_and_keeps_valid_command():
-    manager = _robot_manager_stub()
-
-    manager._update_direct_dual_vln_status_twist({'status': 'inference_in_progress', 'linear_x': 1.0, 'angular_z': 1.0})
-    assert manager._direct_dual_vln_last_status_twist is None
-
-    manager._update_direct_dual_vln_status_twist({'status': 'internnav_command', 'linear_x': 'nan', 'angular_z': 0.0})
-    assert manager._direct_dual_vln_last_status_twist is None
-
-    manager._update_direct_dual_vln_status_twist({'status': 'internnav_command', 'linear_x': 0.36, 'angular_z': -0.375})
-    assert manager._direct_dual_vln_last_status_twist.linear.x == 0.36
-    assert manager._direct_dual_vln_last_status_twist.angular.z == -0.375
-
-
-def test_direct_dual_vln_status_twist_accepts_heuristic_command_statuses():
-    manager = _robot_manager_stub()
-
-    manager._update_direct_dual_vln_status_twist({'status': 'arc_to_goal', 'linear_x': 0.16, 'angular_z': 0.6})
-    assert manager._direct_dual_vln_last_status_twist.linear.x == 0.16
-    assert manager._direct_dual_vln_last_status_twist.angular.z == 0.6
-
-    manager._publish_direct_dual_vln_status_command({'status': 'arc_to_goal', 'linear_x': 0.16, 'angular_z': 0.6})
-    assert len(manager._cmd_vel_pub.messages) == 1
-    assert manager._cmd_vel_pub.messages[0].linear.x == 0.16
-    assert manager._cmd_vel_pub.messages[0].angular.z == 0.6
-
-
-def test_terminal_model_stop_ends_matching_episode_and_publishes_zero():
-    manager = _robot_manager_stub()
-    manager._stop_direct_dual_vln_command_bridge = lambda: setattr(
-        manager, '_direct_dual_vln_status_bridge_active', False
-    )
-
-    manager._on_dual_vln_status(SimpleNamespace(data=json.dumps({
-        'status': 'episode_ready',
-        'episode': 7,
-        'episode_started': True,
-    })))
-    manager._on_dual_vln_status(SimpleNamespace(data=json.dumps({
-        'status': 'stop',
-        'episode': 7,
-        'episode_started': True,
-        'terminal': True,
-        'termination_reason': 'model_stop',
-    })))
-
-    assert asyncio.run(manager.is_done) is True
-    assert manager.done_reason == 'model_stop'
-    assert manager._direct_dual_vln_status_bridge_active is False
-    assert manager._nav_stop_ticks == 15
-    assert len(manager._cmd_vel_pub.messages) == 1
-    assert manager._cmd_vel_pub.messages[0].linear.x == 0.0
-    assert manager._cmd_vel_pub.messages[0].angular.z == 0.0
-
-
-def test_nonterminal_or_stale_stop_does_not_end_episode():
-    manager = _robot_manager_stub()
-    manager._stop_direct_dual_vln_command_bridge = lambda: None
-
-    manager._on_dual_vln_status(SimpleNamespace(data=json.dumps({
-        'status': 'episode_ready',
-        'episode': 8,
-        'episode_started': True,
-    })))
-    for payload in (
-        {'status': 'stop', 'episode': 8, 'terminal': False, 'termination_reason': 'model_stop'},
-        {'status': 'stop', 'episode': 7, 'terminal': True, 'termination_reason': 'model_stop'},
-        {'status': 'adapter_exception', 'episode': 8, 'terminal': False},
-    ):
-        manager._on_dual_vln_status(SimpleNamespace(data=json.dumps(payload)))
-
-    assert asyncio.run(manager.is_done) is False
-    assert manager.done_reason == 'running'
-
-
-def test_direct_dual_vln_bridge_stops_instead_of_publishing_when_pose_leaves_safe_bounds():
-    manager = _robot_manager_stub(rosparams={
-        'direct_dual_vln_map_bounds_enabled': True,
-        'direct_dual_vln_map_bounds_margin_m': 0.5,
-    })
-    manager._direct_dual_vln_map_bounds = (0.0, 2.0, 0.0, 2.0)
-    manager._pose.position.x = 0.25
-    manager._pose.position.y = 1.0
-    manager._update_direct_dual_vln_status_twist({'status': 'internnav_command', 'linear_x': 0.36, 'angular_z': -0.375})
-
-    manager._publish_direct_dual_vln_status_command({'status': 'internnav_command'})
-
-    assert len(manager._cmd_vel_pub.messages) == 1
-    assert manager._cmd_vel_pub.messages[0].linear.x == 0.0
-    assert manager._cmd_vel_pub.messages[0].angular.z == 0.0
-    assert manager._direct_dual_vln_last_status_twist is None
-    assert manager._logger.warnings
-
-
-def test_direct_dual_vln_bridge_ignores_bounds_guard_by_default():
-    manager = _robot_manager_stub(rosparams={})
-    manager._direct_dual_vln_map_bounds = (0.0, 2.0, 0.0, 2.0)
-    manager._pose.position.x = 0.25
-    manager._pose.position.y = 1.0
-    manager._update_direct_dual_vln_status_twist({'status': 'internnav_command', 'linear_x': 0.36, 'angular_z': -0.375})
-
-    manager._publish_direct_dual_vln_status_command({'status': 'internnav_command'})
-
-    # Default: bounds guard is disabled, so the command should be published
-    assert len(manager._cmd_vel_pub.messages) == 1
-    assert manager._cmd_vel_pub.messages[0].linear.x == 0.36
-    assert manager._cmd_vel_pub.messages[0].angular.z == -0.375
-
-
-def test_map_bounds_loader_reads_png_metadata_and_caches_bounds(monkeypatch, tmp_path):
-    world_map_dir = tmp_path / 'worlds' / 'unit_world' / 'map'
-    world_map_dir.mkdir(parents=True)
-    image_path = world_map_dir / 'map.png'
-    image_path.write_bytes(b'\x89PNG\r\n\x1a\n' + b'\x00' * 8 + struct.pack('>II', 20, 10) + b'\x00' * 16)
-    (world_map_dir / 'map.yaml').write_text(
-        'image: map.png\nresolution: 0.05\norigin: [-0.25, -0.5, 0]\n',
-        encoding='utf-8',
-    )
-
-    monkeypatch.setattr(
-        robot_manager_module.ament_index_python.packages,
-        'get_package_share_directory',
-        lambda package: str(tmp_path),
-    )
-    manager = _robot_manager_stub()
-    manager.node.conf = SimpleNamespace(Arena=SimpleNamespace(WORLD=SimpleNamespace(value='unit_world')))
-
-    assert manager._load_direct_dual_vln_map_bounds() == (-0.25, 0.75, -0.5, 0.0)
-
-    image_path.unlink()
-    assert manager._load_direct_dual_vln_map_bounds() == (-0.25, 0.75, -0.5, 0.0)
 
 
 def test_goal_status_callback_ignores_terminal_status_for_stale_goal_uuid():
@@ -422,8 +209,6 @@ def test_goal_status_callback_ignores_terminal_status_for_stale_goal_uuid():
     manager._goal_tolerance_distance = 0.25
     manager._goal_republish_ticks = 7
     manager._distance_to_goal = lambda: 0.0
-    bridge_stops = []
-    manager._stop_direct_dual_vln_command_bridge = lambda: bridge_stops.append(True)
 
     stale_status = SimpleNamespace(
         goal_info=SimpleNamespace(goal_id=SimpleNamespace(uuid=[9, 9, 9])),
@@ -432,7 +217,6 @@ def test_goal_status_callback_ignores_terminal_status_for_stale_goal_uuid():
 
     manager._goal_status_callback(SimpleNamespace(status_list=[stale_status]))
 
-    assert bridge_stops == []
     assert manager._cmd_vel_pub.messages == []
     assert manager._nav_stop_ticks == 0
     assert manager._goal_republish_ticks == 7
@@ -445,8 +229,6 @@ def test_goal_status_callback_stops_only_for_active_goal_uuid():
     manager._goal_tolerance_distance = 0.25
     manager._goal_republish_ticks = 7
     manager._distance_to_goal = lambda: 0.0
-    bridge_stops = []
-    manager._stop_direct_dual_vln_command_bridge = lambda: bridge_stops.append(True)
 
     active_status = SimpleNamespace(
         goal_info=SimpleNamespace(goal_id=SimpleNamespace(uuid=[1, 2, 3])),
@@ -455,7 +237,6 @@ def test_goal_status_callback_stops_only_for_active_goal_uuid():
 
     manager._goal_status_callback(SimpleNamespace(status_list=[active_status]))
 
-    assert bridge_stops == [True]
     assert len(manager._cmd_vel_pub.messages) == 1
     assert manager._cmd_vel_pub.messages[0].linear.x == 0.0
     assert manager._cmd_vel_pub.messages[0].angular.z == 0.0

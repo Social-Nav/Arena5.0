@@ -801,93 +801,67 @@ def test_hunav_skips_the_compute_agents_call_entirely_while_held():
     )
 
 
-def test_model_reachability_is_required_and_reads_the_ros_graph():
-    """The model condition must be satisfied by observable state, either channel.
-
-    Two channels exist and which one is populated depends on the eval mode, so
-    the barrier accepts an advertised ``get_command`` service OR a received
-    InternNav status sample.  Production runs with ``--internnav-official-client``,
-    where the wrapper's own service waits are skipped, so the status channel is
-    the one that arms there.
-    """
-    from task_generator.node import TaskGenerator
-
-    events = []
-    node = _task_generator_stub(events)
-    robot = SimpleNamespace(
-        _is_dual_vln_robot=lambda: True,
-        _dual_vln_command_service_name=lambda: '/task_generator_node/Ai2_Bot2/get_command',
-        _dual_vln_status_topic='/task_generator_node/Ai2_Bot2/internnav/status',
-        _dual_vln_status_wall_time=0.0,
-    )
-    node._robots_manager = SimpleNamespace(robots={'Ai2_Bot2': robot})
-    node._video_streams_ready_episode = 0
-
-    conditions = node._episode_start_barrier_conditions()
-    model = next(c for c in conditions if c.name == 'model_reachable')
-    assert model.required is True
-    assert model.evaluate() is False, 'no channel has spoken yet'
-
-    # Channel A: the service becomes visible on the graph.
-    node.get_service_names_and_types = lambda: [
-        ('/task_generator_node/Ai2_Bot2/get_command', ['x/srv/GetCommand'])
-    ]
-    assert model.evaluate() is True
-
-    # Channel B alone is enough too, which is the official-client path.
-    node.get_service_names_and_types = lambda: []
-    assert model.evaluate() is False
-    robot._dual_vln_status_wall_time = 123.4
-    assert model.evaluate() is True
+def _attach_waypoint_robot(node):
+    from arena_vln_models.session import Session
+    from arena_rclpy_mixins.shared import Namespace
+    lifecycle = SimpleNamespace(session=Session('current', 0), controller_active=True)
+    robot = SimpleNamespace(namespace=Namespace('/task_generator_node/Ai2_Bot2'), _waypoint_lifecycle=lifecycle)
+    node._robots_manager = SimpleNamespace(managers={'Ai2_Bot2': robot})
+    return lifecycle
 
 
-def test_lightnav_direct_client_requires_its_own_fresh_status():
+def test_model_readiness_requires_current_heartbeat_and_active_controller():
     import time
     node = _task_generator_stub([])
-    robot = SimpleNamespace(
-        _is_dual_vln_robot=lambda: True,
-        _internnav_direct_cmd_vel_enabled=lambda: True,
-        _dual_vln_command_service_name=lambda: '/unused/get_command',
-        _dual_vln_status_topic='/task_generator_node/Ai2_Bot2/lightnav/status',
-        _dual_vln_status_wall_time=time.monotonic(),
-        _dual_vln_status_payload={'backend': 'internnav', 'backend_ready': True},
-    )
-    node._robots_manager = SimpleNamespace(managers={'Ai2_Bot2': robot})
-    channels = node._model_channels()
-    assert channels['command_services'] == []
-    assert not node._model_ready_state(channels)['ready']
-    robot._dual_vln_status_payload = {'backend': 'lightnav', 'backend_ready': True}
-    assert node._model_ready_state(channels)['ready']
-    robot._dual_vln_status_wall_time -= 10
-    assert not node._model_ready_state(channels)['ready']
+    lifecycle = _attach_waypoint_robot(node)
+    condition = next(c for c in node._episode_start_barrier_conditions() if c.name == 'model_reachable')
+    assert condition.required and not condition.evaluate()
+    assert node._model_channels()['command_services'] == []
+    lifecycle.session.receive(dict(session_id='old', episode=0, status='ready'), time.monotonic())
+    assert not condition.evaluate()
+    lifecycle.session.receive(dict(session_id='current', episode=0, status='ready'), time.monotonic())
+    assert condition.evaluate()  # No first path is necessary.
+    lifecycle.controller_active = False
+    assert not condition.evaluate()
+    lifecycle.controller_active = True
+    lifecycle.session.received_at -= 10
+    assert not condition.evaluate()
 
 
-def test_model_reachability_can_be_declared_not_required_explicitly():
-    """The escape hatch is a named rosparam, not a silent skip."""
+def test_missing_external_client_times_out_without_releasing_episode():
+    from task_generator.node import TaskGenerator
     events = []
-    node = _task_generator_stub(events)
-    node._robots_manager = SimpleNamespace(
-        robots={
-            'Ai2_Bot2': SimpleNamespace(
-                _is_dual_vln_robot=lambda: True,
-                _dual_vln_command_service_name=lambda: '/get_command',
-                _dual_vln_status_topic='/status',
-                _dual_vln_status_wall_time=0.0,
-            )
-        }
-    )
-    node.rosparam = _RosParamAccessor(
-        {
-            'episode_start_barrier_timeout_sec': 5.0,
-            'episode_start_recorder_discovery_sec': 0.0,
-            'episode_start_require_model_ready': False,
-        }
-    )
-    model = next(
-        c for c in node._episode_start_barrier_conditions() if c.name == 'model_reachable'
-    )
-    assert model.required is False
-    assert model.skip_reason == 'episode_start_require_model_ready=false'
+    node = _task_generator_stub(events, streams_ready_publishers=0)
+    lifecycle = _attach_waypoint_robot(node)
+    async def begin(session, episode):
+        lifecycle.session.reset(session, episode)
+    lifecycle.begin = begin
+    node.rosparam.set('episode_start_barrier_timeout_sec', 0.)
+    with pytest.raises(EpisodeStartBarrierTimeout, match='model_reachable'):
+        asyncio.run(TaskGenerator._reset_task_unlocked(node))
+    assert not node.episode_motion_released
+    assert not lifecycle.session.released
+    assert 'episode_start' not in [label for label, _ in events]
+
+
+def test_reset_waits_for_stop_before_teleport_and_cancellation_failure_blocks_reset():
+    from task_generator.node import TaskGenerator
+    events = []
+    node = _task_generator_stub(events, streams_ready_publishers=0)
+    lifecycle = _attach_waypoint_robot(node)
+    lifecycle.session.released = True
+    async def begin(session, episode):
+        assert not lifecycle.session.released
+        assert not node.episode_motion_released
+        events.append(('cancel_timeout', None))
+        raise TimeoutError('goals did not stop')
+    lifecycle.begin = begin
+    with pytest.raises(TimeoutError, match='goals did not stop'):
+        asyncio.run(TaskGenerator._reset_task_unlocked(node))
+    labels = [label for label, _ in events]
+    assert labels[-1] == 'cancel_timeout'
+    assert 'task_reset' not in labels and 'episode_start' not in labels
+    assert not node._robot_navigation_ready
 
 
 def test_zero_expected_humans_do_not_block_the_episode_barrier():
@@ -1007,3 +981,14 @@ def test_barrier_arming_lines_are_logged_at_warn_not_info():
             f'{marker!r} must be logged at warn so it is observable under '
             f'--log-level warn; found get_logger().{call[:12]}'
         )
+
+
+def test_client_error_aborts_the_start_barrier_immediately():
+    import time
+    from task_generator.node import TaskGenerator
+    node = _task_generator_stub([], streams_ready_publishers=0)
+    lifecycle = _attach_waypoint_robot(node)
+    lifecycle.session.receive(dict(session_id='current', episode=0, status='error', reason='failed to initialize'), time.monotonic())
+    with pytest.raises(RuntimeError, match='failed to initialize'):
+        asyncio.run(TaskGenerator._await_episode_start_barrier(node))
+    assert not node.episode_motion_released

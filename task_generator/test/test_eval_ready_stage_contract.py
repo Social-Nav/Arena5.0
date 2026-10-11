@@ -554,16 +554,6 @@ def test_the_modelled_filter_matches_the_official_client_source():
     )
 
 
-def test_the_modelled_filter_matches_the_timing_manager_source():
-    path = _first_existing(_TIMING_MANAGER_CANDIDATES)
-    if path is None:
-        pytest.skip('timing manager source not present in this tree')
-    source = path.read_text(encoding='utf-8')
-    assert re.search(
-        r"payload\.get\(\s*'stage'\s*\)\s*!=\s*'episode'", source
-    ), f'{path} no longer filters eval_ready on stage=="episode"'
-
-
 def test_the_release_sample_is_published_at_the_origin_not_at_task_reset():
     """Where the release sample is published is a t=0 property, not cosmetics.
 

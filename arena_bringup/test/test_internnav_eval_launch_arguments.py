@@ -17,7 +17,6 @@ long function that starts subprocesses, so it is not called here.
 """
 
 import ast
-import importlib.util
 import re
 from pathlib import Path
 
@@ -207,34 +206,3 @@ def test_ros2launch_really_rejects_a_trailing_assignment(argument, accepted):
     else:
         with pytest.raises(RuntimeError):
             parse([argument])
-
-
-def test_shared_robot_launch_requires_external_internnav_service():
-    source = ROBOT_LAUNCH.read_text(encoding='utf-8')
-
-    assert "executable='dual_vln_server'" not in source
-    assert 'require_external_internnav' in source
-    assert 'internnav_external_server:=true' in source
-    assert 'internnav_async_eval.launch.py' in source
-
-
-def test_shared_robot_launch_external_internnav_guard():
-    spec = importlib.util.spec_from_file_location('arena_robot_launch', ROBOT_LAUNCH)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    check = module._requires_missing_local_internnav_server
-    defaults = {
-        'local_planner': 'dual_vln',
-        'train_mode': 'false',
-        'internnav_external_server': 'false',
-        'dual_vln_external_server': 'false',
-        'internnav_direct_cmd_vel': 'false',
-        'dual_vln_direct_cmd_vel': 'false',
-        'env_external_server': '',
-    }
-
-    assert check(**defaults) is True
-    assert check(**{**defaults, 'internnav_external_server': 'true'}) is False
-    assert check(**{**defaults, 'internnav_direct_cmd_vel': 'true'}) is False
-    assert check(**{**defaults, 'local_planner': 'dwb'}) is False
-    assert check(**{**defaults, 'train_mode': 'true'}) is False

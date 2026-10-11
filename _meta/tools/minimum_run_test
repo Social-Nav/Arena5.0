@@ -113,16 +113,12 @@ check_docker(){
         images+=("arena_isaac:latest")
         services+=("isaac")
     fi
-    if [ "$CHECK_INSTALLED_FEATURES" -eq 1 ] && installed_feature internnav; then
-        images+=("arena_internnav:latest")
-        services+=("internnav")
-    fi
 
     local image
     for image in "${images[@]}"; do
         docker image inspect "$image" >/dev/null || {
             echo "Missing Docker image: $image" >&2
-            echo "Re-run the relevant install command, for example: arena feature isaac install / arena feature internnav install" >&2
+            echo "Re-run the relevant install command, for example: arena feature isaac install" >&2
             exit 1
         }
         echo "  image ok: $image"

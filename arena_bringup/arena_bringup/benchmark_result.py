@@ -79,6 +79,10 @@ def generate_benchmark_result(
     backend = manifest.get('model_backend', 'internnav')
     source_artifacts = tuple(name.replace('internnav_', f'{backend}_', 1) if backend in {'lightnav', 'navila'} and name in {
         'internnav_status.json', 'internnav_trace.jsonl', 'internnav_diagnostic_summary.json'} else name for name in SOURCE_ARTIFACTS)
+    if (manifest.get('parameters') or {}).get('execution_mode') == 'nav2_follow_path':
+        source_artifacts = tuple(name for name in SOURCE_ARTIFACTS if not name.startswith('internnav_')) + (
+            'model_status.json', 'model_trace.jsonl', 'model_diagnostic_summary.json',
+            'path_execution.jsonl', 'timing_summary.json')
     for filename in source_artifacts:
         path = run_path / filename
         source_files[filename] = {
@@ -124,7 +128,9 @@ def generate_benchmark_result(
                 'artifact_validation': validation.get('schema_version'),
             },
         },
-        'model': {
+        'model': ({'label': backend, 'execution_mode': 'nav2_follow_path',
+                   'interface': 'nav2_msgs/action/FollowPath', 'external_client': True}
+                  if (manifest.get('parameters') or {}).get('execution_mode') == 'nav2_follow_path' else {
             'mode': (manifest.get('parameters') or {}).get('dual_vln_mode'),
             'path': (manifest.get('parameters') or {}).get('dual_vln_model_path'),
             'system2_path': (manifest.get('parameters') or {}).get('dual_vln_system2_model_path'),
@@ -136,7 +142,7 @@ def generate_benchmark_result(
                 (manifest.get('parameters') or {}).get('internnav_external_server')),
             'direct_cmd_vel': (manifest.get('parameters') or {}).get('execution_mode') == 'external_direct_cmd_vel'
                 or _as_bool((manifest.get('parameters') or {}).get('internnav_direct_cmd_vel')),
-        },
+        }),
         'verdict': {
             'status': summary['result_status'],
             'valid_run': summary['valid_run'],
@@ -218,7 +224,7 @@ def generate_benchmark_result(
             )},
             'model': {key: summary[key] for key in (
                 'model_trace_present', 'model_control_pass', 'stale_camera_count',
-                'model_trace_record_count', 'model_control_event_count',
+                'model_trace_record_count', 'model_control_event_count', 'path_count',
                 'planning_request_count', 'trajectory_event_count',
                 'discrete_action_event_count', 'forward_count', 'rotate_count',
                 'stop_count', 'rtf_mean', 'rtf_p50', 'rtf_p95',

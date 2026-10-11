@@ -18,25 +18,14 @@ def _args(**overrides):
         'vln_instruction_manifest': '',
         'vln_instruction_episode': 'episode_00',
         'vln_instruction_timestamp': '',
-        'dual_vln_python_executable': '',
-        'dual_vln_status_topic': '',
+        'model_status_topic': '',
         'task_reset_topic': '/task_generator_node/task_reset',
-        'dual_vln_adapter_target': '',
-        'dual_vln_mode': 'heuristic',
-        'dual_vln_model_path': '',
-        'dual_vln_http_url': '',
-        'dual_vln_http_timeout_sec': 0.0,
-        'dual_vln_require_real_backend': False,
-        'dual_vln_rgb_topic': '',
-        'dual_vln_depth_topic': '',
-        'dual_vln_camera_info_topic': '',
+        'vln_rgb_topic': '',
+        'vln_depth_topic': '',
+        'vln_camera_info_topic': '',
         'eval_video_sim_top_down_topic': '',
         'eval_video_debug_overlay_topic': '',
         'save_eval_video': False,
-        'dual_vln_enable_visualization': False,
-        'dual_vln_device': 'cpu',
-        'dual_vln_inference_timeout_sec': 0.2,
-        'dual_vln_inference_rate_hz': 3.3333333333,
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -202,7 +191,7 @@ def test_explicit_instruction_file_wins_over_present_scenario_json(tmp_path, mon
     assert 'vln_instruction_scenario_json_missing' not in adjustments
 
 
-def test_relative_internnav_status_topic_is_resolved_to_robot_namespace(tmp_path, monkeypatch):
+def test_relative_model_status_topic_is_resolved_to_robot_namespace(tmp_path, monkeypatch):
     share = tmp_path / 'arena_simulation_setup'
     share.mkdir()
     _use_share(monkeypatch, share)
@@ -213,27 +202,16 @@ def test_relative_internnav_status_topic_is_resolved_to_robot_namespace(tmp_path
     )
     args = _args(
         robot='Ai2_Bot2',
-        dual_vln_status_topic='internnav/status',
+        model_status_topic='model/status',
     )
 
     adjustments = internnav_eval._apply_runtime_defaults(args)
 
-    assert args.dual_vln_status_topic == '/task_generator_node/Ai2_Bot2/internnav/status'
-    assert adjustments['dual_vln_status_topic'] == args.dual_vln_status_topic
+    assert args.model_status_topic == '/task_generator_node/Ai2_Bot2/model/status'
+    assert adjustments['model_status_topic'] == args.model_status_topic
 
 
-@pytest.mark.parametrize(
-    'legacy_topic',
-    [
-        '/task_generator_node/dual_vln/status',
-        '/task_generator_node/internnav/status',
-    ],
-)
-def test_legacy_internnav_status_topics_are_resolved_to_robot_namespace(
-    tmp_path,
-    monkeypatch,
-    legacy_topic,
-):
+def test_absolute_custom_model_status_topic_is_preserved(tmp_path, monkeypatch):
     share = tmp_path / 'arena_simulation_setup'
     share.mkdir()
     _use_share(monkeypatch, share)
@@ -242,45 +220,12 @@ def test_legacy_internnav_status_topics_are_resolved_to_robot_namespace(
         '_resolve_existing_manifest_path',
         lambda *_args, **_kwargs: ('', []),
     )
-    args = _args(robot='Ai2_Bot2', dual_vln_status_topic=legacy_topic)
+    args = _args(model_status_topic='/custom/status')
 
     adjustments = internnav_eval._apply_runtime_defaults(args)
 
-    assert args.dual_vln_status_topic == '/task_generator_node/Ai2_Bot2/internnav/status'
-    assert adjustments['dual_vln_status_topic'] == args.dual_vln_status_topic
-
-
-def test_absolute_custom_internnav_status_topic_is_preserved(tmp_path, monkeypatch):
-    share = tmp_path / 'arena_simulation_setup'
-    share.mkdir()
-    _use_share(monkeypatch, share)
-    monkeypatch.setattr(
-        internnav_eval,
-        '_resolve_existing_manifest_path',
-        lambda *_args, **_kwargs: ('', []),
-    )
-    args = _args(dual_vln_status_topic='/custom/status')
-
-    adjustments = internnav_eval._apply_runtime_defaults(args)
-
-    assert args.dual_vln_status_topic == '/custom/status'
-    assert 'dual_vln_status_topic' not in adjustments
-
-
-def test_internnav_adapter_defaults_to_current_realworld_http_adapter():
-    adapter_target, source = internnav_eval._normalize_internnav_adapter_target('')
-
-    assert adapter_target == internnav_eval.REALWORLD_HTTP_ADAPTER_TARGET
-    assert source == 'default'
-
-
-def test_legacy_native_adapter_is_normalized_to_current_http_adapter():
-    adapter_target, source = internnav_eval._normalize_internnav_adapter_target(
-        'internnav.agent.internvla_n1_agent_realworld.InternVLAN1AsyncAgent'
-    )
-
-    assert adapter_target == internnav_eval.REALWORLD_HTTP_ADAPTER_TARGET
-    assert source.startswith('legacy:')
+    assert args.model_status_topic == '/custom/status'
+    assert 'model_status_topic' not in adjustments
 
 
 def test_git_source_provenance_accepts_repository_root():
