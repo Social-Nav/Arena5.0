@@ -155,7 +155,7 @@ NaVILA 将直线动作、LightNav 将各累计位姿之间的线段按不超过 
 <a id="prerequisites"></a>
 ## 3. 基础环境与命令位置
 
-先按 [Arena 安装文档](installation.md)准备 NVIDIA 主机、Docker Compose、NVIDIA Container Toolkit、Arena/Isaac 容器和 GRScenes 资产。本文依赖 Arena 本地适配分支 `skz/vln-integration` 中的 `arena_vln_models`、v3 profile 和公共 runner；该分支尚未推送，远程 `main` 不能替代此适配版本。已有适配源码时跳过安装文档的克隆步骤，记录实际 Arena commit 和工作区状态。三个模型仓库的客户端已发布，不代表 Arena 适配分支已发布。
+先按 [Arena 安装文档](installation.md)准备 NVIDIA 主机、Docker Compose、NVIDIA Container Toolkit、Arena/Isaac 容器和 GRScenes 资产。本文使用已发布的 [Arena `skz/vln-integration` 分支](https://github.com/Social-Nav/Arena5.0/tree/skz/vln-integration)，其中包含 `arena_vln_models`、v3 profile 和公共 runner；远程 `main` 尚未包含此适配。对应的 Isaac 代码也已发布至 [arena-isaac `skz/vln-integration` 分支](https://github.com/Social-Nav/arena-isaac/tree/skz/vln-integration)，由 Arena 子模块固定提交。首次部署按安装文档克隆适配分支；已有适配源码时跳过克隆步骤，记录实际 Arena commit 和工作区状态。
 
 默认采用同一台 Linux 主机：模型服务使用 GPU，三个模型的 ROS 客户端各自运行在独立 CPU 容器中，Arena 已提供 ROS 2 Jazzy。客户端不向模型环境安装 ROS：NaVILA 模型使用 Python 3.10，LightNav 模型使用 Python 3.11，InternNav 独立模型镜像使用 Python 3.12。模型与仿真同时占用 GPU，所需显存应按实际模型和场景确认；当前没有已验收的最低显存保证值。
 

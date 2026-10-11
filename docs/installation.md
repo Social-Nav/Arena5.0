@@ -104,16 +104,19 @@ docker run --rm --runtime=nvidia --gpus all ubuntu nvidia-smi
 
 ## 2. Clone Arena
 
-The following `main` clone is for the general Arena installation. Unified
-FollowPath evaluation currently requires the local `skz/vln-integration`
-adaptation, which has not been pushed; remote `main` does not provide this
-adaptation. If you already have that source checkout, set `ARENA_WS_DIR` to its
-workspace and skip cloning. Do not try to clone this unpublished branch from
-GitHub. Record the commit of the checkout you actually use.
+Unified FollowPath evaluation is published on the
+[Arena `skz/vln-integration` branch](https://github.com/Social-Nav/Arena5.0/tree/skz/vln-integration).
+Use this branch for the model evaluation guide; remote `main` does not yet include
+this adaptation. General Arena installations may select `main` instead. The
+corresponding Isaac code is published on the
+[arena-isaac `skz/vln-integration` branch](https://github.com/Social-Nav/arena-isaac/tree/skz/vln-integration)
+and pinned by Arena's submodule commit. If you already have the adaptation
+checkout, set `ARENA_WS_DIR` to its workspace and skip cloning. Record the commit
+of the checkout you actually use.
 
 ```bash
 export ARENA_WS_DIR="$HOME/arena_jazzy_ws"
-export ARENA_BRANCH=main
+export ARENA_BRANCH=skz/vln-integration
 mkdir -p "$ARENA_WS_DIR/src"
 git clone --branch "$ARENA_BRANCH" \
   https://github.com/Social-Nav/Arena5.0.git "$ARENA_WS_DIR/src/Arena"
