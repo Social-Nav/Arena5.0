@@ -121,6 +121,7 @@ class HunavDynamicObstacle:
     radius: float
     linear_vel: float
     angular_vel: float
+    look_ahead: float
 
     behavior: Behavior
     behavior_tree: str
@@ -198,6 +199,7 @@ class HunavDynamicObstacle:
             radius=extra.get('radius', cls._default.radius),
             linear_vel=extra.get('linear_vel', cls._default.linear_vel),
             angular_vel=extra.get('angular_vel', cls._default.angular_vel),
+            look_ahead=float(extra.get('look_ahead', cls._default.look_ahead)),
             behavior=behavior,
             behavior_tree=behavior_tree,
             cyclic_goals=extra.get('cyclic_goals', cls._default.cyclic_goals),
@@ -303,6 +305,7 @@ class HunavDynamicObstacle:
             radius=obj.get('radius', cls._default.radius),
             linear_vel=cls._default.linear_vel,
             angular_vel=cls._default.angular_vel,
+            look_ahead=obj.get('look_ahead', cls._default.look_ahead),
             cyclic_goals=obj.get('cyclic_goals', cls._default.cyclic_goals),
             goal_radius=obj.get('goal_radius', cls._default.goal_radius),
             closest_obs=[],
@@ -365,6 +368,7 @@ HunavDynamicObstacle._default = HunavDynamicObstacle(
     radius=0.,
     linear_vel=0.,
     angular_vel=0.,
+    look_ahead=2.0,
     behavior=HunavDynamicObstacle.Behavior._default,
     behavior_tree='default.xml',
     cyclic_goals=False,

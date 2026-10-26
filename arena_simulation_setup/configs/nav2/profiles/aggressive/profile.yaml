@@ -8,27 +8,15 @@
 weights:
   social_weight: 400.0            # 700->400
   proxemics_weight: 70.0          # 150->70: weak personal-space repulsion
-  proxemics_d0: 0.6               # 1.0->0.6: tight bubble (~0.9 m effective)
+  proxemics_d0: 0.5               # 1.0->0.6: tight bubble (~0.9 m effective)
   proxemics_alpha: 3.0
-  social_clear_distance: 1.8      # 2.0->1.8. Hard cutoff, so keep it wide and the gains weak.
-  social_safety_distance: 0.75    # 0.9->0.75. Also the ramp denominator (clear - safety).
+  social_clear_distance: 1.0      # 2.0->1.0: Hard cutoff, so keep it wide and the gains weak.
+  social_safety_distance: 0.5    # 0.9->0.75. Also the ramp denominator (clear - safety).
   social_mid_gain: 1.0
   social_near_gain: 4.0           # 6.0->4.0
 
 weights_optimizer:
-  max_linear_velocity: 0.7        # hard vx CEILING, not the cruise speed
+  max_linear_velocity: 0.8        # hard vx CEILING, not the cruise speed
 
 trajectorizer:
-  desired_linear_vel: 0.6         # 0.55->0.8: cruise at the ceiling (smoother + Ceres both cap 0.8)
-
-# Byte-identical to passive on purpose -- see that file.
-global_social_layer:
-  amplitude: 254.0
-  cutoff: 20.0
-  covariance_front_height: 0.1105
-  covariance_front_width: 0.043
-  covariance_rear_height: 0.043
-  covariance_rear_width: 0.043
-  covariance_right_height: 0.043
-  covariance_when_still: 0.0736
-  speed_factor_multiplier: 1.0
+  desired_linear_vel: 0.8         # 0.55->0.8: cruise at the ceiling (smoother + Ceres both cap 0.8)

@@ -38,6 +38,8 @@ from task_generator.shared import (
 )
 import rclpy.time
 import tf2_ros
+from rclpy.qos import QoSProfile, DurabilityPolicy
+from std_msgs.msg import Bool, Int16
 
 from task_generator.simulators.human import BaseHumanSimulator
 from task_generator.simulators.human.dummy import DummyHumanSimulator
@@ -81,7 +83,7 @@ def _create_robot_message(
     # This is the radius used only by HuNav's pedestrian-side SFM.  It is
     # deliberately independent of the Nav2 footprint: pedestrians start
     # yielding a little earlier without changing robot navigation geometry.
-    robot_msg.radius = 0.4
+    robot_msg.radius = 0.45
 
     x, y, yaw = pose if pose is not None else (0.0, 0.0, 0.0)
     robot_msg.position.position.x = x
@@ -359,6 +361,31 @@ class HunavHumanSimulator(
         self._robot_pose_warned = False
         # Pedestrians whose last pedestrian_update failed; used to log only transitions.
         self._move_failed_names: set[str] = set()
+
+        # Keep HuNav's integrator and Isaac character targets frozen until RobotManager's
+        # final scene gate confirms Isaac animation, local costmap and sensor TF readiness.
+        # Episode ids make the transient-local topic safe across back-to-back resets.
+        self._scene_episode: typing.Optional[int] = None
+        self._scene_ready_episode: typing.Optional[int] = None
+        self._social_yielding_motion_hold = False
+        self.node.create_subscription(
+            Int16,
+            '/task_generator_node/task_reset',
+            self._scene_episode_callback,
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL),
+        )
+        self.node.create_subscription(
+            Int16,
+            '/scene_ready',
+            self._scene_ready_callback,
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL),
+        )
+        self.node.create_subscription(
+            Bool,
+            '/social_yielding/motion_hold',
+            lambda msg: setattr(self, '_social_yielding_motion_hold', bool(msg.data)),
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL),
+        )
 
         self._logger.debug("Collections initialized")
 
@@ -681,6 +708,45 @@ class HunavHumanSimulator(
             self._logger.error(
                 f"Failed to update agent positions: {e}\n{traceback.format_exc()}"
             )
+
+    def _scene_episode_callback(self, msg: Int16):
+        self._scene_episode = int(msg.data)
+        self._scene_ready_episode = None
+        # Close the rendered-character gate for this episode. Use only task_reset here:
+        # an unnumbered reset_start from another process can arrive late and must never erase
+        # a newer episode's ready state.
+        for ped in self._arena_pedestrians_container.pedestrians:
+            ped.twist.linear.x = 0.0
+            ped.twist.linear.y = 0.0
+            ped.twist.linear.z = 0.0
+            ped.twist.angular.x = 0.0
+            ped.twist.angular.y = 0.0
+            ped.twist.angular.z = 0.0
+
+    def _scene_ready_callback(self, msg: Int16):
+        episode = int(msg.data)
+        self._scene_ready_episode = episode if episode >= 0 else None
+
+    def _scene_gate_open(self) -> bool:
+        if self._simulator_type != Constants.SimSimulator.ISAAC:
+            return True
+        return (
+            self._scene_episode is not None
+            and self._scene_ready_episode == self._scene_episode
+            and not self._social_yielding_motion_hold
+        )
+
+    def _publish_frozen_pedestrians(self):
+        for ped in self._arena_pedestrians_container.pedestrians:
+            ped.twist.linear.x = 0.0
+            ped.twist.linear.y = 0.0
+            ped.twist.linear.z = 0.0
+            ped.twist.angular.x = 0.0
+            ped.twist.angular.y = 0.0
+            ped.twist.angular.z = 0.0
+        self._arena_pedestrians_container.header.stamp = self.node.sim_time.to_msg()
+        self._arena_peds_publisher.publish(self._arena_pedestrians_container)
+        self._publish_wall_markers()
 
     def _report_move_failures(self, results):
         """Log pedestrians the simulator refused to move, at 10 Hz without spamming.
@@ -1073,6 +1139,7 @@ class HunavHumanSimulator(
         arena_ped.twist.linear.x = 0.0
         arena_ped.twist.linear.y = 0.0
         arena_ped.twist.angular.z = 0.0
+        arena_ped.look_ahead = hunav_obstacle.look_ahead
 
         # Animation state from behavior
         arena_ped.animation_state = self._map_hunav_behavior_to_arena_state(
@@ -1109,6 +1176,13 @@ class HunavHumanSimulator(
                             f"arena_peds_callback: publishing {len(self._arena_pedestrians_container.pedestrians)} pedestrians"
                         )
                         if not self._arena_pedestrians_container.pedestrians:
+                            continue
+
+                        if not self._scene_gate_open():
+                            # Do not call ComputeAgents: that would advance logical HuNav poses
+                            # even if the rendered characters were held still. Zero twists also
+                            # make NavigatePedestrians clear any target queued during spawn.
+                            self._publish_frozen_pedestrians()
                             continue
 
                         # Use last updated agents as current agents
@@ -1164,15 +1238,11 @@ class HunavHumanSimulator(
                                             )
                                         )
 
-                                        # Copy, not alias: _round_coordinates returns its
-                                        # own argument. Keep the spawn z -- hunav is 2D
-                                        # and would overwrite it with 0.
+                                        # Keep full precision: differencing a rounded previous
+                                        # position produces phantom motion on stationary ticks.
+                                        # Copy, not alias, and preserve the character's spawn z.
                                         ped_z = arena_ped.pose.position.z
-                                        arena_ped.pose = copy.deepcopy(
-                                            self._round_coordinates(
-                                                updated_agent.position, 2
-                                            )
-                                        )
+                                        arena_ped.pose = copy.deepcopy(updated_agent.position)
                                         arena_ped.pose.position.z = ped_z
 
                                         # Use the FINITE-DIFFERENCED speed, not hunav's own
@@ -1334,6 +1404,14 @@ class HunavHumanSimulator(
     ):
         """Calculate Position from the velocity change"""
         import math
+
+        # SurprisedNav rotates without integrating position. Its reported velocity
+        # can be left over from walking; honor the active BT stop explicitly.
+        if (
+            updated_agent.behavior.type == AgentBehavior.BEH_SURPRISED
+            and updated_agent.behavior.state == 1
+        ):
+            return 0.0, 0.0
 
         # Previous position
         prev_x = arena_ped.pose.position.x

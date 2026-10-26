@@ -26,6 +26,12 @@ class NodeLogLevelExtension(NodeActionExtension):
             args.append([launch.substitutions.TextSubstitution(text='--log-level')])
             args.append([launch.substitutions.TextSubstitution(text=global_log_level)])
 
+        # This sensor-origin warning is known to be noisy for the Ai2_Bot2 rolling
+        # local costmap. Keep the global level unchanged and suppress only that logger.
+        args.append([launch.substitutions.TextSubstitution(text='--log-level')])
+        args.append([launch.substitutions.TextSubstitution(
+            text='task_generator_node.Ai2_Bot2.local_costmap.local_costmap:=error')])
+
         return args, ros_specific_arguments
 
 

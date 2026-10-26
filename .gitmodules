@@ -3,13 +3,15 @@
 	url = https://github.com/voshch/arena-tools.git
 [submodule "arena_isaac"]
 	path = arena_isaac
-	url = https://github.com/pggg111/arena-isaac.git
+	url = https://github.com/Social-Nav/arena-isaac.git
+	branch = feature/human_interaction
 [submodule "arena_evaluation"]
 	path = arena_evaluation
 	url = https://github.com/voshch/arena-evaluation.git
 [submodule "arena_robots"]
 	path = arena_robots
 	url = https://github.com/Social-Nav/robots.git
+	branch = feature/human_interaction
 [submodule "arena_training"]
 	path = arena_training
 	url = https://github.com/Arena-Rosnav/Arena-Training.git

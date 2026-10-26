@@ -8,7 +8,7 @@
       <SpeedController min_rate="0.1" max_rate="1.0" min_speed="0.0" max_speed="0.26">
         <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
       </SpeedController>
-      <FollowPath path="{path}"  controller_id="FollowPath"/>
+      <FollowPath path="{path}" controller_id="FollowPath" goal_checker_id="goal_checker" progress_checker_id="progress_checker"/>
     </PipelineSequence>
   </BehaviorTree>
 </root>

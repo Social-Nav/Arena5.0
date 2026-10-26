@@ -5,6 +5,7 @@ import typing
 import yaml
 
 import action_msgs.msg
+from action_msgs.srv import CancelGoal
 import ament_index_python
 import arena_bringup.extensions.NodeLogLevelExtension as NodeLogLevelExtension
 import geometry_msgs.msg
@@ -17,9 +18,12 @@ import rclpy.client
 import rclpy.logging
 import rclpy.publisher
 import rclpy.timer
+import std_msgs.msg
+from std_srvs.srv import Trigger
 import tf2_ros
 from arena_rclpy_mixins.shared import Namespace
 from arena_robots.Robot import RobotView
+from nav2_msgs.msg import Costmap
 from nav2_msgs.srv import ClearCostmapAroundRobot, ClearEntireCostmap
 from rcl_interfaces.srv import SetParameters
 from rcl_interfaces.msg import Parameter as ParameterMsg, ParameterValue, ParameterType
@@ -29,6 +33,7 @@ import task_generator.utils.arena as Utils
 from task_generator import NodeInterface
 from task_generator.constants import Constants
 from task_generator.manager.environment_manager import EnvironmentManager
+from task_generator.manager.robot_manager.scene_readiness import LocalCostmapReadiness
 from task_generator.shared import Orientation, Pose, Position, Robot
 
 import rclpy.node
@@ -38,6 +43,13 @@ _TERMINAL_NAV_STATUSES = frozenset({
     action_msgs.msg.GoalStatus.STATUS_ABORTED,
     action_msgs.msg.GoalStatus.STATUS_CANCELED,
 })
+_ACTIVE_NAV_STATUSES = frozenset({
+    action_msgs.msg.GoalStatus.STATUS_ACCEPTED,
+    action_msgs.msg.GoalStatus.STATUS_EXECUTING,
+    action_msgs.msg.GoalStatus.STATUS_CANCELING,
+})
+_DEFAULT_GOAL_TOLERANCE = 0.25
+_GOAL_MATCH_TOLERANCE = 1.0e-3
 
 
 class RobotManager(NodeInterface):
@@ -62,6 +74,7 @@ class RobotManager(NodeInterface):
     _robot: Robot
     _move_base_pub: rclpy.publisher.Publisher
     _goal_pub: rclpy.publisher.Publisher
+    _route_status_pub: rclpy.publisher.Publisher
     _cmd_vel_pub: rclpy.publisher.Publisher
     _pub_goal_timer: rclpy.timer.Timer
     _clear_costmap_around_robot_srv: rclpy.client.Client
@@ -135,9 +148,59 @@ class RobotManager(NodeInterface):
         self._goal_timer = None
 
         self._publish_goal_task: typing.Optional[asyncio.Task] = None
+        self._goal_waypoints: list[Pose] = []
+        self._goal_waypoint_index = 0
+        self._active_nav_goal_id: bytes | None = None
+        self._ignored_nav_goal_ids: set[bytes] = set()
+        self._known_nav_goal_ids: set[bytes] = set()
+        self._goal_id_baseline: set[bytes] = set()
+        self._latest_nav_statuses: list = []
+        self._goal_publish_stamp_ns: int | None = None
+        self._waypoint_tolerance = _DEFAULT_GOAL_TOLERANCE
+        self._final_goal_tolerance = _DEFAULT_GOAL_TOLERANCE
+        self._social_yielding_active = False
+        self._awaiting_original_goal = False
+        self._resume_prepared_baseline: set[bytes] | None = None
+
+        # Isaac publishes the episode id only after spawned characters have live animation
+        # graphs and the scene has accumulated a short real-simulation settling window.
+        # The original Nav2 goal is withheld until the ids match, so the robot stays at A
+        # while pedestrians and rolling costmaps initialize.
+        self._scene_episode: typing.Optional[int] = None
+        self._isaac_scene_ready_episode: typing.Optional[int] = None
+        self._scene_motion_released = False
+        scene_qos = rclpy.qos.QoSProfile(
+            depth=1,
+            durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self._scene_ready_pub = self.node.create_publisher(
+            std_msgs.msg.Int16, '/scene_ready', scene_qos)
+        self._scene_ready_pub.publish(std_msgs.msg.Int16(data=-1))
+        self.node.create_subscription(
+            std_msgs.msg.Int16,
+            '/task_generator_node/task_reset',
+            self._scene_episode_callback,
+            scene_qos,
+        )
+        self.node.create_subscription(
+            std_msgs.msg.Int16,
+            '/isaac/scene_ready',
+            self._isaac_scene_ready_callback,
+            scene_qos,
+        )
 
         self._tf_buffer = tf2_ros.Buffer()
         self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self.node)
+        self._local_costmap_readiness = LocalCostmapReadiness(
+            sensor_frames=self._local_costmap_sensor_frames(),
+            lookup_xy=self._lookup_frame_xy,
+        )
+        self.node.create_subscription(
+            Costmap,
+            self.namespace('local_costmap', 'costmap_raw'),
+            self._local_costmap_readiness.receive,
+            10,
+        )
 
     async def _odom_base_transform(self):
         """Launch a static transform publisher for odometry to base frame.
@@ -173,6 +236,11 @@ class RobotManager(NodeInterface):
             _gen_goal_topic,
             10,
         )
+        self._route_status_pub = self.node.create_publisher(
+            std_msgs.msg.Int8,
+            self.namespace("route_status"),
+            10,
+        )
 
         self._cmd_vel_pub = self.node.create_publisher(
             geometry_msgs.msg.Twist,
@@ -197,6 +265,29 @@ class RobotManager(NodeInterface):
             self.namespace('navigate_to_pose', '_action', 'status'),
             self._goal_status_callback,
             1
+        )
+        self.node.create_subscription(
+            std_msgs.msg.Bool,
+            '/social_yielding/active',
+            self._social_yielding_active_callback,
+            rclpy.qos.QoSProfile(
+                depth=1,
+                durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL,
+            ),
+        )
+        # Observe every goal sent to Nav2, including temporary yielding goals published by
+        # the orchestrator. A goal matching the scenario's final goal marks the hand-back to
+        # normal navigation after yielding.
+        self.node.create_subscription(
+            geometry_msgs.msg.PoseStamped,
+            _gen_goal_topic,
+            self._goal_command_callback,
+            10,
+        )
+        self.node.create_service(
+            Trigger,
+            self.namespace("prepare_original_goal_resume"),
+            self._prepare_original_goal_resume_callback,
         )
 
         await self._launch_robot(node_names)
@@ -400,15 +491,14 @@ class RobotManager(NodeInterface):
 
     # Map a profile.yaml section -> (target node, param-name prefix).
     #
-    # The knobs live on THREE different nodes, so a profile push is fanned out per node:
+    # The knobs live on the controller server, so a profile push is grouped by its
+    # parameter prefix:
     #   - controller_server: the MPC. It is wrapped by RotationShim (plugin "FollowPath"), which
     #     configures the primary controller with the SAME name, so social_mpc params sit directly
     #     under FollowPath.* (verified). Hot-reloaded via the MPC's dynamic-parameter callback.
-    #   - global_costmap: the SocialLayer pedestrian bubbles. No callback needed — the layer
-    #     re-reads every parameter on each updateCosts() (social_layer.cpp get_parameters()), so a
-    #     push lands on the next costmap cycle. Only the GLOBAL costmap is targeted: the local one
-    #     no longer loads social_layer (see nav2.yaml), because obstacle_layer+inflation already
-    #     cover peds there and the MPC's own /people critics do the real local avoidance.
+    # Global-costmap SocialLayer parameters are shared across profiles and stay in
+    # nav2.yaml; local avoidance comes from obstacle/inflation layers plus the MPC's
+    # own /people critics.
     _PROFILE_TARGETS: dict[str, tuple[str, str]] = {
         'weights': ('controller_server', 'FollowPath.optimizer.weights.'),
         # Optimizer knobs that live directly under `optimizer.` rather than `optimizer.weights.`
@@ -417,7 +507,6 @@ class RobotManager(NodeInterface):
         # separately, and the weights.* branch would not recognize this key.
         'weights_optimizer': ('controller_server', 'FollowPath.optimizer.'),
         'trajectorizer': ('controller_server', 'FollowPath.trajectorizer.'),
-        'global_social_layer': ('global_costmap/global_costmap', 'social_layer.'),
     }
 
     def _load_social_attributes(self, name: str) -> dict[str, dict[str, float]]:
@@ -481,10 +570,9 @@ class RobotManager(NodeInterface):
             self.node.destroy_client(cli.client)
 
     async def set_social_attributes(self, attributes: typing.Optional[str]) -> bool:
-        """Push a social-attributes preset to this robot's MPC and social costmap layers at reset.
+        """Push a social-attributes preset to this robot's MPC at reset.
 
-        Fans out over the nodes in _PROFILE_TARGETS. The MPC hot-reloads its half via a
-        dynamic-parameter callback and SocialLayer re-reads its half every costmap cycle, so the
+        The MPC hot-reloads the profile via its dynamic-parameter callback, so the
         preset takes effect immediately without a relaunch.
         No-op when attributes is falsy (caller resolves the default profile).
         """
@@ -626,16 +714,36 @@ class RobotManager(NodeInterface):
         self,
         start_pos: typing.Optional[Pose],
         goal_pos: typing.Optional[Pose],
+        goal_waypoints: typing.Optional[typing.Sequence[Pose]] = None,
+        waypoint_tolerance: typing.Optional[float] = None,
+        final_goal_tolerance: typing.Optional[float] = None,
     ) -> tuple[Pose, Pose]:
         """Reset the robot's position and / or goal.
 
         Args:
             start_pos(typing.Optional[Pose]): The new starting position of the robot.
             goal_pos(typing.Optional[Pose]): The new goal position of the robot.
+            goal_waypoints: Ordered goals. When supplied, each goal is published only after the
+                previous one succeeds. The episode completes at the final waypoint.
+            waypoint_tolerance: XY tolerance for every intermediate waypoint.
+            final_goal_tolerance: XY tolerance for the final waypoint.
 
         Returns:
             tuple[Pose, Pose]: The new starting and goal positions of the robot.
         """
+        if self._scene_gate_enabled():
+            # Close synchronously in the episode reset path. Do not depend on a separate
+            # unnumbered reset event: it could arrive after the numbered task_reset and close
+            # this new episode's ready state again.
+            self._scene_episode = None
+            self._isaac_scene_ready_episode = None
+            self._scene_motion_released = False
+            if self._publish_goal_task is not None:
+                self._publish_goal_task.cancel()
+            self._scene_ready_pub.publish(std_msgs.msg.Int16(data=-1))
+            self._local_costmap_readiness.reset()
+            await self._cancel_navigation_goals()
+
         if start_pos is not None:
             self._start_pos = self._environment_manager.realize(start_pos)
             await self.move_robot_to_pos(start_pos)
@@ -648,17 +756,44 @@ class RobotManager(NodeInterface):
 
         await self._clear_local_costmap()
         await self._clear_global_costmap()
-        if goal_pos is not None:
-            self._goal_pos = self._environment_manager.realize(goal_pos)
+        route = list(goal_waypoints or ())
+        if not route and goal_pos is not None:
+            route = [goal_pos]
+
+        if route:
+            self._goal_waypoints = [
+                self._environment_manager.realize(waypoint)
+                for waypoint in route
+            ]
+            self._goal_waypoint_index = 0
+            self._goal_pos = self._goal_waypoints[-1]
+            self._waypoint_tolerance = (
+                _DEFAULT_GOAL_TOLERANCE
+                if waypoint_tolerance is None else float(waypoint_tolerance)
+            )
+            self._final_goal_tolerance = (
+                _DEFAULT_GOAL_TOLERANCE
+                if final_goal_tolerance is None else float(final_goal_tolerance)
+            )
             self._is_goal_reached = False
             self._nav_stop_ticks = 0  # new goal incoming, stop publishing stop-zeros
+            self._active_nav_goal_id = None
+            self._ignored_nav_goal_ids = set(self._known_nav_goal_ids)
+            self._goal_id_baseline = set(self._known_nav_goal_ids)
+            self._goal_publish_stamp_ns = None
+            self._social_yielding_active = False
+            self._awaiting_original_goal = False
+            self._resume_prepared_baseline = None
 
             if self._publish_goal_task is not None:
                 self._publish_goal_task.cancel()
 
             start_target = self._start_pos if start_pos is not None else None
             self._publish_goal_task = asyncio.create_task(
-                self._publish_goal_loop(goal=self._goal_pos, start_target=start_target)
+                self._publish_goal_loop(
+                    goal=self._goal_waypoints[0],
+                    start_target=start_target,
+                )
             )
 
             if self._robot.record_data_dir:
@@ -668,6 +803,59 @@ class RobotManager(NodeInterface):
                 )
         return self._pose, self._goal_pos
 
+    async def _cancel_navigation_goals(self) -> bool:
+        """Cancel any NavigateToPose action left over from the previous episode."""
+        active_before = {
+            bytes(status.goal_info.goal_id.uuid)
+            for status in self._latest_nav_statuses
+            if status.status in _ACTIVE_NAV_STATUSES
+        }
+        if not active_before:
+            return True
+
+        srv_name = os.path.abspath(
+            self.namespace('navigate_to_pose', '_action', 'cancel_goal'))
+        client = self.node.create_client_wrapper(CancelGoal, srv_name)
+        try:
+            if not await client.ensure(timeout_sec=2.0):
+                self._logger.warn(
+                    f"{srv_name} unavailable; zero-velocity scene hold remains active")
+                return False
+            response = await client.call_timeout(CancelGoal.Request(), timeout_sec=2.0)
+            if response is None:
+                self._logger.warn(
+                    f"{srv_name} did not answer; zero-velocity scene hold remains active")
+                return False
+            if response.return_code != CancelGoal.Response.ERROR_NONE:
+                active_now = {
+                    bytes(status.goal_info.goal_id.uuid)
+                    for status in self._latest_nav_statuses
+                    if status.status in _ACTIVE_NAV_STATUSES
+                }
+                if not active_now:
+                    return True
+                self._logger.warn(
+                    f"{srv_name} rejected cancellation (code={response.return_code})")
+                return False
+            canceling = {
+                bytes(info.goal_id.uuid) for info in response.goals_canceling
+            }
+            # Cancellation acknowledgement precedes terminal action status. Do not release
+            # motion while a previous controller/recovery may still be winding down.
+            for _ in range(100):
+                active = {
+                    bytes(status.goal_info.goal_id.uuid)
+                    for status in self._latest_nav_statuses
+                    if status.status in _ACTIVE_NAV_STATUSES
+                }
+                if not (active & canceling):
+                    return True
+                await asyncio.sleep(0.05)
+            self._logger.warn("Previous navigation action is still canceling; keeping scene hold")
+            return False
+        finally:
+            self.node.destroy_client(client.client)
+
     async def _publish_goal_loop(
         self,
         *,
@@ -675,6 +863,29 @@ class RobotManager(NodeInterface):
         start_target: typing.Optional[Pose] = None,
     ):
         """Publish the goal to the robot once reset state is synchronized."""
+        if self._scene_gate_enabled():
+            last_reason = None
+            while (
+                self._scene_episode is None
+                or self._isaac_scene_ready_episode != self._scene_episode
+                or not self._local_costmap_readiness.ready()
+            ):
+                reason = (
+                    "waiting-for-task-reset"
+                    if self._scene_episode is None
+                    else "waiting-for-Isaac-scene"
+                    if self._isaac_scene_ready_episode != self._scene_episode
+                    else self._local_costmap_readiness.reason
+                )
+                if reason != last_reason:
+                    self._logger.warn(
+                        f"Holding robot and pedestrian goals: scene gate {reason}")
+                    last_reason = reason
+                await asyncio.sleep(0.05)
+            self._logger.info(
+                f"Scene ready for episode #{self._scene_episode}: Isaac + local costmap + "
+                "sensor TFs valid; preparing synchronized goal release")
+
         if not await self._wait_for_sim_tick(timeout_s=5.0):
             self._logger.warn(
                 "Simulation time did not advance before goal publish; nav may use stale pose."
@@ -692,8 +903,121 @@ class RobotManager(NodeInterface):
                 "Odometry did not reach reset start pose before goal publish; proceeding anyway."
             )
 
+        await self._publish_current_goal(goal)
+
+    def _scene_episode_callback(self, msg: std_msgs.msg.Int16):
+        self._scene_episode = int(msg.data)
+
+    def _isaac_scene_ready_callback(self, msg: std_msgs.msg.Int16):
+        episode = int(msg.data)
+        self._isaac_scene_ready_episode = episode if episode >= 0 else None
+
+    def _local_costmap_sensor_frames(self) -> tuple[str, ...]:
+        params = self._config.model_params
+        frames = [str(self.frame(params.base_frame))]
+        source_names = params.get('observation_sources', ())
+        source_configs = params.get('observation_sources_dict', {})
+        for source_name in source_names:
+            sensor_frame = source_configs.get(source_name, {}).get('sensor_frame')
+            if not sensor_frame:
+                continue
+            child = str(sensor_frame).replace('${frame}', '').strip('/')
+            frames.append(str(self.frame(child)))
+        return tuple(dict.fromkeys(frames))
+
+    def _lookup_frame_xy(
+        self, target_frame: str, source_frame: str
+    ) -> typing.Optional[tuple[float, float]]:
+        try:
+            transform = self._tf_buffer.lookup_transform(
+                target_frame, source_frame, rclpy.time.Time())
+            translation = transform.transform.translation
+            return float(translation.x), float(translation.y)
+        except Exception:
+            return None
+
+    def _scene_gate_enabled(self) -> bool:
+        try:
+            return self.node.conf.Arena.SIM.value == Constants.SimSimulator.ISAAC
+        except AttributeError:
+            # Lightweight unit-test managers and non-Arena embeddings do not have the
+            # runtime configuration tree; scene gating is an Isaac integration feature.
+            return False
+
+    def _current_goal_tolerance(self) -> float:
+        if self._goal_waypoint_index == len(self._goal_waypoints) - 1:
+            return self._final_goal_tolerance
+        return self._waypoint_tolerance
+
+    async def _set_goal_tolerance(self, tolerance: float) -> bool:
+        node_name = self.node.service_namespace(self.name, 'controller_server')
+        srv_name = os.path.abspath(node_name('set_parameters'))
+        cli = self.node.create_client_wrapper(SetParameters, srv_name)
+        try:
+            if not await cli.ensure(timeout_sec=3.0):
+                self._logger.error(
+                    f"{srv_name} unavailable; cannot apply goal tolerance {tolerance}")
+                return False
+            request = SetParameters.Request(parameters=[
+                ParameterMsg(
+                    name='goal_checker.xy_goal_tolerance',
+                    value=ParameterValue(
+                        type=ParameterType.PARAMETER_DOUBLE,
+                        double_value=tolerance,
+                    ),
+                )
+            ])
+            for attempt in range(1, 4):
+                result = await cli.call_timeout(request, timeout_sec=3.0)
+                if result is not None and result.results and result.results[0].successful:
+                    return True
+                reason = (
+                    result.results[0].reason
+                    if result is not None and result.results else 'no response'
+                )
+                self._logger.warn(
+                    f"failed to apply goal tolerance {tolerance} on {srv_name} "
+                    f"(attempt {attempt}/3): {reason}")
+                if attempt < 3:
+                    await asyncio.sleep(0.25)
+            return False
+        finally:
+            self.node.destroy_client(cli.client)
+
+    async def _publish_current_goal(self, goal: Pose) -> bool:
+        waypoint_number = self._goal_waypoint_index + 1
+        waypoint_count = len(self._goal_waypoints)
+        tolerance = self._current_goal_tolerance()
+        release_scene = self._scene_gate_enabled() and not self._scene_motion_released
+        if not await self._set_goal_tolerance(tolerance):
+            self._logger.error(
+                f"Not publishing waypoint {waypoint_number}/{waypoint_count}: "
+                f"could not apply xy tolerance {tolerance} m")
+            self._is_goal_reached = False
+            self._route_status_pub.publish(std_msgs.msg.Int8(
+                data=action_msgs.msg.GoalStatus.STATUS_ABORTED))
+            if self._cmd_vel_pub is not None:
+                self._cmd_vel_pub.publish(geometry_msgs.msg.Twist())
+            self._nav_stop_ticks = 15
+            return False
+
+        if release_scene:
+            # Keep the final cmd_vel hold active through TF/pose synchronization and the
+            # parameter service call. Release it only at the publication boundary of this
+            # episode's first original goal, after one last best-effort cancellation of any
+            # previous action.
+            while not await self._cancel_navigation_goals():
+                await asyncio.sleep(0.25)
+            if self._cmd_vel_pub is not None:
+                self._cmd_vel_pub.publish(geometry_msgs.msg.Twist())
+            # The original goal is now allowed into Nav2 for planning. Physical motion
+            # remains blocked by motion_hold_gate until the yielding goal Y is ready.
+            self._scene_motion_released = True
+
         self._logger.info(
-            f"Publishing goal once: x={goal.position.x}, y={goal.position.y}, orientation={goal.orientation.to_yaw()}"
+            f"Publishing robot waypoint {waypoint_number}/{waypoint_count}: "
+            f"x={goal.position.x}, y={goal.position.y}, "
+            f"orientation={goal.orientation.to_yaw()}, xy_tolerance={tolerance}"
         )
 
         if self._goal_timer is not None:
@@ -704,9 +1028,20 @@ class RobotManager(NodeInterface):
         goal_msg.header.frame_id = "map"
         goal_msg.header.stamp = self.node.sim_time.to_msg()
         goal_msg.pose = goal.to_msg()
+        self._goal_id_baseline = set(self._known_nav_goal_ids)
         self._goal_pub.publish(goal_msg)
+        if release_scene and self._scene_episode is not None:
+            self._scene_ready_pub.publish(
+                std_msgs.msg.Int16(data=self._scene_episode))
+            self._logger.info(
+                f"Released robot and pedestrian goals for episode #{self._scene_episode}")
 
         self._goal_start_time = self.node.sim_time
+        self._goal_publish_stamp_ns = (
+            goal_msg.header.stamp.sec * 1_000_000_000
+            + goal_msg.header.stamp.nanosec
+        )
+        return True
 
     async def _launch_robot(self, node_paths: set[str]):
         """Launch the robot external nodes.
@@ -778,19 +1113,210 @@ class RobotManager(NodeInterface):
 
     def _stop_vel_timer_cb(self):
         """Publish zero velocity when the robot should be stopped."""
-        if self._nav_stop_ticks > 0 and self._cmd_vel_pub is not None:
+        scene_hold = (
+            self._scene_gate_enabled()
+            and not self._scene_motion_released
+        )
+        if (scene_hold or self._nav_stop_ticks > 0) and self._cmd_vel_pub is not None:
             self._cmd_vel_pub.publish(geometry_msgs.msg.Twist())
-            self._nav_stop_ticks -= 1
+            if not scene_hold:
+                self._nav_stop_ticks -= 1
 
-    def _goal_status_callback(self, data: action_msgs.msg.GoalStatusArray):
-        last_goal = next(reversed(list(data.status_list)), None)
-        status = last_goal.status if last_goal is not None else None
-        reached = (status == action_msgs.msg.GoalStatus.STATUS_SUCCEEDED)
-        if status in _TERMINAL_NAV_STATUSES:
+    def _social_yielding_active_callback(self, msg: std_msgs.msg.Bool):
+        active = bool(msg.data)
+        if active and not self._social_yielding_active:
+            # The temporary yielding goal will preempt the scenario goal. Ignore both that
+            # cancellation and every terminal status produced while the orchestrator owns
+            # navigation.
+            self._active_nav_goal_id = None
+            self._ignored_nav_goal_ids.update(self._known_nav_goal_ids)
+            self._awaiting_original_goal = True
+            self._goal_publish_stamp_ns = None
+            self._goal_id_baseline = set(self._known_nav_goal_ids)
+        self._social_yielding_active = active
+
+    def _prepare_original_goal_resume_callback(self, _request, response):
+        """Create an explicit UUID boundary before the orchestrator republishes G."""
+        self._active_nav_goal_id = None
+        self._ignored_nav_goal_ids.update(self._known_nav_goal_ids)
+        self._resume_prepared_baseline = set(self._known_nav_goal_ids)
+        self._goal_id_baseline = set(self._known_nav_goal_ids)
+        self._awaiting_original_goal = True
+        response.success = True
+        response.message = "ready for restored original goal"
+        self._logger.info(
+            "Prepared original-goal resume UUID boundary "
+            f"({len(self._resume_prepared_baseline)} known actions)")
+        return response
+
+    def _goal_command_callback(self, msg: geometry_msgs.msg.PoseStamped):
+        if not self._goal_waypoints:
+            return
+        matching_waypoint = next(
+            (
+                index
+                for index, waypoint in enumerate(self._goal_waypoints)
+                if (
+                    abs(msg.pose.position.x - waypoint.position.x)
+                    <= _GOAL_MATCH_TOLERANCE
+                    and abs(msg.pose.position.y - waypoint.position.y)
+                    <= _GOAL_MATCH_TOLERANCE
+                )
+            ),
+            None,
+        )
+        if matching_waypoint is None:
+            # Any goal outside the scenario route is owned by an external controller such as
+            # social yielding. Its action may abort before the latched /active=True callback is
+            # delivered, so classify it directly from the command topic and suppress all of its
+            # terminal statuses. The original scenario goal callback will rebind the route later.
+            self._active_nav_goal_id = None
+            self._ignored_nav_goal_ids.update(self._known_nav_goal_ids)
+            self._goal_id_baseline = set(self._known_nav_goal_ids)
+            self._goal_publish_stamp_ns = None
+            self._awaiting_original_goal = True
+            self._logger.info(
+                "External temporary goal observed; route completion suspended until a "
+                "scenario goal is restored")
+            return
+
+        # Intermediate scenario waypoints are managed by _goal_status_callback. Only the final
+        # waypoint can be an orchestrator hand-back that needs route/action rebinding here.
+        if matching_waypoint != len(self._goal_waypoints) - 1:
+            return
+
+        # This is either the normal final waypoint or the orchestrator restoring original G.
+        # Rebind to the next NavigateToPose action created from this publication. When yielding
+        # interrupted an intermediate waypoint, resuming G intentionally makes G the final route
+        # target; only its SUCCESS may complete/save the episode.
+        self._goal_waypoint_index = len(self._goal_waypoints) - 1
+        self._active_nav_goal_id = None
+        # Bind by UUID generation, not timestamps: this goal may be stamped by the orchestrator's
+        # wall clock while Nav2 GoalInfo uses simulation time. The prepare service normally gives
+        # us an exact pre-publication boundary. It also lets us recover G when its action status
+        # beats this goal-topic callback through the ROS graph.
+        prepared_baseline = self._resume_prepared_baseline
+        self._ignored_nav_goal_ids.update(self._known_nav_goal_ids)
+        resumed_action = None
+        if prepared_baseline is not None:
+            resumed_action = next(
+                (
+                    status
+                    for status in reversed(self._latest_nav_statuses)
+                    if bytes(status.goal_info.goal_id.uuid) not in prepared_baseline
+                ),
+                None,
+            )
+            self._goal_id_baseline = set(prepared_baseline)
+        else:
+            # Compatibility fallback if an older orchestrator cannot call the prepare service.
+            # Everything already visible is old; wait for the next UUID after this callback.
+            self._goal_id_baseline = set(self._known_nav_goal_ids)
+        self._resume_prepared_baseline = None
+        if resumed_action is not None:
+            resumed_id = bytes(resumed_action.goal_info.goal_id.uuid)
+            self._active_nav_goal_id = resumed_id
+            self._ignored_nav_goal_ids.discard(resumed_id)
+        self._goal_publish_stamp_ns = (
+            msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
+        )
+        self._awaiting_original_goal = False
+        self._is_goal_reached = False
+        if self._active_nav_goal_id is None:
+            self._logger.info(
+                "Original scenario goal G restored; waiting for its new Nav2 action UUID")
+        else:
+            self._logger.info(
+                "Original scenario goal G restored; associated early Nav2 action UUID "
+                f"{self._active_nav_goal_id.hex()[:8]}")
+
+    async def _goal_status_callback(self, data: action_msgs.msg.GoalStatusArray):
+        statuses = list(data.status_list)
+        self._latest_nav_statuses = statuses
+        for goal_status in statuses:
+            self._known_nav_goal_ids.add(bytes(goal_status.goal_info.goal_id.uuid))
+
+        if self._scene_gate_enabled() and not self._scene_motion_released:
+            self._ignored_nav_goal_ids.update(self._known_nav_goal_ids)
+            return
+
+        if self._awaiting_original_goal or (
+            self._social_yielding_active and self._goal_publish_stamp_ns is None
+        ):
+            # Record IDs so none can be mistaken for the resumed scenario goal later, but do
+            # not advance the route and do not publish route_status while yielding owns Nav2.
+            self._ignored_nav_goal_ids.update(self._known_nav_goal_ids)
+            return
+
+        current = None
+        if self._active_nav_goal_id is not None:
+            current = next(
+                (
+                    goal_status
+                    for goal_status in reversed(statuses)
+                    if bytes(goal_status.goal_info.goal_id.uuid) == self._active_nav_goal_id
+                ),
+                None,
+            )
+        else:
+            current = next(
+                (
+                    goal_status
+                    for goal_status in reversed(statuses)
+                    if (
+                        bytes(goal_status.goal_info.goal_id.uuid)
+                        not in self._goal_id_baseline
+                    )
+                ),
+                None,
+            )
+            if current is not None:
+                self._active_nav_goal_id = bytes(current.goal_info.goal_id.uuid)
+                self._logger.info(
+                    "Associated route goal with Nav2 action UUID "
+                    f"{self._active_nav_goal_id.hex()[:8]}")
+
+        if current is None:
+            return
+
+        status = current.status
+        if status not in _TERMINAL_NAV_STATUSES:
+            self._is_goal_reached = False
+            return
+
+        goal_id = bytes(current.goal_info.goal_id.uuid)
+        if goal_id in self._ignored_nav_goal_ids:
+            return
+        self._ignored_nav_goal_ids.add(goal_id)
+        self._active_nav_goal_id = None
+
+        if status == action_msgs.msg.GoalStatus.STATUS_SUCCEEDED:
+            next_index = self._goal_waypoint_index + 1
+            if next_index < len(self._goal_waypoints):
+                self._goal_waypoint_index = next_index
+                self._is_goal_reached = False
+                self._nav_stop_ticks = 0
+                if self._cmd_vel_pub is not None:
+                    self._cmd_vel_pub.publish(geometry_msgs.msg.Twist())
+                await self._publish_current_goal(self._goal_waypoints[next_index])
+                return
+
+            self._is_goal_reached = True
+            self._logger.info(
+                "Scenario final goal reached; publishing route_status=SUCCEEDED")
+            self._route_status_pub.publish(std_msgs.msg.Int8(data=status))
             if self._cmd_vel_pub is not None:
                 self._cmd_vel_pub.publish(geometry_msgs.msg.Twist())
             self._nav_stop_ticks = 15  # 1.5 s at 10 Hz
-        self._is_goal_reached = reached
+            return
+
+        self._is_goal_reached = False
+        self._logger.warn(
+            f"Scenario route ended with Nav2 status {status}; publishing route_status")
+        self._route_status_pub.publish(std_msgs.msg.Int8(data=status))
+        if self._cmd_vel_pub is not None:
+            self._cmd_vel_pub.publish(geometry_msgs.msg.Twist())
+        self._nav_stop_ticks = 15  # 1.5 s at 10 Hz
 
     async def update(self):
         """Live - update some kwargs of robot

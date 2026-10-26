@@ -317,7 +317,10 @@ def generate_launch_description():
         ),
         Node(
             package='nav2_collision_monitor', executable='collision_monitor', name='collision_monitor',
-            output='screen', parameters=[nav2_configured_params]
+            output='screen', parameters=[nav2_configured_params],
+            # The social-yielding motion gate is the sole publisher of the final cmd_vel.
+            # This lets Nav2 plan and command normally while physical motion is held.
+            remappings=[('cmd_vel', 'cmd_vel_pre_hold')],
         ),
         Node(
             package='obstacle_distance',

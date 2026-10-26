@@ -147,8 +147,11 @@ local_costmap:
       width: 5      # 10->5 m rolling window; with resolution 0.05 this is still 100x100 cells (same CPU as before)
       height: 5
       resolution: 0.05   # 0.1->0.05: finer near-robot precision; cell count unchanged (5/0.05 == 10/0.1 == 100)
-      robot_radius: 0.25
-      footprint_padding: 0.05
+      # Full Ai2_Bot2 USD XY envelope in the fixed arms-tucked pose. The model
+      # substitution applies `scale: 0.8`; Nav2 rotates this polygon with the
+      # robot while checking collision clearance.
+      footprint: ${footprint}
+      footprint_padding: 0.0
       # social_layer REMOVED here (2026-08-03). It was a third redundant pedestrian channel in the
       # LOCAL costmap and measurably dead weight:
       #   - obstacle_layer already marks peds LETHAL (254) within obstacle_max_range 2.0 m, and
@@ -165,8 +168,10 @@ local_costmap:
       plugins: ["obstacle_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.55
+        cost_scaling_factor: 2.0
+        # The padded full-model polygon has an approximately 0.454 m corner
+        # envelope. Keep about 0.10 m of soft-cost buffer for turn-in clearance.
+        inflation_radius: 0.50
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
@@ -204,8 +209,8 @@ global_costmap:
       robot_base_frame: ${frame:-}${robot_base_frame:-base_link}
       use_sim_time: True
       transform_tolerance: 1.0
-      robot_radius: 0.25   # 与 local 统一(原为 0.28 瘦半径)
-      footprint_padding: 0.05   # 与 local 统一 -> 有效内接半径 0.30
+      footprint: ${footprint}
+      footprint_padding: 0.0   # 与 local 一致；完整 USD XY 包络的缩放多边形
       resolution: 0.10
       width: 40
       height: 40
@@ -263,8 +268,8 @@ global_costmap:
         publish_occgrid: False
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.55
+        cost_scaling_factor: 2.0
+        inflation_radius: 0.50
       always_send_full_costmap: True
   global_costmap_client:
     ros__parameters:
@@ -351,7 +356,8 @@ collision_monitor:
     odom_frame_id: ${frame:-}${robot_odom_frame:-odom}
 
     # 2) Velocity topics
-    # Full chain: controller_server → "cmd_vel_nav" → velocity_smoother → "cmd_vel_smoothed" → collision_monitor → "cmd_vel"
+    # Full chain: controller -> cmd_vel_nav -> smoother -> cmd_vel_smoothed ->
+    # collision_monitor -> cmd_vel_pre_hold -> social-yielding gate -> cmd_vel -> Isaac.
     cmd_vel_in_topic:  "cmd_vel_smoothed"
     cmd_vel_out_topic: "${cmd_vel_out_topic:-cmd_vel}"
 

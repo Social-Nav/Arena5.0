@@ -7,6 +7,7 @@ uint32 id
 # Spatial information
 geometry_msgs/Pose pose
 geometry_msgs/Twist twist
+float32 look_ahead
 
 # Animation/behavior states (integrated)
 uint8 IDLE = 0

@@ -353,6 +353,12 @@ def generate_launch_description():
         launch.actions.ExecuteProcess(
             cmd=['bash', '-c',
                  'source /opt/arena_ws/src/Arena/_meta/tools/source && '
+                 'python3 /opt/arena_ws/src/Arena/arena_isaac/arena_isaac/arena_isaac/social_yielding/motion_hold_gate.py'],
+            output='screen',
+        ),
+        launch.actions.ExecuteProcess(
+            cmd=['bash', '-c',
+                 'source /opt/arena_ws/src/Arena/_meta/tools/source && '
                  'python3 /opt/arena_ws/src/Arena/arena_isaac/arena_isaac/arena_isaac/social_yielding/social_yielding_orchestrator.py'],
             output='screen',
         ),

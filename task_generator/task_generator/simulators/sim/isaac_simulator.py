@@ -532,6 +532,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
             goal.name = self._NS_PEDESTRIAN(ped.name)
             goal.position = ped.pose.position
             goal.velocity = np.linalg.norm([ped.twist.linear.x, ped.twist.linear.y])
+            goal.look_ahead = ped.look_ahead
             return goal
 
         goals = list(filter(None, await asyncio.gather(*map(impl, pedestrians.pedestrians))))

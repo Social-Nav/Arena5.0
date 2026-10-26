@@ -91,7 +91,13 @@ class TM_Scenario(TM_Robots):
         self._logger.info(f"social_yielding = {enabled} ({source})")
 
         for robot, config in zip(managed_robots, SCENARIO_ROBOTS):
-            await robot.reset(start_pos=config.start, goal_pos=config.goal)
+            await robot.reset(
+                start_pos=config.start,
+                goal_pos=config.goal,
+                goal_waypoints=config.waypoints,
+                waypoint_tolerance=config.waypoint_tolerance,
+                final_goal_tolerance=config.final_goal_tolerance,
+            )
             # Absent field -> "neutral". Chosen as the default because passive's early, frequent
             # braking is too weak a baseline to produce real interaction negotiation, while
             # aggressive largely drives through. Pushed to controller_server + both costmaps;

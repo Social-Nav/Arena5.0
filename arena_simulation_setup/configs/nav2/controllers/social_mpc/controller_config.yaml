@@ -47,6 +47,7 @@ controller_plugins_dict:
       parameter_block_length: 6
       discretization: 1
       debug_optimizer: false
+      diagnostics_enabled: false  # suppress the 1 Hz [MPC-DIAG] WARN line during tasks
       current_path_weight: 1.0
       current_cmds_weight: 0.3
       weights:
@@ -61,7 +62,7 @@ controller_plugins_dict:
         agent_angle_weight: 0.0
         velocity_feasibility_weight: 5.0
         goal_align_weight: 8.0
-        obstacle_weight: 0.05     # 0.1->0.05: at 0.1 a narrow-corridor centreline out-weighed the velocity
+        obstacle_weight: 0.03     # 0.1->0.05: at 0.1 a narrow-corridor centreline out-weighed the velocity
                                   # term and the robot crept. Raise back toward 0.1 if it hugs walls.
         social_clear_distance: 2.0
         social_safety_distance: 0.9

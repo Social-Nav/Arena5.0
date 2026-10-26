@@ -18,6 +18,7 @@ services:
       - "$HOST_ARENA_WS_DIR/log:/opt/arena_ws/log"
       - "$HOST_ARENA_WS_DIR/.env:/opt/arena_ws/.env"
       - "${HOST_SCENES_DIR:-/tmp/arena_scenes}:/data/scenes"
+      - "${SSH_AUTH_SOCK:-/dev/null}:/ssh-agent"
     environment:
       - QT_X11_NO_MITSHM=1
       - TMPDIR=/tmp/shared
@@ -29,6 +30,7 @@ services:
       - HOST_UID
       - HOST_GID
       - HOST_ARENA_WS_DIR
+      - SSH_AUTH_SOCK=/ssh-agent
     env_file:
       - "$HOST_ARENA_WS_DIR/.env"
     user: "${HOST_UID}"
@@ -65,6 +67,15 @@ services:
       - "$HOST_ARENA_WS_DIR/log:/opt/arena_ws/log"
       - "$HOST_ARENA_WS_DIR/.env:/opt/arena_ws/.env"
       - "${HOST_SCENES_DIR:-/tmp/arena_scenes}:/data/scenes"
+    # /dev/nvidia-modeset is NOT injected by the nvidia runtime here (only nvidia0/nvidiactl/uvm
+    # are), but NVIDIA's Vulkan WSI needs it to enumerate X11 swapchain surface formats. Without
+    # it, headless Isaac works fine while windowed startup dies in the renderer:
+    #   "Failed to find device surface formats." -> "Failed to create a swapchain."
+    #   -> free(): invalid pointer -> abort in libnvidia-glcore (vkGetPhysicalDeviceSurfaceFormats2KHR)
+    # Verified: same crash from a bare `vulkaninfo` in this container, and both it and Isaac
+    # windowed startup succeed as soon as this node is present.
+    devices:
+      - "/dev/nvidia-modeset:/dev/nvidia-modeset"
     environment:
       - DISPLAY
       - TMPDIR=/tmp/shared

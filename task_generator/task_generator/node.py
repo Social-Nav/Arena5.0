@@ -8,6 +8,7 @@ import arena_simulation_setup.tree.configs.environment
 import arena_simulation_setup.tree.configs.parametrized
 import arena_simulation_setup.tree.World as World
 import rclpy
+from rclpy.qos import QoSProfile, DurabilityPolicy
 import std_srvs.srv as std_srvs
 import task_generator_msgs.srv
 from arena_rclpy_mixins import ArenaMixinNode
@@ -69,10 +70,12 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         self._task: Task
 
         # Publishers
+        episode_qos = QoSProfile(depth=1)
+        episode_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
         self._pub_task_reset = self.create_publisher(
             Int16,
             self.service_namespace('task_reset'),
-            1,
+            episode_qos,
         )
 
         self._pub_finished = self.create_publisher(

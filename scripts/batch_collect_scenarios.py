@@ -8,7 +8,7 @@ This script does not launch Arena/Isaac. Start Arena manually with
 For each scenario it:
   1. sets /task_generator_node parameter ``task.scenario.file``
   2. calls /task_generator_node/reset_task
-  3. waits for the Nav2 NavigateToPose terminal status
+  3. waits for task_generator's terminal status for the complete robot route
   4. waits for /data_logger/episode_saved when navigation succeeds
 
 Failed / canceled episodes are discarded by the Isaac data logger; this script
@@ -29,7 +29,7 @@ import rclpy
 from action_msgs.msg import GoalStatus, GoalStatusArray
 from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
 from rcl_interfaces.srv import SetParameters
-from std_msgs.msg import Empty, Int16
+from std_msgs.msg import Empty, Int8, Int16
 from std_srvs.srv import Empty as EmptySrv
 
 
@@ -76,6 +76,12 @@ class BatchCollector:
             10,
         )
         self.node.create_subscription(
+            Int8,
+            f"{args.task_node}/{args.robot}/route_status",
+            self._on_route_status,
+            10,
+        )
+        self.node.create_subscription(
             Empty,
             "/data_logger/episode_saved",
             self._on_episode_saved,
@@ -99,9 +105,11 @@ class BatchCollector:
         if not msg.status_list:
             return
         status = msg.status_list[-1].status
-        self.last_nav_status = status
         if status in RUNNING:
             self.seen_running_after_reset = True
+
+    def _on_route_status(self, msg: Int8) -> None:
+        self.last_nav_status = msg.data
 
     def _on_episode_saved(self, _msg: Empty) -> None:
         self.episode_saved_count += 1
@@ -265,7 +273,7 @@ class BatchCollector:
             "waiting for task_reset message",
         )
 
-        print("  waiting for Nav2 terminal status...")
+        print("  waiting for complete route terminal status...")
 
         def terminal_after_running() -> bool:
             if self.last_nav_status is None:

@@ -81,7 +81,7 @@ repositories:
   deps/hunav/hunav_sim:
     type: git
     url: https://github.com/Social-Nav/hunav_sim.git
-    version: feature/social_yielding
+    version: feature/human_interaction
   deps/hunav/people_msgs:
     type: git
     url: https://github.com/wg-perception/people.git
@@ -99,7 +99,7 @@ repositories:
   deps/nav2_social_mpc_controller:
     type: git
     url: https://github.com/Social-Nav/nav2_social_mpc_controller.git
-    version: feature/social_yielding
+    version: feature/human_interaction
   deps/nav2_social_costmap_plugin:
     type: git
     url: https://github.com/robotics-upo/nav2_social_costmap_plugin.git

@@ -78,13 +78,14 @@ __pycache__/
 /collected_data_instructions.zip
 /collected_data_track_a_instructions.zip
 
-# local, generated GRScenes scenario experiments
-/arena_simulation_setup/worlds/grscenes_1/scenarios/enter_room/
-/arena_simulation_setup/worlds/grscenes_1/scenarios/exit_room/
-/arena_simulation_setup/worlds/grscenes_2/scenarios/default_test/
-/arena_simulation_setup/worlds/grscenes_24/scenarios/w_1/
-/arena_simulation_setup/worlds/grscenes_24/scenarios/w_2/
-/arena_simulation_setup/worlds/grscenes_24/scenarios/w_3/
+# local world and scenario data; do not publish newly generated content
+/arena_simulation_setup/worlds/
+
+# Local tests and diagnostic scripts are not published upstream.
+test/
+tests/
+test_*
+*_test.*
 
 # local-only notes (kept on disk, not shared)
 /docs/实现细节.md

@@ -22,6 +22,9 @@ _pose_from_deg = Pose.converter_deg
 class RobotGoal:
     start: Pose = attrs.field(converter=_pose_from_deg)
     goal: Pose = attrs.field(converter=_pose_from_deg)
+    waypoints: list[Pose] = attrs.field(factory=list)
+    waypoint_tolerance: typing.Optional[float] = None
+    final_goal_tolerance: typing.Optional[float] = None
     # Optional robot social personality preset (passive / neutral / aggressive). Selects a bundle
     # under configs/nav2/profiles/<name>/profile.yaml that is pushed to the MPC + social costmap
     # layers at reset. None -> caller falls back to "neutral".
@@ -62,15 +65,16 @@ class RobotGoal:
         """None stays None (absent != 0.0); anything else is coerced to float."""
         return None if v is None else float(v)
 
+    @staticmethod
+    def _opt_positive_float(v, field: str) -> typing.Optional[float]:
+        value = RobotGoal._opt_float(v)
+        if value is not None and value <= 0.0:
+            raise ValueError(f"robot.{field} must be positive, got {value}")
+        return value
+
     @classmethod
     def parse(cls, obj: dict) -> "RobotGoal":
-        return cls(
-            start=_pose_from_deg(obj.get("start", [])),
-            goal=_pose_from_deg(obj.get("goal", [])),
-            social_attributes=obj.get("social_attributes"),
-            social_yielding=cls._opt_bool(obj.get("social_yielding")),
-            desired_linear_vel=cls._opt_float(obj.get("desired_linear_vel")),
-        )
+        return cls.from_scenario_robot(obj)
 
     @classmethod
     def from_scenario_robot(cls, robot: dict) -> "RobotGoal":
@@ -79,19 +83,26 @@ class RobotGoal:
         New format (current):
             robot:
               pose: [x, y, yaw_deg]              -> start
-              waypoints: [[x, y, yaw_deg], ...]  -> goal = last waypoint
+              waypoints: [[x, y, yaw_deg], ...]  -> ordered navigation goals
         Legacy format (still accepted):
             start: [x, y, yaw_deg]
             goal:  [x, y, yaw_deg]
         """
-        if "start" in robot or "goal" in robot:
-            start = robot.get("start", robot.get("pose", []))
-            goal = robot.get("goal", [])
+        start = robot.get("start", robot.get("pose", []))
+        raw_waypoints = list(robot.get("waypoints") or [])
+        if "goal" in robot:
+            goal = robot["goal"]
+            if not raw_waypoints or raw_waypoints[-1] != goal:
+                raw_waypoints.append(goal)
         else:
-            start = robot.get("pose", [])
-            waypoints = robot.get("waypoints") or []
-            goal = waypoints[-1] if waypoints else start
-        return cls(start=start, goal=goal, social_attributes=robot.get("social_attributes"),
+            goal = raw_waypoints[-1] if raw_waypoints else start
+        return cls(start=start, goal=goal,
+                   waypoints=[_pose_from_deg(waypoint) for waypoint in raw_waypoints],
+                   waypoint_tolerance=cls._opt_positive_float(
+                       robot.get("waypoint_tolerance"), "waypoint_tolerance"),
+                   final_goal_tolerance=cls._opt_positive_float(
+                       robot.get("final_goal_tolerance"), "final_goal_tolerance"),
+                   social_attributes=robot.get("social_attributes"),
                    social_yielding=cls._opt_bool(robot.get("social_yielding")),
                    desired_linear_vel=cls._opt_float(robot.get("desired_linear_vel")))
 
@@ -136,6 +147,13 @@ class ScenarioView(PathView):
 
         assert isinstance(scenario, dict), "Scenario file must contain a dictionary at the top level."
 
+        robots = self._parse_robots(scenario)
+        legacy_social_yielding = scenario.get("social_yielding")
+        if legacy_social_yielding is not None:
+            for robot in robots:
+                if robot.social_yielding is None:
+                    robot.social_yielding = bool(legacy_social_yielding)
+
         return Scenario(
             static=[
                 converter.structure({**obs, **dict(included_from=self.path)}, Obstacle)
@@ -150,9 +168,7 @@ class ScenarioView(PathView):
                 for obs
                 in scenario.get("obstacles", {}).get("dynamic", [])
             ],
-            robots=self._parse_robots(scenario),
-            social_yielding=(None if scenario.get("social_yielding") is None
-                             else bool(scenario.get("social_yielding"))),
+            robots=robots,
         )
 
     @staticmethod
@@ -179,6 +195,13 @@ class ScenarioView(PathView):
         try:
             with open(self.scenario_path, 'r') as f:
                 raw = yaml.safe_load(f)
+                if isinstance(raw, dict):
+                    # YAML parses a key with only commented-out children (e.g. ``dynamic:``)
+                    # as None. Treat that natural way of temporarily disabling every object as
+                    # an empty collection instead of failing inside cattrs' list structurer.
+                    for collection in ("static", "dynamic"):
+                        if raw.get(collection) is None:
+                            raw[collection] = []
                 scenario = converter.structure(raw, Scenario)
                 scenario.robots = self._parse_robots(raw)
                 for obj in itertools.chain(scenario.static, scenario.dynamic):
