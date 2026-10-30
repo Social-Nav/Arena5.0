@@ -361,6 +361,7 @@ class HunavHumanSimulator(
         self._robot_pose_warned = False
         # Pedestrians whose last pedestrian_update failed; used to log only transitions.
         self._move_failed_names: set[str] = set()
+        self._move_loop_exception_active = False
 
         # Keep HuNav's integrator and Isaac character targets frozen until RobotManager's
         # final scene gate confirms Isaac animation, local costmap and sensor TF readiness.
@@ -697,16 +698,33 @@ class HunavHumanSimulator(
             with self.node.sim_time_rate(10.0) as (done, rate):
                 while not done.is_set():
                     await rate.get()
-                    async with self._agents_lock:
-                        results = await self._simulator.pedestrian_update(
-                            self._arena_pedestrians_container
-                        )
-                        self._report_move_failures(results)
+                    try:
+                        async with self._agents_lock:
+                            results = await self._simulator.pedestrian_update(
+                                self._arena_pedestrians_container
+                            )
+                            self._report_move_failures(results)
+                        if self._move_loop_exception_active:
+                            self._logger.info(
+                                "pedestrian_update loop recovered; Isaac character commands resumed")
+                            self._move_loop_exception_active = False
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as e:
+                        # A transient service/client failure must not kill this task forever.
+                        # HuNav's independent ComputeAgents loop would keep publishing moving
+                        # /people markers while Isaac received no further character commands.
+                        if not self._move_loop_exception_active:
+                            self._logger.error(
+                                "pedestrian_update loop failed; retrying on the next 10 Hz tick: "
+                                f"{e}\n{traceback.format_exc()}"
+                            )
+                        self._move_loop_exception_active = True
         except asyncio.CancelledError:
             pass
         except Exception as e:
             self._logger.error(
-                f"Failed to update agent positions: {e}\n{traceback.format_exc()}"
+                f"pedestrian_update loop terminated: {e}\n{traceback.format_exc()}"
             )
 
     def _scene_episode_callback(self, msg: Int16):
@@ -1248,7 +1266,7 @@ class HunavHumanSimulator(
                                         # Use the FINITE-DIFFERENCED speed, not hunav's own
                                         # velocity field. Reason: this twist is what
                                         # NavigatePedestrians reads as `goal.velocity`, and it
-                                        # gates walking on `speed >= _MIN_WALK_SPEED` (0.05).
+                                        # gates walking on a near-zero speed threshold.
                                         # hunav leaves velocity.linear at 0 on the first cycles
                                         # (and whenever it reports position-only updates), so the
                                         # character was told "you are standing still" while the

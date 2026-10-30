@@ -17,7 +17,7 @@ weights:
   social_near_gain: 6.0
 
 weights_optimizer:
-  max_linear_velocity: 0.7        # hard vx CEILING, not the cruise speed
+  max_linear_velocity: 0.8        # hard vx CEILING, not the cruise speed
 
 trajectorizer:
   desired_linear_vel: 0.5        # the real speed knob (social_mpc ignores max_vel_x)
