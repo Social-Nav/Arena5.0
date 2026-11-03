@@ -252,16 +252,42 @@ branch and its committed behavior remain untouched.
     `resolved_model` and `backend`.
   - `person.py` keeps the existing camera/render state code and adds the
     character graph/appearance profile.
-- Offline verification: 18 character-asset/identity/selector tests pass;
-  deterministic pool hits are 22 pedestrian, 2 doctor, 4 construction_worker,
-  4 police; the catalog has 32 identities / 252 asset variants; unknown
-  models fail closed. The full 1125-asset inventory requires the Isaac People
-  asset root and was not verifiable in this offline lane.
-- The parent clean branch now pins `arena_isaac=53234f7` and
+- Offline verification: 37 character/smoke contract tests pass; deterministic
+  pool hits are 22 pedestrian, 2 doctor, 4 construction_worker, 4 police; the
+  catalog has 32 identities / 252 asset variants; unknown models fail closed.
+- Runtime harness commits on the same branch:
+  - `cdbdd0f` adds the per-category smoke harness, aggregate verdict, and the
+    authoritative eval500 validator.
+  - `6ab861b` resolves the enclosing repo commit at runtime instead of
+    hardcoding an earlier SHA. This is the Main-verified harness commit and
+    the commit pinned by the parent clean branch.
+  - `80457d2` is a later retry-only fix for transient S3 HEAD failures in the
+    eval500 validator. It is pushed on the branch but intentionally not
+    pinned by the parent; the final 0-missing 1125 JSON records
+    `source_commit=80457d2` for exact provenance.
+- Authoritative eval500 validation (offline, `seed=20261103`):
+  500 scenarios / 1125 dynamic entries; category counts 982 pedestrian,
+  65 doctor, 64 construction_worker, 14 police; deterministic replay identical;
+  no random fallback; unknown categories fail closed; all 1125 entry assets
+  return HTTP 200 and the four pools' 242 identity/variant rows have 0 missing
+  assets. The 32-identity catalog count is supplementary coverage, not a
+  substitute for the 1125-entry parse.
+- Real Isaac runtime smoke (engineering only, not a scientific result):
+  four fresh sequential Isaac processes (pedestrian, doctor,
+  construction_worker, police) under one shared flock, one pedestrian each,
+  `seed=20261103`. Each category produced a real `Result.OK` asset stat, an
+  existing stage prim, 4 control publishes / 4 receives on
+  `/character_smoke/target` (`std_msgs/msg/String`), 1.12-1.20 m of waypoint
+  movement, 120 captured = 120 unique = 120 decoded frames, 10 fps, and a
+  playable MP4 with the real `xN` annotation. Evidence root:
+  `outputs/arena_isaac_character_category_smoke_2116_final/`.
+- The first 10-pedestrian single-process attempt was stopped after three
+  characters and is preserved as technical-failure evidence at
+  `outputs/arena_isaac_character_smoke_2116_aborted_longrun/`. It is not a
+  PASS.
+- The parent clean branch now pins `arena_isaac=6ab861b` and
   `arena_robots=e116700`. A fresh recursive clone checked out `arena_isaac`
-  `53234f7`, `arena_robots` `e116700`, and nested
+  `6ab861b`, `arena_robots` `e116700`, and nested
   `jackal/robot_usds/turtlebot4` at their pinned SHAs.
-- Real Isaac spawn/asset-selection/video smoke was not executed because the
-  current authorization boundary forbids starting an Isaac episode; it remains
-  the next runtime-only validation step.
+
 
