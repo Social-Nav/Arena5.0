@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "arena.stable_run_index.v1",
+  "title": "Arena stable benchmark run index",
+  "type": "object",
+  "required": ["schema", "rows"],
+  "properties": {
+    "schema": {"const": "arena.stable_run_index.v1"},
+    "generated_utc": {"type": "string"},
+    "frozen_case": {
+      "type": "object",
+      "required": ["world", "scenario", "robot", "humans", "pedestrian_seed", "sim_timeout_sec"],
+      "properties": {
+        "world": {"type": "string"},
+        "scenario": {"type": "string"},
+        "robot": {"type": "string"},
+        "humans": {"type": "integer"},
+        "pedestrian_seed": {"type": "integer"},
+        "sim_timeout_sec": {"type": "integer"},
+        "instruction_sha256": {"type": "string"}
+      }
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "lane", "status", "profile_id", "profile_version", "source_commit",
+          "control_path", "clock_timebase_version", "run_prefix", "eval_rc",
+          "verdict", "failure_tags", "equal_condition", "evidence_paths"
+        ],
+        "properties": {
+          "lane": {"enum": ["internnav", "navila", "lisn", "lightnav"]},
+          "status": {
+            "enum": [
+              "completed-run", "science_FAIL", "BLOCKED_CONTRACT_5S_SOURCE_AGE",
+              "pending", "blocked", "legacy"
+            ]
+          },
+          "profile_id": {"type": "string"},
+          "profile_version": {"type": "string"},
+          "source_commit": {"type": "string"},
+          "control_path": {"type": "string"},
+          "clock_timebase_version": {"type": "string"},
+          "run_prefix": {"type": ["string", "null"]},
+          "eval_rc": {"type": ["integer", "null"]},
+          "verdict": {"type": ["string", "null"]},
+          "failure_tags": {"type": "string"},
+          "equal_condition": {"type": "string"},
+          "evidence_paths": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    }
+  }
+}

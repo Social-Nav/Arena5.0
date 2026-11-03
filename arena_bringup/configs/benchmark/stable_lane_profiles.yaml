@@ -1,0 +1,79 @@
+schema: arena.stable_lane_profiles.v1
+description: Stable lane -> profile/command mapping for the frozen GRScenes case.
+frozen_case:
+  world: grscenes_20_v1
+  scenario: default_2
+  robot: Ai2_Bot2
+  humans: 2
+  pedestrian_seed: 0
+  sim_timeout_sec: 300
+  instruction_sha256: b6649036379d7b7eb951aff084e2f8987beefed409dbc3184cf1479eaa1743b3
+lanes:
+  internnav:
+    model: internnav
+    base_profile: base_follow_path_grscenes_task34.yaml
+    overlay: models/internnav.yaml
+    control_path: nav2_follow_path_rpp
+    local_planner: regulated_pure_pursuit
+    clock_timebase_version: task34_sim_clock_ego_header_stamp_v1
+    command: >-
+      /opt/venv/bin/python3 -m arena_vln_models.runner eval --local
+      --base-profile base_follow_path_grscenes_task34.yaml --model internnav
+      --robot Ai2_Bot2 --case grscenes_20_v1/default_2 --episodes 1
+      --pedestrian-seed 0 --timeout 300
+      -- --output-prefix arena_task34_20261028/internnav
+  navila:
+    model: navila
+    profile: /home/ubuntu/arena_jazzy_ws/outputs/arena_task34_20261028/navila_fixed_tcp.yaml
+    overlay: models/navila.yaml
+    control_path: nav2_follow_path_rpp
+    local_planner: regulated_pure_pursuit
+    clock_timebase_version: task34_sim_clock_ego_header_stamp_v1
+    command: >-
+      /opt/venv/bin/python3 -m arena_vln_models.runner eval --local
+      --profile /home/ubuntu/arena_jazzy_ws/outputs/arena_task34_20261028/navila_fixed_tcp.yaml
+      --model navila --robot Ai2_Bot2 --case grscenes_20_v1/default_2 --episodes 1
+      --pedestrian-seed 0 --timeout 300
+      --model-params-json '{"host":"<navila-container-ip>","port":54321}'
+      -- --output-prefix arena_task34_20261028/navila_fixed
+  lightnav:
+    model: lightnav
+    base_profile: base_follow_path_grscenes_task34.yaml
+    overlay: models/lightnav.yaml
+    control_path: nav2_follow_path_rpp
+    local_planner: regulated_pure_pursuit
+    clock_timebase_version: task34_sim_clock_ego_header_stamp_v1
+    service_image: lightnav-single:cea0cc6-lock3e0c5546-nounsetfix1
+    service_endpoint: ws://127.0.0.1:8050
+    command: >-
+      /opt/venv/bin/python3 -m arena_vln_models.runner eval --local
+      --base-profile base_follow_path_grscenes_task34.yaml --model lightnav
+      --robot Ai2_Bot2 --case grscenes_20_v1/default_2 --episodes 1
+      --pedestrian-seed 0 --timeout 300
+      -- --output-prefix arena_task34_20261028/lightnav
+  lisn:
+    model: internnav-fast + external VLM slow loop
+    control_path: nav2_follow_path_social_mpc
+    local_planner: social_mpc
+    status: BLOCKED_CONTRACT_5S_SOURCE_AGE
+    review_classification: expected_static_review
+    runtime_status: NOT_RUNTIME_OBSERVED
+    proposal_observed: false
+    apply_attempted: false
+    producer_timeout_default_sec: 120.0
+    producer_deadline_default_sec: 120.0
+    run_wait_cap_sec: 20.0
+    run_wait_cap_source: explicit CLI/env only (--lisn-producer-timeout-sec/--lisn-producer-deadline-sec); not a profile value
+    max_observation_age_ns: 5000000000
+    note: >-
+      Static contract analysis only: the CLI wait cap (20s, explicit run
+      parameter) is incompatible with the 5s max_observation_age gate. No
+      runtime proposal was observed or rejected in this round; apply_attempted
+      is false. Do not rebind an old proposal to a fresh observation; the
+      independent revalidation evidence object is a design for Main review,
+      not implemented.
+    non_modulation_evidence:
+      path: outputs/arena_ark_probe_20261028/run_20261028_075216/QUERY_RECEIPT.json
+      status: 200
+      elapsed_seconds: 10.508287
+      role: independent observation only; not a LISN modulation-chain commit or failure cause

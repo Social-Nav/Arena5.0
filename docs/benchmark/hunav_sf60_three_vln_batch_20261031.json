@@ -1,0 +1,207 @@
+{
+  "batch": "hunav-social-force60-three-vln-rerun-20261031",
+  "case": {
+    "humans": 2,
+    "instruction_sha256": "b6649036379d7b7eb951aff084e2f8987beefed409dbc3184cf1479eaa1743b3",
+    "pedestrian_seed": 0,
+    "robot": "Ai2_Bot2",
+    "scenario": "default_2",
+    "sim_timeout_sec": 300,
+    "world": "grscenes_20_v1"
+  },
+  "config": {
+    "effective_social_force_factor": 60.0,
+    "file": "arena_bringup/configs/hunav/default_sf60.yaml",
+    "installed_share": "outputs/arena_seed21_four_agent_batch_20261026/target_install/arena_bringup/share/arena_bringup/configs/hunav/default_sf60.yaml",
+    "loader_env": "ARENA_HUNAV_CONFIG=default_sf60.yaml",
+    "sha256": "a834b6bb42e6c8f14ea4734aa5ab1fd03791a1897f9445d24c2fb7ccade9eeb1",
+    "user_dirty_default_untouched": "src/Arena/arena_bringup/configs/hunav/default.yaml SHA e427195b..."
+  },
+  "control_path": "nav2_follow_path_rpp",
+  "generated_utc": "2026-10-30T16:59:55Z",
+  "rows": [
+    {
+      "artifact_validation_pass": true,
+      "benchmark_success": false,
+      "end_reason": "sim_timeout",
+      "eval_rc": 0,
+      "failure_reasons": "instruction_following_failed;collision_detected;social_distance_threshold_failed;repository_clean;base_checkpoint_fingerprint_complete;container_image_digests_complete",
+      "human_reaction": {
+        "humans": {
+          "1": {
+            "closest_approach_m": 0.672,
+            "closest_time_ns": 590800003118.0,
+            "human_destination": [
+              1.666,
+              -1.014
+            ],
+            "human_heading_theta": 2.319,
+            "human_span_m": 6.392,
+            "human_xy": [
+              1.5,
+              -1.21
+            ],
+            "post_lateral_deviation_max_m": 2.54,
+            "pre_approach_displacement_m": 1.578,
+            "robot_speed_median_near_mps": 0.001,
+            "robot_xy": [
+              1.964,
+              -0.724
+            ],
+            "samples": 1058,
+            "social_state": "beh_type=1,beh_state=0"
+          },
+          "2": {
+            "closest_approach_m": 0.831,
+            "closest_time_ns": 2720000014185.0,
+            "human_destination": [
+              7.608,
+              -13.261
+            ],
+            "human_heading_theta": -1.541,
+            "human_span_m": 7.781,
+            "human_xy": [
+              7.34,
+              -13.1
+            ],
+            "post_lateral_deviation_max_m": 0.622,
+            "pre_approach_displacement_m": 1.407,
+            "robot_speed_median_near_mps": 0.029,
+            "robot_xy": [
+              8.12,
+              -12.812
+            ],
+            "samples": 1058,
+            "social_state": "beh_type=1,beh_state=0"
+          }
+        },
+        "interpretation": "close encounters observed; lateral deviation measured relative to the human pre-approach heading. Causal reaction attribution is UNKNOWN without an sf10 counterfactual.",
+        "robot_displacement_m": 11.814,
+        "robot_end": [
+          8.651,
+          -14.178
+        ],
+        "robot_start": [
+          -0.063,
+          -6.2
+        ],
+        "robot_vx_max_mps": 0.599,
+        "run": "/home/ubuntu/arena_jazzy_ws/outputs/arena_hunav_sf60_20261031/internnav/20261030_161945_grscenes_20_v1_Ai2_Bot2_internnav"
+      },
+      "method": "internnav",
+      "min_human_distance_m": 0.6719315441322873,
+      "path_length_m": 26.21498091842205,
+      "run_prefix": "/home/ubuntu/arena_jazzy_ws/outputs/arena_hunav_sf60_20261031/internnav/20261030_161945_grscenes_20_v1_Ai2_Bot2_internnav",
+      "sim_time_sec": 315.200016438,
+      "video_finalization": "complete",
+      "videos": [
+        "videos/episode_0000/ego_observation.mp4",
+        "videos/episode_0000/map_top_down_follow.mp4",
+        "videos/episode_0000/sim_top_down.mp4"
+      ]
+    },
+    {
+      "artifact_validation_pass": true,
+      "benchmark_success": false,
+      "end_reason": "goal_reached",
+      "eval_rc": 0,
+      "failure_reasons": "social_distance_threshold_failed;repository_clean;base_checkpoint_fingerprint_complete;container_image_digests_complete",
+      "human_reaction": {
+        "humans": {
+          "1": {
+            "closest_approach_m": 0.614,
+            "human_destination": [
+              1.39,
+              -5.837
+            ],
+            "human_heading_theta": 2.055,
+            "human_span_m": 10.482,
+            "post_lateral_deviation_max_m": 0.603,
+            "robot_speed_median_near_mps": 0.002
+          },
+          "2": {
+            "closest_approach_m": 6.225,
+            "human_destination": [
+              7.506,
+              -5.227
+            ],
+            "human_heading_theta": 1.652,
+            "human_span_m": 9.73,
+            "post_lateral_deviation_max_m": 0.07,
+            "robot_speed_median_near_mps": 0.031
+          }
+        },
+        "interpretation": "close encounters/lateral deviation observed; causal reaction UNKNOWN without sf10 counterfactual",
+        "robot_displacement_m": 4.202,
+        "robot_vx_max_mps": 0.514,
+        "run": "/home/ubuntu/arena_jazzy_ws/outputs/arena_hunav_sf60_20261031/navila_fixed/20261030_163919_grscenes_20_v1_Ai2_Bot2_navila"
+      },
+      "method": "navila",
+      "min_human_distance_m": 0.7206677459134687,
+      "path_length_m": 5.193856965870197,
+      "run_prefix": "/home/ubuntu/arena_jazzy_ws/outputs/arena_hunav_sf60_20261031/navila_fixed/20261030_163919_grscenes_20_v1_Ai2_Bot2_navila",
+      "sim_time_sec": 68.416670234,
+      "video_finalization": "complete",
+      "videos": [
+        "videos/episode_0000/ego_observation.mp4",
+        "videos/episode_0000/map_top_down_follow.mp4",
+        "videos/episode_0000/sim_top_down.mp4"
+      ]
+    },
+    {
+      "artifact_validation_pass": true,
+      "benchmark_success": false,
+      "end_reason": "goal_reached",
+      "eval_rc": 0,
+      "failure_reasons": "social_distance_threshold_failed;repository_clean;base_checkpoint_fingerprint_complete;container_image_digests_complete",
+      "human_reaction": {
+        "humans": {
+          "1": {
+            "closest_approach_m": 0.552,
+            "human_destination": [
+              1.39,
+              -5.837
+            ],
+            "human_heading_theta": 1.641,
+            "human_span_m": 6.724,
+            "post_lateral_deviation_max_m": 0.812,
+            "robot_speed_median_near_mps": 0.053
+          },
+          "2": {
+            "closest_approach_m": 5.93,
+            "human_destination": [
+              7.724,
+              -8.394
+            ],
+            "human_heading_theta": 1.513,
+            "human_span_m": 9.121,
+            "post_lateral_deviation_max_m": 0.03,
+            "robot_speed_median_near_mps": 0.025
+          }
+        },
+        "interpretation": "close encounters/lateral deviation observed; causal reaction UNKNOWN without sf10 counterfactual",
+        "robot_displacement_m": 4.294,
+        "robot_vx_max_mps": 0.489,
+        "run": "/home/ubuntu/arena_jazzy_ws/outputs/arena_hunav_sf60_20261031/lightnav/20261030_165058_grscenes_20_v1_Ai2_Bot2_lightnav"
+      },
+      "method": "lightnav",
+      "min_human_distance_m": 0.5507313319577887,
+      "path_length_m": 5.223401011741625,
+      "run_prefix": "/home/ubuntu/arena_jazzy_ws/outputs/arena_hunav_sf60_20261031/lightnav/20261030_165058_grscenes_20_v1_Ai2_Bot2_lightnav",
+      "sim_time_sec": 54.900002863,
+      "video_finalization": "complete",
+      "videos": [
+        "videos/episode_0000/ego_observation.mp4",
+        "videos/episode_0000/map_top_down_follow.mp4",
+        "videos/episode_0000/sim_top_down.mp4"
+      ]
+    }
+  ],
+  "schema": "arena.hunav_sf60_three_vln_batch.v1",
+  "scientific_limits": [
+    "sf60 results are not aggregated with old sf10 runs",
+    "three VLN lanes share RPP; LISN SocialMPC is a separate control path and not a fair cross-controller comparison",
+    "human reaction is observed correlation; causal attribution UNKNOWN without an sf10 counterfactual",
+    "benchmark_success remains false where social distance/qualification checks fail; goal_reached is reported separately"
+  ]
+}

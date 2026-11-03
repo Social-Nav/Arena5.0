@@ -33,5 +33,6 @@ commands inside `arena-1`.
 
 - [Installation](installation.md)
 - [Run Current Benchmarks](benchmark/running-benchmarks.md)
+- [Camera Backends and Dynamic TF](benchmark/camera-backends.md)
 - [Artifacts and Validation](benchmark/outputs-and-metrics.md)
 - [Troubleshooting](benchmark/troubleshooting.md)
