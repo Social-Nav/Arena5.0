@@ -1,0 +1,30 @@
+{
+  "schema": "arena.bfast.manifest.v1",
+  "model": "Qwen/Qwen3-VL-8B-Instruct-FP8",
+  "model_revision": "9cdc6310a8cb770ce18efaf4e9935334512aee45",
+  "prompt_id": "lisn_proposal_prompt_v1",
+  "prompt_sha256": "cac23aef6e651170f8930018e5781175b9d61e8608ea61a622a1f53061fb3734",
+  "action_mapping": "common_follow_path_stop_hold_error",
+  "rgb_topic": "/task_generator_node/Ai2_Bot2/head_camera/image",
+  "veto_topic": "/task_generator_node/Ai2_Bot2/bfast/veto",
+  "decision_topic": "/task_generator_node/Ai2_Bot2/bfast/decision",
+  "topic_allowlist": [
+    "/task_generator_node/Ai2_Bot2/head_camera/image",
+    "/task_generator_node/Ai2_Bot2/head_camera/camera_info",
+    "/task_generator_node/Ai2_Bot2/odom"
+  ],
+  "topic_denylist": [
+    "/task_generator_node/Ai2_Bot2/laser_scan",
+    "/task_generator_node/Ai2_Bot2/head_camera/depth",
+    "/task_generator_node/Ai2_Bot2/people",
+    "/task_generator_node/Ai2_Bot2/global_costmap/costmap",
+    "/task_generator_node/Ai2_Bot2/tracked_obstacles",
+    "eval_goal",
+    "gt_map",
+    "gt_people"
+  ],
+  "off_profile": "configs/lisn/bfast_off_v1.json",
+  "on_profile": "configs/lisn/bfast_on_v1.json",
+  "veto_timeout_sec": 1.0,
+  "status": "CPU_VERIFIED_RUNTIME_IMPLEMENTED_UNVERIFIED"
+}

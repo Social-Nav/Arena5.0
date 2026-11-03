@@ -1,0 +1,16 @@
+{
+  "schema": "arena.paper.scenario_profile.v1",
+  "mode": "closedloop",
+  "world": "grscenes_20_v1",
+  "scenario": "default_2",
+  "robot": "Ai2_Bot2",
+  "episodes": 1,
+  "pedestrian_seed": 0,
+  "human_source": "hunav",
+  "dynamic_humans": true,
+  "robot_human_feedback": true,
+  "hunav_config": "arena_bringup/configs/hunav/default_sf60.yaml",
+  "hunav_config_sha256": "a834b6bb42e6c8f14ea4734aa5ab1fd03791a1897f9445d24c2fb7ccade9eeb1",
+  "smoke_only": true,
+  "setting_status": "SMOKE_ONLY_NOT_PAPER_SETTING"
+}

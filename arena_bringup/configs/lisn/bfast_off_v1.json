@@ -1,0 +1,31 @@
+{
+  "schema": "arena.bfast.profile.v1",
+  "arm": "off",
+  "guard_enabled": false,
+  "guard_required": false,
+  "rgb_topic": "/task_generator_node/Ai2_Bot2/head_camera/image",
+  "veto_topic": "",
+  "decision_topic": "/task_generator_node/Ai2_Bot2/bfast/decision",
+  "executor_veto_topic": "",
+  "executor_veto_timeout_sec": 0.0,
+  "model": "Qwen/Qwen3-VL-8B-Instruct-FP8",
+  "model_revision": "9cdc6310a8cb770ce18efaf4e9935334512aee45",
+  "prompt_sha256": "cac23aef6e651170f8930018e5781175b9d61e8608ea61a622a1f53061fb3734",
+  "action_mapping": "common_follow_path_stop_hold_error",
+  "topic_allowlist": [
+    "/task_generator_node/Ai2_Bot2/head_camera/image",
+    "/task_generator_node/Ai2_Bot2/head_camera/camera_info",
+    "/task_generator_node/Ai2_Bot2/odom"
+  ],
+  "topic_denylist": [
+    "/task_generator_node/Ai2_Bot2/laser_scan",
+    "/task_generator_node/Ai2_Bot2/head_camera/depth",
+    "/task_generator_node/Ai2_Bot2/people",
+    "/task_generator_node/Ai2_Bot2/global_costmap/costmap",
+    "/task_generator_node/Ai2_Bot2/tracked_obstacles",
+    "eval_goal",
+    "gt_map",
+    "gt_people"
+  ],
+  "status": "RUNTIME_IMPLEMENTED_UNVERIFIED"
+}

@@ -1,0 +1,14 @@
+{
+  "schema": "arena.paper.scenario_profile.v1",
+  "mode": "static",
+  "world": "grscenes_20_v1",
+  "scenario": "default_2",
+  "robot": "Ai2_Bot2",
+  "episodes": 1,
+  "pedestrian_seed": 0,
+  "human_source": "none",
+  "dynamic_humans": false,
+  "robot_human_feedback": false,
+  "smoke_only": true,
+  "setting_status": "SMOKE_ONLY_NOT_PAPER_SETTING"
+}
