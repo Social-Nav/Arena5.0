@@ -220,7 +220,7 @@ empty diff and is not compared to a temporary hash.
 ## Notes
 - The original branch, its 24 worktrees, dirty files, outputs, and failure evidence were not reset, rebased, amended, or deleted.
 - `arena_isaac` and `arena_robots` gitlinks were updated to the target tree via `git update-index`; the original submodule working trees were not modified.
-- The referenced submodule commits were pushed normally to `feat/eval-clean-submodule-20261103` on their configured remotes: `arena_isaac=98a6f45…`, `arena_robots=e116700…`; fresh clones verified the commits. The three nested `arena_robots` submodules were fetched at their pinned SHAs from their upstreams.
+- The referenced submodule commits were pushed normally to `feat/eval-clean-submodule-20261103`: `arena_isaac=98a6f45…` to `https://github.com/Social-Nav/arena-isaac`, and `arena_robots=e116700…` to both the configured local origin and `https://github.com/Social-Nav/robots.git`. A fresh recursive clone verified `arena_isaac`, `arena_robots`, and nested `jackal/robot_usds/turtlebot4` at their pinned SHAs.
 - The clean branch uses 12 reviewable commits; it does not squash the 140 commits into one commit and does not drop TIMEOUT/collision functionality.
 - `eval500` is preserved as its own feature commit `fd09b85`; stale pre-eval500 world duplicates were removed in `88412b1`. The production feature tree is equivalent to `14f6bea`; the explicit delta is the 7 additive contract/test/mapping files listed above.
 
