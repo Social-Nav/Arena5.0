@@ -15,7 +15,9 @@
     "controller",
     "sensor_profile",
     "launchable",
-    "status"
+    "operator_executable",
+    "status",
+    "blockers"
   ],
   "properties": {
     "schema": {"const": "arena.agentic.profile_version.v1"},
@@ -38,8 +40,37 @@
     "controller": {"type": "string", "minLength": 1},
     "sensor_profile": {"enum": ["rgb_lidar", "rgb_only", "none"]},
     "launchable": {"type": "boolean"},
-    "status": {"type": "string", "minLength": 1},
+    "operator_executable": {"type": "boolean"},
+    "status": {
+      "enum": [
+        "EVAL500_PROFILE_VERSION_AUDIT_ONLY",
+        "EVAL500_PROFILE_VERSION_OPERATOR_READY"
+      ]
+    },
+    "blockers": {"type": "array", "items": {"type": "string"}},
     "note": {"type": "string"}
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "EVAL500_PROFILE_VERSION_AUDIT_ONLY"}}},
+      "then": {
+        "properties": {
+          "launchable": {"const": false},
+          "operator_executable": {"const": false},
+          "blockers": {"minItems": 1}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "EVAL500_PROFILE_VERSION_OPERATOR_READY"}}},
+      "then": {
+        "properties": {
+          "launchable": {"const": true},
+          "operator_executable": {"const": true},
+          "blockers": {"maxItems": 0}
+        }
+      }
+    }
+  ]
 }

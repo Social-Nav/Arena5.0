@@ -2,7 +2,9 @@
 Baseline: `c275eb4` (origin/main = origin/feat/internnav-eval-progress).
 Source: `feat/internnav-eval-progress` HEAD `14f6bea` (140 commits ahead).
 Clean branch: `feat/eval-clean-20261103`.
-Final tree equality: `git diff --stat HEAD 14f6bea` is empty; clean tree == `a63f8fb`.
+Production feature tree equivalent; `git diff --stat 14f6bea HEAD` is limited to
+the listed 7 additive contract/test/mapping files (+423 lines). It is not an
+empty diff and is not compared to a temporary hash.
 
 ## New feature commits
 | New commit | Theme | Original exploration commits |
@@ -218,8 +220,9 @@ Final tree equality: `git diff --stat HEAD 14f6bea` is empty; clean tree == `a63
 ## Notes
 - The original branch, its 24 worktrees, dirty files, outputs, and failure evidence were not reset, rebased, amended, or deleted.
 - `arena_isaac` and `arena_robots` gitlinks were updated to the target tree via `git update-index`; the original submodule working trees were not modified.
-- The clean branch intentionally uses 9 reviewable commits; it does not squash the 140 commits into one commit and does not drop TIMEOUT/collision functionality.
-- `eval500` is preserved as its own feature commit `fd09b85`; stale pre-eval500 world duplicates were removed in `88412b1` so the final tree equals the target tree.
+- The referenced submodule commits were pushed normally to `feat/eval-clean-submodule-20261103` on their configured remotes: `arena_isaac=98a6f45…`, `arena_robots=e116700…`; fresh clones verified the commits. The three nested `arena_robots` submodules were fetched at their pinned SHAs from their upstreams.
+- The clean branch uses 12 reviewable commits; it does not squash the 140 commits into one commit and does not drop TIMEOUT/collision functionality.
+- `eval500` is preserved as its own feature commit `fd09b85`; stale pre-eval500 world duplicates were removed in `88412b1`. The production feature tree is equivalent to `14f6bea`; the explicit delta is the 7 additive contract/test/mapping files listed above.
 
 ## Integration fixes
 

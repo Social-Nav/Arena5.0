@@ -42,6 +42,10 @@ def test_eval500_profile_version_matches_current_and_pinned_source():
     schema = _load(METHODS / 'profile_version.v1.schema.json')
     jsonschema = pytest.importorskip('jsonschema')
     jsonschema.validate(record, schema)
+    assert record['launchable'] is False
+    assert record['operator_executable'] is False
+    assert 'METHOD_BUNDLES_NOT_REFROZEN' in record['blockers']
+    assert record['status'] == 'EVAL500_PROFILE_VERSION_AUDIT_ONLY'
 
     profile = ROOT / record['profile_path']
     current_sha = hashlib.sha256(profile.read_bytes()).hexdigest()

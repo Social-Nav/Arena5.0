@@ -13,7 +13,11 @@
   "model_revision": "InternVLA-N1-DualVLN",
   "controller": "regulated_pure_pursuit",
   "sensor_profile": "rgb_lidar",
-  "launchable": true,
-  "status": "EVAL500_PROFILE_VERSION_READY_FOR_REFREEZE",
-  "note": "Additive eval500 profile record. It does not overwrite the old common_contract.v1 or the old pinned method bundles."
+  "launchable": false,
+  "operator_executable": false,
+  "status": "EVAL500_PROFILE_VERSION_AUDIT_ONLY",
+  "blockers": [
+    "METHOD_BUNDLES_NOT_REFROZEN"
+  ],
+  "note": "Additive eval500 profile record. It does not overwrite the old common_contract.v1 or the old pinned method bundles, and it is not operator-executable until the method bundles are re-frozen. The referenced submodule pointers are now fetchable from their explicit submodule branches."
 }
