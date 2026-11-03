@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "arena.agentic.profile_version.v1",
+  "title": "Arena5 additive profile version record",
+  "type": "object",
+  "required": [
+    "schema",
+    "version_id",
+    "profile_path",
+    "profile_sha256",
+    "source_commit",
+    "case",
+    "model",
+    "model_revision",
+    "controller",
+    "sensor_profile",
+    "launchable",
+    "status"
+  ],
+  "properties": {
+    "schema": {"const": "arena.agentic.profile_version.v1"},
+    "version_id": {"type": "string", "minLength": 1},
+    "profile_path": {"type": "string", "minLength": 1},
+    "profile_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "source_commit": {"type": "string", "pattern": "^[0-9a-f]{7,40}$"},
+    "case": {
+      "type": "object",
+      "required": ["world", "scenario", "robot"],
+      "properties": {
+        "world": {"type": "string", "minLength": 1},
+        "scenario": {"type": "string", "minLength": 1},
+        "robot": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "model": {"type": "string", "minLength": 1},
+    "model_revision": {"type": "string", "minLength": 1},
+    "controller": {"type": "string", "minLength": 1},
+    "sensor_profile": {"enum": ["rgb_lidar", "rgb_only", "none"]},
+    "launchable": {"type": "boolean"},
+    "status": {"type": "string", "minLength": 1},
+    "note": {"type": "string"}
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,19 @@
+{
+  "schema": "arena.agentic.profile_version.v1",
+  "version_id": "internnav_grscenes_eval500_402704",
+  "profile_path": "arena_bringup/configs/benchmark/profiles/internnav_grscenes.yaml",
+  "profile_sha256": "402704e9ab7f8d6b3622bf33bcfdfb84dbf753d98144c304613b9817698ad7e3",
+  "source_commit": "fd09b85",
+  "case": {
+    "world": "grscenes_1",
+    "scenario": "eval_1",
+    "robot": "Ai2_Bot2"
+  },
+  "model": "internnav",
+  "model_revision": "InternVLA-N1-DualVLN",
+  "controller": "regulated_pure_pursuit",
+  "sensor_profile": "rgb_lidar",
+  "launchable": true,
+  "status": "EVAL500_PROFILE_VERSION_READY_FOR_REFREEZE",
+  "note": "Additive eval500 profile record. It does not overwrite the old common_contract.v1 or the old pinned method bundles."
+}

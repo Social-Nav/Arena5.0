@@ -1,0 +1,39 @@
+{
+  "schema": "arena.agentic.common_contract.v1",
+  "contract_id": "arena5-eval500-sf60-eval1-v1",
+  "case": {
+    "world": "grscenes_1",
+    "scenario": "eval_1",
+    "robot": "Ai2_Bot2"
+  },
+  "seed": 0,
+  "episodes": 1,
+  "instruction": {
+    "mode": "scenario_default",
+    "text": ""
+  },
+  "hunav": {
+    "backend": "hunav",
+    "config": "arena_bringup/configs/hunav/default_sf60.yaml",
+    "sha256": "a834b6bb42e6c8f14ea4734aa5ab1fd03791a1897f9445d24c2fb7ccade9eeb1"
+  },
+  "timeout": {
+    "sim_sec": 59,
+    "wall_factor": 5.0
+  },
+  "metrics": {
+    "social_eval": true,
+    "require_artifact_validation": true
+  },
+  "video": {
+    "enabled": true,
+    "fps": 10.0,
+    "top_down_size_px": 640
+  },
+  "recording": {
+    "enabled": true,
+    "mode": "ro",
+    "bag_path": "recording/recording_0.db3",
+    "policy": "BLOCKED_IF_REQUIRED_MISSING"
+  }
+}
