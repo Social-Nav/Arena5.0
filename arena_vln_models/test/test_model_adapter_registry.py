@@ -26,6 +26,7 @@ PLAN_WHITELIST = {
     'overlay_profile_path', 'overlay_profile_sha256', 'resolved_profile_sha256',
     'resolved_profile_snapshot', 'output_prefix', 'external_command',
     'model_server', 'checkpoint', 'commands', 'adapter',
+    'model_backend', 'runner_entry', 'actual_model_backend',
 }
 
 

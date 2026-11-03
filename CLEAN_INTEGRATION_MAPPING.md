@@ -220,3 +220,18 @@ Final tree equality: `git diff --stat HEAD 14f6bea` is empty; clean tree == `a63
 - `arena_isaac` and `arena_robots` gitlinks were updated to the target tree via `git update-index`; the original submodule working trees were not modified.
 - The clean branch intentionally uses 9 reviewable commits; it does not squash the 140 commits into one commit and does not drop TIMEOUT/collision functionality.
 - `eval500` is preserved as its own feature commit `fd09b85`; stale pre-eval500 world duplicates were removed in `88412b1` so the final tree equals the target tree.
+
+## Integration fixes
+
+The clean branch adds one small integration-fix commit after the feature split:
+
+- `arena_vln_models/test/test_lisn_tick_lifecycle.py`: initialize the test harness
+  `_fast_guard_veto_topic` attribute so the harness matches the production
+  executor's fast-guard veto contract. This is a test-harness repair, not a
+  production behavior change.
+- `arena_vln_models/test/test_model_adapter_registry.py`: add
+  `model_backend`, `runner_entry`, and `actual_model_backend` to the
+  model-private plan whitelist; these fields legitimately differ by model.
+
+No production code was changed by this integration-fix commit. The original
+branch and its committed behavior remain untouched.

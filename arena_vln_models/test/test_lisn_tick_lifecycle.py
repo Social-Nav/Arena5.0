@@ -48,6 +48,7 @@ class _TickHarness(ArenaModelExecutor):
         self.actions = []
         self.records = []
         self.start_pose = Pose2D(-0.04, -6.2, 0.0)
+        self._fast_guard_veto_topic = ''
 
     # --- collaborators the production methods call -----------------------
     def _maybe_complete_session_transition(self):
