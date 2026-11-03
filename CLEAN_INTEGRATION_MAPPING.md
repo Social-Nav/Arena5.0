@@ -238,3 +238,30 @@ The clean branch adds one small integration-fix commit after the feature split:
 
 No production code was changed by this integration-fix commit. The original
 branch and its committed behavior remain untouched.
+
+## Stage 2 arena_isaac integration
+
+- Independent submodule branch: `feat/eval-clean-arena-isaac-20261103`.
+- Commit `53234f7` is a targeted cherry-pick of
+  `839c87390e1f081824a75f89b89dd34f49cf5c66` on top of the current
+  `98a6f45` integration base. It does not merge the whole 272-commit
+  `feature/social_yielding` branch.
+- Two conflicts were resolved explicitly:
+  - `SpawnPedestrians.py` keeps the existing rendered-state backend and adds
+    the categorized `CharacterPoolSelector`; `Person` receives both
+    `resolved_model` and `backend`.
+  - `person.py` keeps the existing camera/render state code and adds the
+    character graph/appearance profile.
+- Offline verification: 18 character-asset/identity/selector tests pass;
+  deterministic pool hits are 22 pedestrian, 2 doctor, 4 construction_worker,
+  4 police; the catalog has 32 identities / 252 asset variants; unknown
+  models fail closed. The full 1125-asset inventory requires the Isaac People
+  asset root and was not verifiable in this offline lane.
+- The parent clean branch now pins `arena_isaac=53234f7` and
+  `arena_robots=e116700`. A fresh recursive clone checked out `arena_isaac`
+  `53234f7`, `arena_robots` `e116700`, and nested
+  `jackal/robot_usds/turtlebot4` at their pinned SHAs.
+- Real Isaac spawn/asset-selection/video smoke was not executed because the
+  current authorization boundary forbids starting an Isaac episode; it remains
+  the next runtime-only validation step.
+
