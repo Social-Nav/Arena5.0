@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000234_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:00:18.415116+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward from the reception desk, passing the purple basket on the wall to your right. Enter the main waiting area and continue straight, keeping the rows of blue chairs on your right side. Proceed towards the far wall that has large, dark, patterned glass panels. Stop in front of the glass panels.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward from the reception desk, passing the purple basket on the wall to your right. Enter the main waiting area and continue straight, keeping the rows of blue chairs on your right side. Proceed towards the far wall that has large, dark, patterned glass panels. Stop in front of the glass panels."
+  },
+  "provenance": {
+    "source_key": "grscenes_1/gpt56_235",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

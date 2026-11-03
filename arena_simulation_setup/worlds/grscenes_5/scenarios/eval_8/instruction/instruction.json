@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000145_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:05:12.941283+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the hallway, passing the large white panels on your left. Enter the children's play area at the end of the hall, going past the toy shelves and a small art easel. Turn left and walk across the carpeted area, with the white sofa on your left. Head towards the glass-walled office and turn right to walk alongside it. Enter the classroom on your right. Walk past the rows of tables and chairs towards the far wall. Stop in the empty corner on the right side of the room.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the hallway, passing the large white panels on your left. Enter the children's play area at the end of the hall, going past the toy shelves and a small art easel. Turn left and walk across the carpeted area, with the white sofa on your left. Head towards the glass-walled office and turn right to walk alongside it. Enter the classroom on your right. Walk past the rows of tables and chairs towards the far wall. Stop in the empty corner on the right side of the room."
+  },
+  "provenance": {
+    "source_key": "grscenes_5/gpt56_180",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

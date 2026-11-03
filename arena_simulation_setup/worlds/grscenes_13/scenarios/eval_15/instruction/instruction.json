@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000126_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:11:55.508099+08:00",
+  "raw_text": "{\"instruction\": \"Walk out from behind the white reception desk and into the waiting area. Turn left, passing the light blue seating on your right. Continue straight past the doctor's desk and into the pharmacy section with the wooden shelves. Stop in the corner of the aisle, next to the purple basket on the floor.\"}",
+  "parsed_result": {
+    "instruction": "Walk out from behind the white reception desk and into the waiting area. Turn left, passing the light blue seating on your right. Continue straight past the doctor's desk and into the pharmacy section with the wooden shelves. Stop in the corner of the aisle, next to the purple basket on the floor."
+  },
+  "provenance": {
+    "source_key": "grscenes_13/gpt56_264",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

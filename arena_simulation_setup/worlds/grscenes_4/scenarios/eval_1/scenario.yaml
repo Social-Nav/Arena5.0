@@ -1,0 +1,34 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-1.90091, -1.77005, 81.02737]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [-1.80477, -1.16115, 104.74356]
+  - [-1.96501, -0.55224, 64.0577]
+  - [-1.67658, 0.04064, -170.07376]
+  - [-2.31753, -0.07153, 180.0]
+  - [-3.19884, -0.07153, -146.07021]
+  - [-4.08015, -0.66441, -146.07021]
+- name: hunav_2
+  model: construction_worker
+  pose: [3.6914, -2.5392, -77.47119]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.75
+  desired_velocity: 0.95
+  waypoints:
+  - [3.85164, -3.26027, -82.78574]
+  - [4.17212, -5.79203, -130.81508]
+  - [3.86767, -6.14456, -1.50743]
+  - [4.47657, -6.16058, 24.77514]
+  - [4.89319, -5.96829, 24.77514]
+robot:
+  name: robot
+  pose: [8.33831, -3.70893, 177.97584]
+  waypoints:
+  - [0.63085, -3.43653, 177.97584]
+  behavior: moves toward the upper cross-aisle for shelf scanning

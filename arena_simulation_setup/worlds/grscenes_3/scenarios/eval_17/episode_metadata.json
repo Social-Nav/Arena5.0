@@ -1,0 +1,34 @@
+{
+  "schema": "arena.grscenes_episode_metadata",
+  "schema_version": 1,
+  "episode": {
+    "world": "grscenes_3",
+    "scenario": "eval_17",
+    "source_world": "grscenes_3",
+    "source_scenario": "gpt56_343",
+    "source_episode_index": 4
+  },
+  "reference_trajectory": {
+    "length_m": 9.005732223749868,
+    "n_frames": 1397,
+    "duration_s": 46.53333282470703,
+    "trajectory_file": "src/social_gen/traj_data/failed_recovery/batches/dijkstra-w03-b003/grscenes_3/data/chunk-000/episode_000004.parquet",
+    "pose_column": "pose.132cm_30deg",
+    "robot_scale": 0.8
+  },
+  "provenance": {
+    "source_type": "arena_frozen_test500_selection",
+    "source_file": "exports/test500/selection.json",
+    "source_file_sha256": "4da95c0267607d8be5b9f5d8c01ff848296095ea62aefcbe2422c545c9bdc130",
+    "source_selection_ordinal": 52,
+    "source_sample_id": "scene_0003_short_low_density_0052",
+    "source_parquet_sha256": "cdd3cdd6a367ed5010d42a50d87794fee3a62c89dedef18b9dc5a9dbc63514b8",
+    "source_scenario_sha256": "b686659c6b229fd4ee11152a6a44f49d2c3413d610c41b4be198ff0ce3b73b73",
+    "path_length_definition": "sum of framewise executed robot XY displacements",
+    "trajectory_file_relative_to": "original_arena_workspace_not_this_export",
+    "trajectory_file_included": false,
+    "robot_scale_applied_again_to_length": false,
+    "source_algorithm": "dijkstra",
+    "selection_replacement": null
+  }
+}

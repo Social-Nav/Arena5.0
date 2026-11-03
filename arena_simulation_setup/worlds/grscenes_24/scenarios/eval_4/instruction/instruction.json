@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000066_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:22:33.399776+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward across the open room. Head towards the wall in front of you that is decorated with white silhouettes of animals, including deer and elephants. Continue walking straight, passing the animal wall on your right-hand side. Stop in the open area just after you have passed the wall.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward across the open room. Head towards the wall in front of you that is decorated with white silhouettes of animals, including deer and elephants. Continue walking straight, passing the animal wall on your right-hand side. Stop in the open area just after you have passed the wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_24/gpt56_067",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

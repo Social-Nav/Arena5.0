@@ -1,0 +1,22 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-2.77928, 1.07268, -91.59114]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [-2.79522, 0.49868, -168.40783]
+  - [-3.41706, 0.37112, -81.57303]
+  - [-3.2895, -0.48988, -99.21103]
+  - [-3.38517, -1.07983, -88.83086]
+  - [-3.36922, -1.8611, -99.2726]
+  - [-3.49678, -2.64238, -99.2726]
+robot:
+  name: robot
+  pose: [0.40962, -1.62194, -151.76255]
+  waypoints:
+  - [-3.89539, -3.93389, -151.76255]
+  behavior: Moves from the central open space toward the upper-left aisle.

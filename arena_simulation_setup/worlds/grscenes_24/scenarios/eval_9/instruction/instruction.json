@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000219_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:22:49.495791+08:00",
+  "raw_text": "{\"instruction\": \"In this bright room with light-colored flooring, walk straight ahead. You will pass a wall on your left decorated with white animal silhouettes. Continue moving forward towards the raised platform on the right. Stop when you are directly in front of the blue shopping basket and the purple dolly on the platform.\"}",
+  "parsed_result": {
+    "instruction": "In this bright room with light-colored flooring, walk straight ahead. You will pass a wall on your left decorated with white animal silhouettes. Continue moving forward towards the raised platform on the right. Stop when you are directly in front of the blue shopping basket and the purple dolly on the platform."
+  },
+  "provenance": {
+    "source_key": "grscenes_24/gpt56_220",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

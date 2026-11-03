@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000190_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:02:29.232192+08:00",
+  "raw_text": "{\"instruction\": \"Begin facing the large black-framed glass windows, with a light wood shelving unit on your left and two rounded grey chairs on your right. Walk straight forward down the corridor, keeping the shelving unit and then a white wall on your left. When you reach the end of the corridor, turn right past the white partition wall. You will see a person in a doctor's coat. Proceed forward into the seating area and stop at the first square wooden table on your left.\"}",
+  "parsed_result": {
+    "instruction": "Begin facing the large black-framed glass windows, with a light wood shelving unit on your left and two rounded grey chairs on your right. Walk straight forward down the corridor, keeping the shelving unit and then a white wall on your left. When you reach the end of the corridor, turn right past the white partition wall. You will see a person in a doctor's coat. Proceed forward into the seating area and stop at the first square wooden table on your left."
+  },
+  "provenance": {
+    "source_key": "grscenes_3/gpt56_231",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

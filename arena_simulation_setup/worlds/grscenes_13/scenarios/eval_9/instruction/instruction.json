@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000080_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:11:49.903190+08:00",
+  "raw_text": "{\"instruction\": \"Exit from behind the white reception desk and turn right into the waiting area. Walk straight past the row of blue and grey chairs. Turn left and walk towards the back of the room, passing the large blue sofa on your left. Continue past the second white desk and go through the opening into the pharmacy area. Stop in the aisle between the wooden shelves filled with medicine boxes.\"}",
+  "parsed_result": {
+    "instruction": "Exit from behind the white reception desk and turn right into the waiting area. Walk straight past the row of blue and grey chairs. Turn left and walk towards the back of the room, passing the large blue sofa on your left. Continue past the second white desk and go through the opening into the pharmacy area. Stop in the aisle between the wooden shelves filled with medicine boxes."
+  },
+  "provenance": {
+    "source_key": "grscenes_13/gpt56_161",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

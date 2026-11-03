@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000130_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:19:41.738609+08:00",
+  "raw_text": "{\"instruction\": \"Start in the living room with the tan leather sofa on your left. Walk straight ahead, passing the sofa and moving towards the kitchen area. Go past the metallic kitchen island, keeping it on your right. Continue straight towards the back counter. Stop in front of the white cabinets located directly under the two microwaves.\"}",
+  "parsed_result": {
+    "instruction": "Start in the living room with the tan leather sofa on your left. Walk straight ahead, passing the sofa and moving towards the kitchen area. Go past the metallic kitchen island, keeping it on your right. Continue straight towards the back counter. Stop in front of the white cabinets located directly under the two microwaves."
+  },
+  "provenance": {
+    "source_key": "grscenes_21/gpt56_185",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

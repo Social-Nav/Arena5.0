@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T06:33:01",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk forward into the room, heading towards the man in the white lab coat. Continue straight past him, keeping the white sofa and coffee table on your left. On your right, you will see a large white shelving unit. Keep walking straight through the room and stop in the open space past the sofa.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk forward into the room, heading towards the man in the white lab coat. Continue straight past him, keeping the white sofa and coffee table on your left. On your right, you will see a large white shelving unit. Keep walking straight through the room and stop in the open space past the sofa."
+  }
+}

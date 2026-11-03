@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000098_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:08:31.273118+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward towards the open doorway on your right, passing the long wooden cabinet with many cubbies. Enter the next room, then immediately turn around and exit back through the same doorway. Turn right and stop in front of the long wooden cabinet with the light blue-green storage boxes.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward towards the open doorway on your right, passing the long wooden cabinet with many cubbies. Enter the next room, then immediately turn around and exit back through the same doorway. Turn right and stop in front of the long wooden cabinet with the light blue-green storage boxes."
+  },
+  "provenance": {
+    "source_key": "grscenes_9/gpt56_105",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

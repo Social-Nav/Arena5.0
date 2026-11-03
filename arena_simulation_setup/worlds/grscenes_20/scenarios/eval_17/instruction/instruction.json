@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000301_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:20:41.400288+08:00",
+  "raw_text": "{\"instruction\": \"Turn left and walk straight down the main aisle of the restaurant. On your left is a long banquette with black and white patterned upholstery against a bright turquoise wall. On your right is a row of matching booths. Continue walking on the white terrazzo floor towards the dark double doors at the far end of the room. Stop in the middle of the aisle before you reach the doors.\"}",
+  "parsed_result": {
+    "instruction": "Turn left and walk straight down the main aisle of the restaurant. On your left is a long banquette with black and white patterned upholstery against a bright turquoise wall. On your right is a row of matching booths. Continue walking on the white terrazzo floor towards the dark double doors at the far end of the room. Stop in the middle of the aisle before you reach the doors."
+  },
+  "provenance": {
+    "source_key": "grscenes_20/gpt56_347",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

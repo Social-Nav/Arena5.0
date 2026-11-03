@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T07:35:32",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk straight down the aisle, with the long white bookshelf on your right and the white couches on your left. Continue forward, passing the seating areas and heading towards the wooden wall with built-in bookshelves at the end of the room. Stop in front of the wooden bookshelf, between the large potted plant on the left and the white freezer on the right.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk straight down the aisle, with the long white bookshelf on your right and the white couches on your left. Continue forward, passing the seating areas and heading towards the wooden wall with built-in bookshelves at the end of the room. Stop in front of the wooden bookshelf, between the large potted plant on the left and the white freezer on the right."
+  }
+}

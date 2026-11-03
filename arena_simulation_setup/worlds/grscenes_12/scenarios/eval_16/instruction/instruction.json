@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000263_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:11:17.363586+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight ahead through the large white room. Keep the white couches and chairs to your left and the tall, white cubby-style shelving unit to your right. Continue forward, passing a potted plant, and head towards the wooden-paneled wall. Your destination is the white chest freezer at the end of the shelving unit on your right.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight ahead through the large white room. Keep the white couches and chairs to your left and the tall, white cubby-style shelving unit to your right. Continue forward, passing a potted plant, and head towards the wooden-paneled wall. Your destination is the white chest freezer at the end of the shelving unit on your right."
+  },
+  "provenance": {
+    "source_key": "grscenes_12/gpt56_264",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

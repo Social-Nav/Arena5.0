@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000111_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:04:37.690984+08:00",
+  "raw_text": "{\"instruction\": \"Begin at the white reception desk. Walk straight down the hallway, passing the series of doors on your left. Go through the opening into the children's play area, marked by a white easel and low shelves with toys. Turn left and walk along the glass wall that separates you from the office. Turn right to enter the training room. Proceed straight ahead, passing the rows of tables and chairs. Your destination is in the far corner of the room, next to the large screen on the wall and to the left of the last desk.\"}",
+  "parsed_result": {
+    "instruction": "Begin at the white reception desk. Walk straight down the hallway, passing the series of doors on your left. Go through the opening into the children's play area, marked by a white easel and low shelves with toys. Turn left and walk along the glass wall that separates you from the office. Turn right to enter the training room. Proceed straight ahead, passing the rows of tables and chairs. Your destination is in the far corner of the room, next to the large screen on the wall and to the left of the last desk."
+  },
+  "provenance": {
+    "source_key": "grscenes_5/gpt56_139",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -40,8 +40,8 @@ server:
 evaluation:
   simulator: isaac_eval
   human_simulator: hunav
-  world: grscenes_20_v1
-  scenario: default_2
+  world: grscenes_1
+  scenario: eval_1
   robot: Ai2_Bot2
   local_planner: dual_vln
   inter_planner: navigate_to_pose_w_replanning_and_recovery

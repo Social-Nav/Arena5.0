@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000002_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:17:35.396714+08:00",
+  "raw_text": "{\"instruction\": \"Turn left and walk through the open area, passing a potted tree on your right and a vending machine on your left. Enter the narrow hallway ahead and continue straight. Follow the white handrails with the blue stripe all the way to the end of the corridor. Your destination is at the end of the hall, in front of the silver metal cart parked by the window.\"}",
+  "parsed_result": {
+    "instruction": "Turn left and walk through the open area, passing a potted tree on your right and a vending machine on your left. Enter the narrow hallway ahead and continue straight. Follow the white handrails with the blue stripe all the way to the end of the corridor. Your destination is at the end of the hall, in front of the silver metal cart parked by the window."
+  },
+  "provenance": {
+    "source_key": "grscenes_19/gpt56_069",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

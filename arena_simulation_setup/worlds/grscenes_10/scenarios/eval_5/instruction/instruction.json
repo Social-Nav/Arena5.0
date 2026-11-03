@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000078_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:09:06.706043+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward through the open office, passing the long row of white desks on your left. Continue straight until you are past the desks and see two potted plants against the wall on your right. Turn left and walk down the narrow aisle, with a row of empty office chairs on your left and a wall with framed pictures on your right. Your destination is at the end of the aisle; stop in front of the last black and white ergonomic chair on the left.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward through the open office, passing the long row of white desks on your left. Continue straight until you are past the desks and see two potted plants against the wall on your right. Turn left and walk down the narrow aisle, with a row of empty office chairs on your left and a wall with framed pictures on your right. Your destination is at the end of the aisle; stop in front of the last black and white ergonomic chair on the left."
+  },
+  "provenance": {
+    "source_key": "grscenes_10/gpt56_093",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

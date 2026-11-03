@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000097_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:11:49.390256+08:00",
+  "raw_text": "{\"instruction\": \"Exit the office area, passing the white desk with the computer on your left. Enter the waiting room and walk straight ahead across the light blue speckled carpet. Go past the light blue corner sofa and the row of waiting chairs on your left. Continue all the way to the far end of the room and stop in front of the large glass windows.\"}",
+  "parsed_result": {
+    "instruction": "Exit the office area, passing the white desk with the computer on your left. Enter the waiting room and walk straight ahead across the light blue speckled carpet. Go past the light blue corner sofa and the row of waiting chairs on your left. Continue all the way to the far end of the room and stop in front of the large glass windows."
+  },
+  "provenance": {
+    "source_key": "grscenes_13/gpt56_202",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

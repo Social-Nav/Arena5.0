@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000003_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:03:26.700112+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward down the main aisle, with the white curved checkout counter on your left and the dark metal and wood shelves on your right. At the end of the dark shelves, turn right into the snack aisle. Proceed straight down this aisle to the end. Turn left, and then take an immediate right into the next aisle. Walk forward, passing the shelves of kitchenware and mugs on your right. At the end of this aisle, turn left. Your destination is the corner next to the clothing rack with the plaid hats on the shelf.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward down the main aisle, with the white curved checkout counter on your left and the dark metal and wood shelves on your right. At the end of the dark shelves, turn right into the snack aisle. Proceed straight down this aisle to the end. Turn left, and then take an immediate right into the next aisle. Walk forward, passing the shelves of kitchenware and mugs on your right. At the end of this aisle, turn left. Your destination is the corner next to the clothing rack with the plaid hats on the shelf."
+  },
+  "provenance": {
+    "source_key": "grscenes_4/gpt56_209",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

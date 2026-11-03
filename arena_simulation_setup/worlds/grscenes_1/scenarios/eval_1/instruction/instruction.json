@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000044_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T00:34:48.071560+08:00",
+  "raw_text": "{\"instruction\": \"Turn right and walk forward into the waiting area. Continue straight, passing the rows of blue chairs on your right and the light blue reception desk on your left. Walk towards the wall with the large, dark glass panels. Stop in the corner where the reception desk meets the glass wall.\"}",
+  "parsed_result": {
+    "instruction": "Turn right and walk forward into the waiting area. Continue straight, passing the rows of blue chairs on your right and the light blue reception desk on your left. Walk towards the wall with the large, dark glass panels. Stop in the corner where the reception desk meets the glass wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_1/gpt56_045",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

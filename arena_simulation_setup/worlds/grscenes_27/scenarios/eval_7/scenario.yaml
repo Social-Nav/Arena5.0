@@ -1,0 +1,45 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [2.30913, -3.87147, 12.99462]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [3.38072, -3.62418, 0.0]
+  - [4.75455, -3.62418, -1.16914]
+  - [6.1009, -3.65166, -6.04409]
+  - [7.26866, -3.7753, 0.0]
+  - [8.27155, -3.7753, 0.0]
+- name: hunav_2
+  model: construction_worker
+  pose: [2.07558, 3.21749, 34.18612]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.1
+  waypoints:
+  - [2.80371, 3.71207, 3.17982]
+  - [3.29829, 3.73955, -4.18492]
+  - [4.42483, 3.65712, -24.77514]
+  - [5.49642, 3.16254, -68.4774]
+  - [5.88109, 2.18712, -68.4774]
+- name: hunav_3
+  model: pedestrian
+  pose: [8.07922, -3.03343, 118.81079]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [7.77697, -2.4839, 71.56505]
+  - [8.05174, -1.6596, -178.83086]
+  - [7.37856, -1.67334, 56.74563]
+  - [7.9281, -0.83531, 84.98689]
+  - [7.99679, -0.05222, 84.98689]
+robot:
+  name: robot
+  pose: [4.6996, -0.904, 60.53113]
+  waypoints:
+  - [6.78782, 2.79161, 60.53113]
+  behavior: heads from the central open zone to the eastern side

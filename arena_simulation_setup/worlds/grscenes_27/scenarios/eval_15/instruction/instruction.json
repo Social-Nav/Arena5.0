@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000300_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:24:06.127200+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward through the large white room, keeping the seating area with the blue chairs on your right. Head towards the white panelled wall on the left. Continue straight until you reach the empty shopping cart parked against the wall.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward through the large white room, keeping the seating area with the blue chairs on your right. Head towards the white panelled wall on the left. Continue straight until you reach the empty shopping cart parked against the wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_27/gpt56_301",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

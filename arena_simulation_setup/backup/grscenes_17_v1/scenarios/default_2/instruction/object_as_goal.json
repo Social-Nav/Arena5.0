@@ -1,0 +1,10 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "instruction_mode": "object_as_goal",
+  "timestamp": "2026-08-18T09:16:11",
+  "raw_text": "```json\n{\n  \"instruction\": \"Turn left and walk past the round dining table. Walk straight past the wooden bar counter on your right. At the end of the counter, turn right and stop near the pet bed and the white trash can.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Turn left and walk past the round dining table. Walk straight past the wooden bar counter on your right. At the end of the counter, turn right and stop near the pet bed and the white trash can."
+  }
+}

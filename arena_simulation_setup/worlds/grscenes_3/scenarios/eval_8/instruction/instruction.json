@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000132_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:01:49.395293+08:00",
+  "raw_text": "{\"instruction\": \"Begin facing the large, light-wood shelving unit. Turn left and walk forward, keeping the long, tiered shelving on your left. Pass the seating area with the light-wood framed sofas. Continue straight through the wide opening in the white wall. Once through the opening, turn right and walk towards the double glass doors with the black frames. Stop directly in front of the doors.\"}",
+  "parsed_result": {
+    "instruction": "Begin facing the large, light-wood shelving unit. Turn left and walk forward, keeping the long, tiered shelving on your left. Pass the seating area with the light-wood framed sofas. Continue straight through the wide opening in the white wall. Once through the opening, turn right and walk towards the double glass doors with the black frames. Stop directly in front of the doors."
+  },
+  "provenance": {
+    "source_key": "grscenes_3/gpt56_158",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

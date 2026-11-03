@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000115_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T01:59:59.218822+08:00",
+  "raw_text": "{\"instruction\": \"Begin in the white, open area. Walk forward, passing the geometric chair on your right and the white desk. Continue straight down the short hallway, going past the open doorway to the examination room on your left. Stop at the end of the hall, in front of the black-framed door.\"}",
+  "parsed_result": {
+    "instruction": "Begin in the white, open area. Walk forward, passing the geometric chair on your right and the white desk. Continue straight down the short hallway, going past the open doorway to the examination room on your left. Stop at the end of the hall, in front of the black-framed door."
+  },
+  "provenance": {
+    "source_key": "grscenes_1/gpt56_116",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

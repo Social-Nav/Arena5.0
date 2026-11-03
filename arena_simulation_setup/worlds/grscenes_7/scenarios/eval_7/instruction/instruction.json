@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000137_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:07:04.203548+08:00",
+  "raw_text": "{\"instruction\": \"Turn right and walk forward, keeping the long, dark counter with the textured front on your right. Go past the coffee grinders and the stacks of white plates under the counter. Continue straight past the bar stools and a small, illuminated white table. Turn left towards the seating area with two modern armchairs. Your destination is the chair on the left with the colorful, leafy-patterned pillow. Stop in front of it.\"}",
+  "parsed_result": {
+    "instruction": "Turn right and walk forward, keeping the long, dark counter with the textured front on your right. Go past the coffee grinders and the stacks of white plates under the counter. Continue straight past the bar stools and a small, illuminated white table. Turn left towards the seating area with two modern armchairs. Your destination is the chair on the left with the colorful, leafy-patterned pillow. Stop in front of it."
+  },
+  "provenance": {
+    "source_key": "grscenes_7/gpt56_155",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000271_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:18:58.361708+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the aisle between the rows of booths upholstered in a black and white pattern. Continue to the end of the aisle and make a left turn. Proceed forward, keeping the white wall on your left and passing a long bench with matching chairs on your right. Stop at the first table with two chairs, in front of the bright turquoise wall.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the aisle between the rows of booths upholstered in a black and white pattern. Continue to the end of the aisle and make a left turn. Proceed forward, keeping the white wall on your left and passing a long bench with matching chairs on your right. Stop at the first table with two chairs, in front of the bright turquoise wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_20/gpt56_317",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

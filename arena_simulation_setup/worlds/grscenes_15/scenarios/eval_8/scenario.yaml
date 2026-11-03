@@ -1,0 +1,37 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-1.86655, -1.03076, -90.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.67
+  desired_velocity: 0.88
+  waypoints:
+  - [-1.86655, -1.46792, -38.65981]
+  - [-1.67648, -1.61997, -96.00901]
+  - [-1.71449, -1.9811, -92.29061]
+  - [-1.7335, -2.45626, -52.12501]
+  - [-1.60045, -2.62732, -106.69924]
+  - [-1.71449, -3.00745, -106.69924]
+- name: hunav_2
+  model: pedestrian
+  pose: [0.20518, -1.1258, 36.8699]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.79
+  desired_velocity: 1.0
+  waypoints:
+  - [0.50928, -0.89772, 82.40536]
+  - [0.54729, -0.61262, 155.77225]
+  - [0.16716, -0.44156, 111.03751]
+  - [0.07213, -0.19447, -165.96376]
+  - [-0.07992, -0.23249, -116.56505]
+  - [-0.19396, -0.46057, -90.0]
+  - [-0.19396, -0.89772, -84.28941]
+  - [-0.15595, -1.27785, -84.28941]
+robot:
+  name: robot
+  pose: [2.90412, -1.29686, -176.49647]
+  waypoints:
+  - [-3.61516, -1.696, -176.49647]
+  behavior: Heads through the central open route toward the rear-center area.

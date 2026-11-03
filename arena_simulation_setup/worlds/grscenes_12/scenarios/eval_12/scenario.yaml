@@ -1,0 +1,39 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-1.40472, -8.56262, -32.61924]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.75
+  desired_velocity: 1.0
+  waypoints:
+  - [-0.78653, -8.95826, 46.97494]
+  - [-0.44034, -8.58734, 129.09386]
+  - [-0.7618, -8.1917, 59.03625]
+  - [-0.53925, -7.82078, 25.0169]
+  - [-0.16834, -7.64769, 83.65981]
+  - [-0.09416, -6.98004, 62.24146]
+  - [0.15312, -6.51022, 133.15239]
+  - [-0.21779, -6.11458, 133.15239]
+- name: hunav_2
+  model: police
+  pose: [1.01859, -2.89998, 153.43495]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.85
+  desired_velocity: 1.05
+  waypoints:
+  - [0.6724, -2.72688, 110.55604]
+  - [0.52404, -2.33124, 154.9831]
+  - [0.15312, -2.15815, -120.96376]
+  - [-0.06943, -2.52906, -147.99462]
+  - [-0.46507, -2.77634, 81.8699]
+  - [-0.39089, -2.25706, -166.50427]
+  - [-1.00908, -2.40542, -145.30485]
+  - [-1.33054, -2.62797, -145.30485]
+robot:
+  name: robot
+  pose: [0.25203, -9.70009, 89.65896]
+  waypoints:
+  - [0.30149, -1.39159, 89.65896]
+  behavior: Travels from the left open zone to the opposite side of the waiting hall.

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000000_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:17:30.199631+08:00",
+  "raw_text": "{\"instruction\": \"Turn right, passing the potted plant and the light blue waiting room chairs. Proceed straight down the long, narrow corridor with the blue handrails on the walls. Continue walking past the open doorways and the nurses' station on your right. Stop at the very end of the hallway, just before the wall with the small window.\"}",
+  "parsed_result": {
+    "instruction": "Turn right, passing the potted plant and the light blue waiting room chairs. Proceed straight down the long, narrow corridor with the blue handrails on the walls. Continue walking past the open doorways and the nurses' station on your right. Stop at the very end of the hallway, just before the wall with the small window."
+  },
+  "provenance": {
+    "source_key": "grscenes_19/gpt56_056",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

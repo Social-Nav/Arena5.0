@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T07:22:53",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk straight forward on the terrazzo floor, keeping the long wooden bar counter on your left. Head towards the large macrame wall hanging on the far wall. Stop at the cat sleeping in its bed on the floor, located directly under the wall hanging.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk straight forward on the terrazzo floor, keeping the long wooden bar counter on your left. Head towards the large macrame wall hanging on the far wall. Stop at the cat sleeping in its bed on the floor, located directly under the wall hanging."
+  }
+}

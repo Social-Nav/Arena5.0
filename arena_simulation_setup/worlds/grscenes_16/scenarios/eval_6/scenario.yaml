@@ -1,0 +1,48 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [3.07234, -2.91344, -23.19859]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.05
+  waypoints:
+  - [3.29557, -3.00911, -178.21009]
+  - [2.78534, -3.02505, 135.0]
+  - [2.57806, -2.81777, -178.5679]
+  - [1.94029, -2.83372, -173.65981]
+  - [1.50978, -2.88155, 156.80141]
+  - [1.17495, -2.73805, 156.80141]
+- name: hunav_2
+  model: doctor
+  pose: [-0.61083, 0.30734, -35.31121]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [-0.22816, 0.03629, -137.72631]
+  - [-0.57894, -0.2826, -50.19443]
+  - [-0.33977, -0.5696, -49.39871]
+  - [0.23423, -1.23927, 160.55996]
+  - [-0.03683, -1.1436, -126.8699]
+  - [-0.37166, -1.59005, -126.8699]
+- name: hunav_3
+  model: pedestrian
+  pose: [-3.89539, 0.97701, -90.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.85
+  desired_velocity: 1.1
+  waypoints:
+  - [-3.89539, 0.64218, -87.51045]
+  - [-3.8635, -0.09127, -86.53177]
+  - [-3.83161, -0.61744, -90.0]
+  - [-3.83161, -1.46249, -90.0]
+  - [-3.83161, -2.30755, -45.0]
+  - [-3.49678, -2.64238, -45.0]
+robot:
+  name: robot
+  pose: [0.40962, -1.62194, 148.88046]
+  waypoints:
+  - [-3.89539, 0.97701, 148.88046]
+  behavior: Navigates from the middle aisle toward the far upper-right side.

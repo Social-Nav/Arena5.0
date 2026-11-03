@@ -1,0 +1,71 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [8.21012, -5.77601, -168.36636]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [7.66531, -5.88817, -154.44003]
+  - [7.29676, -6.06444, 81.46924]
+  - [7.39291, -5.42348, -145.61965]
+  - [6.784, -5.8401, 138.57633]
+  - [6.5116, -5.59975, 172.09284]
+  - [5.93474, -5.51963, -147.14428]
+  - [5.1656, -6.01636, -147.14428]
+- name: hunav_2
+  model: pedestrian
+  pose: [2.56974, -5.96829, 93.99091]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [2.52166, -5.27927, 97.49586]
+  - [2.44155, -4.67036, 93.99091]
+  - [2.39347, -3.98134, 91.4321]
+  - [2.37745, -3.34039, 83.4802]
+  - [2.44155, -2.77955, 156.37062]
+  - [1.92878, -2.55522, 156.37062]
+- name: hunav_3
+  model: construction_worker
+  pose: [-0.97153, -5.27927, 96.5198]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.1
+  waypoints:
+  - [-1.03562, -4.71843, 85.60129]
+  - [-0.97153, -3.8852, 87.51045]
+  - [-0.93948, -3.1481, 79.38034]
+  - [-0.84334, -2.63534, 7.43141]
+  - [-0.10624, -2.53919, 97.59464]
+  - [-0.20239, -1.81812, 97.59464]
+- name: hunav_4
+  model: pedestrian
+  pose: [-4.08015, -0.66441, 33.92979]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [-3.19884, -0.07153, -0.0]
+  - [-2.31753, -0.07153, 9.92624]
+  - [-1.67658, 0.04064, 1.27303]
+  - [-0.95551, 0.05666, -9.03949]
+  - [-0.25046, -0.0555, -9.03949]
+- name: hunav_5
+  model: pedestrian
+  pose: [2.05697, -7.87513, 5.90614]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.6
+  desired_velocity: 0.8
+  waypoints:
+  - [2.52166, -7.82706, -12.5288]
+  - [3.09852, -7.95525, 4.96974]
+  - [3.46707, -7.9232, 4.96974]
+robot:
+  name: robot
+  pose: [7.96976, -4.25374, 156.55874]
+  waypoints:
+  - [-0.23443, -0.69646, 156.55874]
+  behavior: moves to the upper store area while yielding to scattered shoppers

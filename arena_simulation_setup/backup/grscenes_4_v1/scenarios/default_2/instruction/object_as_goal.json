@@ -1,0 +1,10 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "instruction_mode": "object_as_goal",
+  "timestamp": "2026-08-18T08:57:07",
+  "raw_text": "```json\n{\n  \"instruction\": \"Turn around and walk past the counter with the coffee machine and display cases. Continue straight through the open area with the white tables and chairs. Stop when you reach the black sliding doors.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Turn around and walk past the counter with the coffee machine and display cases. Continue straight through the open area with the white tables and chairs. Stop when you reach the black sliding doors."
+  }
+}

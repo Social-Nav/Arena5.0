@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000006_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:18:18.317877+08:00",
+  "raw_text": "{\"instruction\": \"Exit the booth with the black and white patterned upholstery and turn left. Walk straight down the long aisle, with a white wall on your left and stainless steel serving counters on your right. Continue past the rows of tables and chairs on your left and more booths on your right. Proceed towards the end of the dining room, keeping the turquoise wall on your right. Stop in the middle of the aisle before reaching the wooden doors at the far end.\"}",
+  "parsed_result": {
+    "instruction": "Exit the booth with the black and white patterned upholstery and turn left. Walk straight down the long aisle, with a white wall on your left and stainless steel serving counters on your right. Continue past the rows of tables and chairs on your left and more booths on your right. Proceed towards the end of the dining room, keeping the turquoise wall on your right. Stop in the middle of the aisle before reaching the wooden doors at the far end."
+  },
+  "provenance": {
+    "source_key": "grscenes_20/gpt56_007",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

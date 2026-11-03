@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000108_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:11:47.497539+08:00",
+  "raw_text": "{\"instruction\": \"Turn left from the reception desk and walk past the light blue waiting room seating. Continue forward into the office area, passing the white desk on your left. Turn right and walk towards the wooden shelves filled with medicine boxes. Stop in the corner in front of the shelves, near the purple basket on the floor.\"}",
+  "parsed_result": {
+    "instruction": "Turn left from the reception desk and walk past the light blue waiting room seating. Continue forward into the office area, passing the white desk on your left. Turn right and walk towards the wooden shelves filled with medicine boxes. Stop in the corner in front of the shelves, near the purple basket on the floor."
+  },
+  "provenance": {
+    "source_key": "grscenes_13/gpt56_222",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

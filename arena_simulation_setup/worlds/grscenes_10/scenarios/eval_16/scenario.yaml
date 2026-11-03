@@ -1,0 +1,37 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-0.78881, -3.18361, 106.50436]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [-0.90587, -2.78854, 29.05461]
+  - [-0.51081, -2.56906, 38.65981]
+  - [-0.36449, -2.45201, 43.21009]
+  - [0.11837, -1.99841, 43.72697]
+  - [0.45491, -1.67651, 73.53999]
+  - [0.64512, -1.0327, 109.09349]
+  - [0.38175, -0.27184, 109.09349]
+- name: hunav_2
+  model: pedestrian
+  pose: [-7.49027, -4.92482, 90.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [-7.49027, -4.31027, -1.63657]
+  - [-6.97815, -4.3249, 1.0e-05]
+  - [-6.37824, -4.3249, 72.89727]
+  - [-6.26118, -3.94447, 87.8789]
+  - [-6.24655, -3.54941, -15.06848]
+  - [-5.86612, -3.65183, -90.0]
+  - [-5.86612, -4.04689, -90.0]
+robot:
+  name: robot
+  pose: [-0.45228, -4.03226, 163.8817]
+  waypoints:
+  - [-7.49027, -1.99841, 163.8817]
+  behavior: moves from the waiting zone to the front office aisle

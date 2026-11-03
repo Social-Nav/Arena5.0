@@ -1,0 +1,34 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [4.37872, -13.32026, 115.86636]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.96
+  desired_velocity: 1.2
+  waypoints:
+  - [4.01529, -12.5707, 90.0]
+  - [4.01529, -11.73028, 75.37913]
+  - [4.15158, -11.20786, 81.8699]
+  - [4.24243, -10.57187, 84.28941]
+  - [4.37872, -9.20903, 87.8789]
+  - [4.42414, -7.98247, 87.8789]
+- name: hunav_2
+  model: pedestrian
+  pose: [2.99316, -3.82581, 169.2157]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.02
+  waypoints:
+  - [2.51617, -3.73496, 180.0]
+  - [1.67575, -3.73496, 180.0]
+  - [0.97162, -3.73496, -162.89727]
+  - [0.08577, -4.00752, 80.13419]
+  - [0.17663, -3.4851, 80.13419]
+robot:
+  name: robot
+  pose: [4.15158, -15.52351, 89.83928]
+  waypoints:
+  - [4.197, 0.67156, 89.83928]
+  behavior: traverses the broad southern office lane

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000218_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:05:31.812815+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the hallway with the light wood flooring, passing a series of white doors on your left. Continue forward into the open children's play area, where you'll see a white easel with a drawing on it. Turn left, walk past the low white toy shelves and the curved white sofa. Proceed forward, keeping the glass-walled offices on your right. Stop in the corner in front of the tall white cabinet that has binders on the top shelves.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the hallway with the light wood flooring, passing a series of white doors on your left. Continue forward into the open children's play area, where you'll see a white easel with a drawing on it. Turn left, walk past the low white toy shelves and the curved white sofa. Proceed forward, keeping the glass-walled offices on your right. Stop in the corner in front of the tall white cabinet that has binders on the top shelves."
+  },
+  "provenance": {
+    "source_key": "grscenes_5/gpt56_267",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

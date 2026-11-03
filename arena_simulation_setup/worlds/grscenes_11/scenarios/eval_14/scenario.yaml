@@ -1,0 +1,41 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [2.73531, 0.49393, 180.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.1
+  waypoints:
+  - [2.57536, 0.49393, -142.30576]
+  - [2.18435, 0.19179, -87.95459]
+  - [2.20212, -0.30586, -87.95459]
+- name: hunav_2
+  model: pedestrian
+  pose: [2.20212, -0.30586, -57.99462]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.75
+  desired_velocity: 1.0
+  waypoints:
+  - [2.46872, -0.73241, -91.97493]
+  - [2.45094, -1.24783, -42.39744]
+  - [2.85973, -1.62107, -37.14669]
+  - [3.44624, -2.0654, -37.14669]
+- name: hunav_3
+  model: pedestrian
+  pose: [2.32653, -2.29645, 57.52881]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.85
+  desired_velocity: 1.05
+  waypoints:
+  - [2.57536, -1.90544, -45.0]
+  - [2.85973, -2.18981, -99.78241]
+  - [2.77086, -2.70523, -99.78241]
+  - [2.68199, -3.22065, -99.78241]
+robot:
+  name: robot
+  pose: [3.3396, -2.68746, -160.60394]
+  waypoints:
+  - [-3.92961, -5.24679, -160.60394]
+  behavior: Carries supplies from the lower workspace to the upper aisle.

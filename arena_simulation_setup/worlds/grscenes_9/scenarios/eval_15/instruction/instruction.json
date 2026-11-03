@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000228_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:08:47.983239+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward, passing the white desk on your right and the large wooden toy shelf on your left. Head towards the back wall where you see a wooden shelving unit with many cubbies and light green boxes. Stop in front of the white door, which is located between the two shelving units.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward, passing the white desk on your right and the large wooden toy shelf on your left. Head towards the back wall where you see a wooden shelving unit with many cubbies and light green boxes. Stop in front of the white door, which is located between the two shelving units."
+  },
+  "provenance": {
+    "source_key": "grscenes_9/gpt56_241",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

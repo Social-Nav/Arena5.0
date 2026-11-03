@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000092_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:24:56.958131+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the main aisle of the office. Keep the rows of desks with light wood tops on your left and the wooden shelving units on your right. Continue forward until you reach the wooden double doors at the end of the hall and stop in front of them.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the main aisle of the office. Keep the rows of desks with light wood tops on your left and the wooden shelving units on your right. Continue forward until you reach the wooden double doors at the end of the hall and stop in front of them."
+  },
+  "provenance": {
+    "source_key": "grscenes_28/gpt56_278",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

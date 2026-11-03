@@ -20,8 +20,13 @@ from typing import Any
 __test__ = False
 
 
-WORLD_PATTERN = re.compile(r"grscenes_[1-9][0-9]*_v1")
-SCENARIO_PATTERN = re.compile(r"default(?:_[1-9][0-9]*)?")
+# World directories accept both the legacy versioned name (``grscenes_20_v1``)
+# and the frozen eval500 export name without a suffix (``grscenes_9``).
+WORLD_PATTERN = re.compile(r"grscenes_[1-9][0-9]*(?:_v1)?")
+# Scenarios accept both the legacy ``default``/``default_N`` family and the
+# frozen eval500 ``eval_N`` family.
+SCENARIO_PATTERN = re.compile(r"(?:default|eval)(?:_[1-9][0-9]*)?")
+_SCENARIO_INDEX_PATTERN = re.compile(r"^(default|eval)(?:_([1-9][0-9]*))?$")
 SPLIT_BASENAME = "test_split.json"
 EPISODE_METADATA_BASENAME = "episode_metadata.json"
 
@@ -111,17 +116,23 @@ def load_test_split(
 def discover_grscenes_cases(package_root: str | Path) -> list[TestSplitCase]:
     root = Path(package_root).expanduser().resolve()
     cases = []
-    for scenario_path in root.glob("worlds/grscenes_*_v1/scenarios/*/scenario.yaml"):
+    for scenario_path in root.glob("worlds/grscenes_*/scenarios/*/scenario.yaml"):
         world = scenario_path.parents[2].name
         scenario = scenario_path.parent.name
         if not WORLD_PATTERN.fullmatch(world) or not SCENARIO_PATTERN.fullmatch(scenario):
             continue
         relative = scenario_path.with_name(EPISODE_METADATA_BASENAME).relative_to(root).as_posix()
         cases.append(TestSplitCase(relative_path=relative, world=world, scenario=scenario))
-    def key(case: TestSplitCase) -> tuple[int, int]:
+
+    def key(case: TestSplitCase) -> tuple[int, int, int]:
         world_index = int(case.world.removeprefix("grscenes_").removesuffix("_v1"))
-        scenario_index = 0 if case.scenario == "default" else int(case.scenario.removeprefix("default_"))
-        return world_index, scenario_index
+        match = _SCENARIO_INDEX_PATTERN.fullmatch(case.scenario)
+        # WORLD_PATTERN/SCENARIO_PATTERN already guarantee the shape; guard anyway.
+        if match is None:  # pragma: no cover - defensive against pattern drift
+            raise TestSplitError(f"unsupported GRScenes scenario in discovery: {case.scenario!r}")
+        family_order = 0 if match.group(1) == "default" else 1
+        scenario_index = int(match.group(2) or 0)
+        return world_index, family_order, scenario_index
 
     return sorted(cases, key=key)
 

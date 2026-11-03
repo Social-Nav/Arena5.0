@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000208_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:10:09.548105+08:00",
+  "raw_text": "{\"instruction\": \"Begin in the office with the long row of desks on your right. Walk straight ahead on the grey carpet, keeping the desks on your right and the white wall on your left. Continue past all the workstations until you reach the end of the desk row. Enter the meeting area and stop at the large wooden conference table in front of you.\"}",
+  "parsed_result": {
+    "instruction": "Begin in the office with the long row of desks on your right. Walk straight ahead on the grey carpet, keeping the desks on your right and the white wall on your left. Continue past all the workstations until you reach the end of the desk row. Enter the meeting area and stop at the large wooden conference table in front of you."
+  },
+  "provenance": {
+    "source_key": "grscenes_11/gpt56_218",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

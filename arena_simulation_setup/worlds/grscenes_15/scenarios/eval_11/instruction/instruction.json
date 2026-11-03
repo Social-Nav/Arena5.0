@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000002_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:14:22.837103+08:00",
+  "raw_text": "{\"instruction\": \"Start by walking past the circular wooden display on your left and head towards the white checkout counter. Before you reach the counter, turn left and proceed straight down the main aisle. At the end of this aisle, make another left turn into a narrower aisle. Continue straight ahead, passing the shelves with shoes and hats on your right. Stop at the end of the aisle in front of the wooden crates of fresh vegetables.\"}",
+  "parsed_result": {
+    "instruction": "Start by walking past the circular wooden display on your left and head towards the white checkout counter. Before you reach the counter, turn left and proceed straight down the main aisle. At the end of this aisle, make another left turn into a narrower aisle. Continue straight ahead, passing the shelves with shoes and hats on your right. Stop at the end of the aisle in front of the wooden crates of fresh vegetables."
+  },
+  "provenance": {
+    "source_key": "grscenes_15/gpt56_175",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

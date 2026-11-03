@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000002_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:02:37.099000+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward into the convenience store, passing the seating area with the grey sofa on your left. Go past the curved white counter and turn right to enter the first main aisle. Proceed straight down this aisle, keeping the white counter on your left and a wooden shelf on your right. At the end of the aisle, turn right into the next aisle. Walk forward and stop in the middle of this aisle between the two shelves.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward into the convenience store, passing the seating area with the grey sofa on your left. Go past the curved white counter and turn right to enter the first main aisle. Proceed straight down this aisle, keeping the white counter on your left and a wooden shelf on your right. At the end of the aisle, turn right into the next aisle. Walk forward and stop in the middle of this aisle between the two shelves."
+  },
+  "provenance": {
+    "source_key": "grscenes_4/gpt56_009",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

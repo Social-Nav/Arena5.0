@@ -1,0 +1,40 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-4.84188, -2.78854, 40.23636]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [-4.46145, -2.46664, 5.19443]
+  - [-4.30049, -2.45201, 107.24146]
+  - [-4.43218, -2.02768, 61.55707]
+  - [-4.24197, -1.67651, -16.50436]
+  - [-3.8469, -1.79357, 74.0546]
+  - [-3.64205, -1.0766, 74.0546]
+- name: hunav_2
+  model: pedestrian
+  pose: [0.11837, -3.12508, -42.51045]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.1
+  waypoints:
+  - [0.46954, -3.44698, -166.2184]
+  - [-0.30596, -3.6372, -157.38013]
+  - [-0.83271, -3.85668, 120.25644]
+  - [-1.03756, -3.50551, 164.93152]
+  - [-1.41799, -3.40309, -165.06858]
+  - [-1.85695, -3.52014, -107.65012]
+  - [-2.0618, -4.16395, -142.76516]
+  - [-2.4276, -4.44196, 147.09476]
+  - [-2.92509, -4.12005, 111.80141]
+  - [-2.95435, -4.04689, -94.39871]
+  - [-2.98361, -4.42733, -94.39871]
+robot:
+  name: robot
+  pose: [-5.29547, -4.93945, 53.07503]
+  waypoints:
+  - [0.19153, 2.36192, 53.07503]
+  behavior: Travels from the left kitchen aisle to the distant office corridor

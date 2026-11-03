@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000021_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:22:29.886298+08:00",
+  "raw_text": "{\"instruction\": \"Go straight across the large open room, heading towards the wall decorated with white silhouettes of animals. You will see deer, elephants, and rabbits. Stop directly in front of the decorated wall.\"}",
+  "parsed_result": {
+    "instruction": "Go straight across the large open room, heading towards the wall decorated with white silhouettes of animals. You will see deer, elephants, and rabbits. Stop directly in front of the decorated wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_24/gpt56_022",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

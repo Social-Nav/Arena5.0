@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T06:12:04",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk straight ahead, passing the man in the white coat on your right. Continue towards the white counter with the microwave on it. Stop in front of the counter.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk straight ahead, passing the man in the white coat on your right. Continue towards the white counter with the microwave on it. Stop in front of the counter."
+  }
+}

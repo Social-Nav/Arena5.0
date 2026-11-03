@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000096_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:08:28.139503+08:00",
+  "raw_text": "{\"instruction\": \"Begin by facing the large wooden shelving unit filled with toys. Turn to your left, moving past the small children's table and pastel-colored stools. Keep the shelving unit on your right as you pan towards the office area. Stop when you are facing the white and black office chair, with the striped stuffed polar bear on the floor directly in front of you.\"}",
+  "parsed_result": {
+    "instruction": "Begin by facing the large wooden shelving unit filled with toys. Turn to your left, moving past the small children's table and pastel-colored stools. Keep the shelving unit on your right as you pan towards the office area. Stop when you are facing the white and black office chair, with the striped stuffed polar bear on the floor directly in front of you."
+  },
+  "provenance": {
+    "source_key": "grscenes_9/gpt56_103",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

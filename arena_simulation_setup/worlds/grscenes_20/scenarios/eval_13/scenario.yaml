@@ -1,0 +1,33 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [2.49401, -15.52708, 9.92625]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.02
+  waypoints:
+  - [3.07511, -15.42539, 12.99462]
+  - [4.0194, -15.20747, -10.88552]
+  - [4.77482, -15.35275, -54.86581]
+  - [5.05084, -15.74499, -98.97263]
+  - [4.9201, -16.57305, -98.97263]
+- name: hunav_2
+  model: pedestrian
+  pose: [-0.52769, -2.96084, 39.80557]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.92
+  desired_velocity: 1.16
+  waypoints:
+  - [0.08246, -2.45238, 110.44955]
+  - [-0.23715, -1.59526, 56.30993]
+  - [0.19868, -0.94152, 7.00126]
+  - [1.02674, -0.83983, 81.25384]
+  - [1.17202, 0.10445, 81.25384]
+robot:
+  name: robot
+  pose: [1.31729, -9.04784, -24.87326]
+  waypoints:
+  - [8.30499, -12.28746, -24.87326]
+  behavior: Travels from the upper center to the lower-left dining aisle.

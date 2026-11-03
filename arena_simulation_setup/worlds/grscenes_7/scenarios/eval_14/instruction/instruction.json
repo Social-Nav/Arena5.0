@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000001_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:07:26.050410+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight forward down the aisle, keeping the long, dark, textured counter on your right and the modern, curved sofas on your left. Continue towards the back of the room until you are in front of the two beige armchairs with colorful pillows.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight forward down the aisle, keeping the long, dark, textured counter on your right and the modern, curved sofas on your left. Continue towards the back of the room until you are in front of the two beige armchairs with colorful pillows."
+  },
+  "provenance": {
+    "source_key": "grscenes_7/gpt56_260",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

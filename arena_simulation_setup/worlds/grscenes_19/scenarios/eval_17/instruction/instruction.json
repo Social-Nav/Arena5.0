@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000001_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:17:48.928096+08:00",
+  "raw_text": "{\"instruction\": \"Begin in the white reception area. Walk forward, keeping the long white counter with the blue stripes on your left. At the end of the counter, turn left into the hallway, passing a potted plant on your right. Proceed straight down the long hallway, following the beige stripes on the floor. Continue all the way to the dead-end. Your destination is at the end of the hall, in front of the metal cart parked beneath the window.\"}",
+  "parsed_result": {
+    "instruction": "Begin in the white reception area. Walk forward, keeping the long white counter with the blue stripes on your left. At the end of the counter, turn left into the hallway, passing a potted plant on your right. Proceed straight down the long hallway, following the beige stripes on the floor. Continue all the way to the dead-end. Your destination is at the end of the hall, in front of the metal cart parked beneath the window."
+  },
+  "provenance": {
+    "source_key": "grscenes_19/gpt56_166",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

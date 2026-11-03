@@ -1,0 +1,32 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [-6.43445, 0.04163, 178.81411]
+  behavior_tree: BTRegularNav.xml
+  behavior:
+    type: 1
+    social_force_factor: 8.0
+  velocity: 0.82
+  desired_velocity: 1.0
+  waypoints:
+  - [-6.83205, 1.09839, 112.08717]
+  - [-7.16278, 1.9134, 66.97451]
+  - [-6.96198, 2.38587, 138.36646]
+  - [-7.2809, 2.66936, 81.57303]
+  - [-7.1864, 3.30719, 48.36646]
+  - [-6.71393, 3.83872, 99.335]
+  - [-6.85567, 4.70098, 103.24052]
+  - [-6.90292, 4.90178, 105.75117]
+  - [-7.16278, 5.8231, 64.09349]
+  - [-6.76118, 6.64993, 97.23692]
+  - [-6.85567, 7.39407, 97.23692]
+robot:
+  name: robot
+  pose: [-6.43445, 1.88587, 88.81411]
+  social_attributes: passive
+  waypoints:
+  - [-7.2809, 7.16654, 88.81411]
+  behavior: moves in the same direction as the pedestrian and uses a slightly longer
+    central corridor traverse

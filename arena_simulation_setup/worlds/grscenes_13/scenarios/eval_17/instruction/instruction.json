@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000136_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:12:15.539136+08:00",
+  "raw_text": "{\"instruction\": \"In the medical room, turn and walk forward, passing the white desk and office chair on your right. Continue straight towards the back of the room where you see wooden shelves filled with medicine. Enter the corner alcove and stop in front of the shelves, with the purple basket on the floor to your right.\"}",
+  "parsed_result": {
+    "instruction": "In the medical room, turn and walk forward, passing the white desk and office chair on your right. Continue straight towards the back of the room where you see wooden shelves filled with medicine. Enter the corner alcove and stop in front of the shelves, with the purple basket on the floor to your right."
+  },
+  "provenance": {
+    "source_key": "grscenes_13/gpt56_288",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

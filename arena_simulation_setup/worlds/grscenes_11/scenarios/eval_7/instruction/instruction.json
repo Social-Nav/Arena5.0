@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000103_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:09:56.538742+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the office corridor, keeping the desks on your left and the white wall on your right. Continue forward towards the double doors at the end of the hall. Before you reach the doors, turn left. Proceed down the short hallway with the black grid wall on your left and the white bulletin board on your right. Stop in the middle of this hallway.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the office corridor, keeping the desks on your left and the white wall on your right. Continue forward towards the double doors at the end of the hall. Before you reach the doors, turn left. Proceed down the short hallway with the black grid wall on your left and the white bulletin board on your right. Stop in the middle of this hallway."
+  },
+  "provenance": {
+    "source_key": "grscenes_11/gpt56_110",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

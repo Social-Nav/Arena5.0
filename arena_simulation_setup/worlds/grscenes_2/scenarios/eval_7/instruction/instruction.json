@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000008_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:01:00.200651+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the grocery aisle between the shelves. At the end of the aisle, turn left and continue forward. You will see a long white checkout counter on your right. Walk past the checkout counter and turn right. Stop in the open area in front of the black wall with the sliding glass doors, near the white shopping cart.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the grocery aisle between the shelves. At the end of the aisle, turn left and continue forward. You will see a long white checkout counter on your right. Walk past the checkout counter and turn right. Stop in the open area in front of the black wall with the sliding glass doors, near the white shopping cart."
+  },
+  "provenance": {
+    "source_key": "grscenes_2/gpt56_103",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

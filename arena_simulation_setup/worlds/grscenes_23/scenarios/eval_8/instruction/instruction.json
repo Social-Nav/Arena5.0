@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000161_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:21:47.557427+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the wide grocery store aisle. Pass the produce bins on your left and the low, white display shelf on your right. Continue forward towards the taller shelves at the end of the aisle. Stop in front of the shelving unit that has two empty middle shelves.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the wide grocery store aisle. Pass the produce bins on your left and the low, white display shelf on your right. Continue forward towards the taller shelves at the end of the aisle. Stop in front of the shelving unit that has two empty middle shelves."
+  },
+  "provenance": {
+    "source_key": "grscenes_23/gpt56_162",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

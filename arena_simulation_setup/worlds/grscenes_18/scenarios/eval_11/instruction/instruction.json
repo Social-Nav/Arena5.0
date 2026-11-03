@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000233_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:16:53.410409+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the aisle, keeping the tall white bookshelves on your right and the white sofas on your left. Continue forward towards the back wall with the built-in wooden shelves. Stop in the open space in front of the wooden bookshelves, between the large potted plant and the white freezer.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the aisle, keeping the tall white bookshelves on your right and the white sofas on your left. Continue forward towards the back wall with the built-in wooden shelves. Stop in the open space in front of the wooden bookshelves, between the large potted plant and the white freezer."
+  },
+  "provenance": {
+    "source_key": "grscenes_18/gpt56_239",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

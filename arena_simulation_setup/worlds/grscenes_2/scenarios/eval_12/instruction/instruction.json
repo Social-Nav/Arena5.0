@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000030_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:01:21.113696+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward down the wide aisle, passing the grey sofa on your left. At the end of the aisle, turn left and proceed straight down the next corridor. You will pass a row of refrigerators on your left. At the end of this aisle, turn right. Stop in the open area in front of the black wall, with the empty shopping cart directly ahead of you.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward down the wide aisle, passing the grey sofa on your left. At the end of the aisle, turn left and proceed straight down the next corridor. You will pass a row of refrigerators on your left. At the end of this aisle, turn right. Stop in the open area in front of the black wall, with the empty shopping cart directly ahead of you."
+  },
+  "provenance": {
+    "source_key": "grscenes_2/gpt56_246",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

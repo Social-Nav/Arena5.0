@@ -1,0 +1,25 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: doctor
+  pose: [1.80876, 1.97415, -120.96375]
+  behavior_tree: BTRegularNav.xml
+  velocity: 1.0
+  desired_velocity: 1.2
+  waypoints:
+  - [1.66937, 1.74182, 166.75948]
+  - [1.14275, 1.86573, -168.69007]
+  - [0.6781, 1.7728, -175.81509]
+  - [0.04306, 1.72634, -158.19859]
+  - [-0.11182, 1.66438, -145.49148]
+  - [-0.35964, 1.49401, -105.06849]
+  - [-0.46806, 1.0913, -106.69924]
+  - [-0.60746, 0.62664, -15.64225]
+  - [-0.22024, 0.51822, -15.64225]
+robot:
+  name: robot
+  pose: [-2.0479, 0.58018, -47.97925]
+  waypoints:
+  - [1.9017, -3.8031, -47.97925]
+  behavior: Traverses the open room toward the lower-left side while avoiding seating.

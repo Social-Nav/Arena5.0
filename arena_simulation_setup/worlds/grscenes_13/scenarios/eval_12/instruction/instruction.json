@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000102_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:11:49.454570+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward, passing the white reception desk on your left. Continue straight towards the back of the room, with the light blue sofa on your right. Go past the white desk and chair on your left and enter the next room. Turn right and walk down the aisle with the wooden medicine shelves. Stop in the corner, with the purple basket on your left.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward, passing the white reception desk on your left. Continue straight towards the back of the room, with the light blue sofa on your right. Go past the white desk and chair on your left and enter the next room. Turn right and walk down the aisle with the wooden medicine shelves. Stop in the corner, with the purple basket on your left."
+  },
+  "provenance": {
+    "source_key": "grscenes_13/gpt56_211",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

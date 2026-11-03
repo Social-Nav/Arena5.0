@@ -1,0 +1,37 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-0.2135, -3.30367, -173.6598]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.75
+  desired_velocity: 1.0
+  waypoints:
+  - [-0.34692, -3.31849, -154.9831]
+  - [-0.5693, -3.42227, -179.99999]
+  - [-0.95475, -3.42227, -169.21569]
+  - [-1.26607, -3.48157, -179.99999]
+  - [-1.53292, -3.48157, 158.55227]
+  - [-1.94802, -3.31849, 158.55227]
+- name: hunav_2
+  model: pedestrian
+  pose: [-0.13937, -1.19852, -153.43495]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.15
+  waypoints:
+  - [-0.43587, -1.34677, 139.76364]
+  - [-0.82132, -1.02062, 79.2157]
+  - [-0.76202, -0.7093, 16.69925]
+  - [-0.46552, -0.62035, -3.46823]
+  - [0.0237, -0.65, 15.42216]
+  - [0.45363, -0.5314, 9.2726]
+  - [1.18005, -0.4128, -4.08562]
+  - [1.59515, -0.44245, -4.08562]
+robot:
+  name: robot
+  pose: [-2.28899, -2.23627, 69.90477]
+  waypoints:
+  - [-0.51, 2.62632, 69.90477]
+  behavior: Crosses the room to service the far-side dining aisle.

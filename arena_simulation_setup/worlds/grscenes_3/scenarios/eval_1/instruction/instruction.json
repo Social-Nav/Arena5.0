@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000082_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:01:45.569331+08:00",
+  "raw_text": "{\"instruction\": \"Start next to the light wood bookshelf. Walk straight ahead on the grey textured carpet, keeping the large, dark glass windows on your right. Continue past the low wooden partition on your left. At the end of the path, turn left and walk towards the double doors with dark frames. Stop directly in front of the doors.\"}",
+  "parsed_result": {
+    "instruction": "Start next to the light wood bookshelf. Walk straight ahead on the grey textured carpet, keeping the large, dark glass windows on your right. Continue past the low wooden partition on your left. At the end of the path, turn left and walk towards the double doors with dark frames. Stop directly in front of the doors."
+  },
+  "provenance": {
+    "source_key": "grscenes_3/gpt56_097",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000083_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:16:10.900453+08:00",
+  "raw_text": "{\"instruction\": \"Start with the wooden bar on your left and the round dining table on your right. Walk straight ahead, passing the bar stools on your left. Continue towards the far wall. You will pass a pet bed on the floor to your left and a white trash can to your right. Stop in front of the large macrame wall hanging.\"}",
+  "parsed_result": {
+    "instruction": "Start with the wooden bar on your left and the round dining table on your right. Walk straight ahead, passing the bar stools on your left. Continue towards the far wall. You will pass a pet bed on the floor to your left and a white trash can to your right. Stop in front of the large macrame wall hanging."
+  },
+  "provenance": {
+    "source_key": "grscenes_17/gpt56_087",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

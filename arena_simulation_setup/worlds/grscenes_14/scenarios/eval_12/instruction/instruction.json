@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000224_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:12:43.387328+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight forward through the office. On your left, you will pass a long white desk with several office chairs, and on your right, you will pass a mirrored shelving unit. Continue straight, passing a wooden door on your left and a small seating area with large potted plants and a peach-colored chair on your right. Your destination is the large office printer located in the corner next to the plants.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight forward through the office. On your left, you will pass a long white desk with several office chairs, and on your right, you will pass a mirrored shelving unit. Continue straight, passing a wooden door on your left and a small seating area with large potted plants and a peach-colored chair on your right. Your destination is the large office printer located in the corner next to the plants."
+  },
+  "provenance": {
+    "source_key": "grscenes_14/gpt56_247",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "instruction_mode": "object_as_goal",
+  "timestamp": "2026-08-18T09:12:21",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk forward down the aisle. At the end, turn right at the checkout counter area. Continue straight down the main aisle, passing a freezer on your left and tall shelves on your right. Proceed to the end of this long aisle and turn left into the next one. Stop in the middle of this new aisle between the shelves.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk forward down the aisle. At the end, turn right at the checkout counter area. Continue straight down the main aisle, passing a freezer on your left and tall shelves on your right. Proceed to the end of this long aisle and turn left into the next one. Stop in the middle of this new aisle between the shelves."
+  }
+}

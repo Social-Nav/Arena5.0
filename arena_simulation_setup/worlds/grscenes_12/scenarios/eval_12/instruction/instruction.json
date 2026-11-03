@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000159_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:11:10.151143+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight ahead down the aisle, keeping the white couches on your left and the long, empty white shelving unit on your right. Continue forward until you reach the end of the aisle. Stop in front of the white freezer at the end of the shelves.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight ahead down the aisle, keeping the white couches on your left and the long, empty white shelving unit on your right. Continue forward until you reach the end of the aisle. Stop in front of the white freezer at the end of the shelves."
+  },
+  "provenance": {
+    "source_key": "grscenes_12/gpt56_160",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

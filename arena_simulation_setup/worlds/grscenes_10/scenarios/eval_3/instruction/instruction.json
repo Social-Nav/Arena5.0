@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000031_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:09:01.571720+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward through the modern office, keeping the row of white desks and black chairs on your left. Continue straight until you reach the two potted plants in the corner. Turn left and proceed down the aisle, with the wall of framed pictures on your right and the line of office chairs on your left. Walk to the end of the desk row and stop at the last workstation on your left.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward through the modern office, keeping the row of white desks and black chairs on your left. Continue straight until you reach the two potted plants in the corner. Turn left and proceed down the aisle, with the wall of framed pictures on your right and the line of office chairs on your left. Walk to the end of the desk row and stop at the last workstation on your left."
+  },
+  "provenance": {
+    "source_key": "grscenes_10/gpt56_036",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

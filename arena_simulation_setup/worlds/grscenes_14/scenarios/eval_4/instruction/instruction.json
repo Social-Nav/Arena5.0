@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000058_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:12:12.805021+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight forward through the open office space, passing the white shelving unit on your left. Continue past the white desks with yellow dividers and head towards the back wall. Stop in front of the white 3D sign on the wall that reads 'COMPANY CULTURE'.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight forward through the open office space, passing the white shelving unit on your left. Continue past the white desks with yellow dividers and head towards the back wall. Stop in front of the white 3D sign on the wall that reads 'COMPANY CULTURE'."
+  },
+  "provenance": {
+    "source_key": "grscenes_14/gpt56_066",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

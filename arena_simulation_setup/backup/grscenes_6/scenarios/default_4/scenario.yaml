@@ -1,0 +1,37 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [0.36503, -9.83068, 15.52412]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.82
+  desired_velocity: 1.08
+  waypoints:
+  - [1.16508, -9.60845, 8.13011]
+  - [1.78734, -9.51955, -26.56505]
+  - [2.3207, -9.78624, 26.98024]
+  - [3.543, -9.16398, 92.00955]
+  - [3.49855, -7.89724, 31.60751]
+  - [4.07636, -7.54166, 39.09386]
+  - [4.78751, -6.96385, 72.89727]
+  - [5.14309, -5.80823, 86.63354]
+  - [5.18754, -5.05263, 86.63354]
+- name: hunav_2
+  model: male_adult_medical_01
+  pose: [0.09835, -2.49693, -5.71059]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.72
+  desired_velocity: 0.95
+  waypoints:
+  - [0.54282, -2.54137, -90.0]
+  - [0.54282, -3.94145, -90.0]
+  - [0.54282, -5.00818, -91.63658]
+  - [0.49838, -6.56383, -90.0]
+  - [0.49838, -7.27498, -90.0]
+robot:
+  name: robot
+  pose: [3.49855, -2.40803, -73.02672]
+  waypoints:
+  - [5.18754, -7.94168, -73.02672]
+  behavior: patrols the open corridor loop while staying away from the lounge doorway

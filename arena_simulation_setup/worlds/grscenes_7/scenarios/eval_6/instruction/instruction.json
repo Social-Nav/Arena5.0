@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000103_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:06:53.255418+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight forward through the cafe, keeping the long, black textured coffee bar on your right side. Pass the low, curved seating areas on your left. Continue walking towards the back of the room until you reach the end of the bar. Your destination is the corner with two beige armchairs. Stop in front of the chair with the orange, white, and grey patterned pillow.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight forward through the cafe, keeping the long, black textured coffee bar on your right side. Pass the low, curved seating areas on your left. Continue walking towards the back of the room until you reach the end of the bar. Your destination is the corner with two beige armchairs. Stop in front of the chair with the orange, white, and grey patterned pillow."
+  },
+  "provenance": {
+    "source_key": "grscenes_7/gpt56_114",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,36 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [2.77086, -5.38898, -16.92751]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [3.17964, -5.51339, -7.12501]
+  - [3.6062, -5.56671, 9.86581]
+  - [4.42376, -5.42452, 85.23636]
+  - [4.45931, -4.99797, 38.65981]
+  - [4.81477, -4.7136, 38.65981]
+- name: hunav_2
+  model: pedestrian
+  pose: [2.32653, -2.29645, 57.52881]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.75
+  desired_velocity: 1.0
+  waypoints:
+  - [2.57536, -1.90544, -45.0]
+  - [2.85973, -2.18981, -99.78241]
+  - [2.77086, -2.70523, -99.78241]
+  - [2.68199, -3.22065, 27.64598]
+  - [3.05523, -3.02515, -43.2643]
+  - [3.35737, -3.30952, 91.63658]
+  - [3.3396, -2.68746, 80.27242]
+  - [3.44624, -2.0654, 80.27242]
+robot:
+  name: robot
+  pose: [-4.23176, -4.9091, 31.1331]
+  waypoints:
+  - [3.71284, -0.11035, 31.1331]
+  behavior: delivers equipment toward the lower right aisle

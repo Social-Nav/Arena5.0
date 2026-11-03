@@ -1,0 +1,21 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [0.15509, -14.88787, 55.40771]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [0.73619, -14.04528, -62.74467]
+  - [0.98316, -14.52468, -44.16968]
+  - [1.49162, -15.01862, -26.89623]
+  - [2.49401, -15.52708, -28.36904]
+  - [3.22039, -15.91932, -28.36904]
+robot:
+  name: robot
+  pose: [0.73619, -14.04528, 61.66728]
+  waypoints:
+  - [7.43334, -1.62431, 61.66728]
+  behavior: crosses the dining room using the broad circulation aisles

@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T07:13:58",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk forward, following the man in the white lab coat. Go past the round wooden dining table on your right and continue straight along the long wooden bar counter. Pass the various bar stools on your left and the large macrame wall hanging on your right. Your destination is at the end of the bar. Stop when you are next to the cat bed on the floor.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk forward, following the man in the white lab coat. Go past the round wooden dining table on your right and continue straight along the long wooden bar counter. Pass the various bar stools on your left and the large macrame wall hanging on your right. Your destination is at the end of the bar. Stop when you are next to the cat bed on the floor."
+  }
+}

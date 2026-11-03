@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000004_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:17:40.080111+08:00",
+  "raw_text": "{\"instruction\": \"Start in the bright white reception area. Turn left and walk towards the doorway, passing a potted plant on your left. Turn right into the long hallway with white walls and light blue handrails. Proceed straight down the hallway, past the open doorways on both sides. Your destination is at the very end of this hall, in front of the window.\"}",
+  "parsed_result": {
+    "instruction": "Start in the bright white reception area. Turn left and walk towards the doorway, passing a potted plant on your left. Turn right into the long hallway with white walls and light blue handrails. Proceed straight down the hallway, past the open doorways on both sides. Your destination is at the very end of this hall, in front of the window."
+  },
+  "provenance": {
+    "source_key": "grscenes_19/gpt56_081",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

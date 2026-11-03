@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T06:25:12",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk straight forward through the office, keeping the long white desk with computer monitors on your left. Continue past the filing cabinets until you reach the end of the desk. Stop in front of the empty black office chair.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk straight forward through the office, keeping the long white desk with computer monitors on your left. Continue past the filing cabinets until you reach the end of the desk. Stop in front of the empty black office chair."
+  }
+}

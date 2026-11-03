@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T07:00:39",
+  "raw_text": "```json\n{\n  \"instruction\": \"Turn right and walk straight down the room. Keep the large wall of windows with dark blinds on your left. On your right, you'll pass a rack of sports balls and a long wall of wooden storage cubbies. Continue walking straight past all the storage units. Stop in front of the windows at the far end of the room.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Turn right and walk straight down the room. Keep the large wall of windows with dark blinds on your left. On your right, you'll pass a rack of sports balls and a long wall of wooden storage cubbies. Continue walking straight past all the storage units. Stop in front of the windows at the far end of the room."
+  }
+}

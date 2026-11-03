@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000001_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:05:46.729560+08:00",
+  "raw_text": "{\"instruction\": \"Start in the open room with the shiny white floor. Walk straight ahead, passing the bright red console table on your right and the bar with high stools on your left. Continue forward, keeping the sage green wall with built-in shelving on your right. Stop in front of the single, light-colored armchair that has a patterned blue-green pillow on it.\"}",
+  "parsed_result": {
+    "instruction": "Start in the open room with the shiny white floor. Walk straight ahead, passing the bright red console table on your right and the bar with high stools on your left. Continue forward, keeping the sage green wall with built-in shelving on your right. Stop in front of the single, light-colored armchair that has a patterned blue-green pillow on it."
+  },
+  "provenance": {
+    "source_key": "grscenes_6/gpt56_119",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

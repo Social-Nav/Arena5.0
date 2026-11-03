@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000039_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:25:20.117680+08:00",
+  "raw_text": "{\"instruction\": \"Exit the small room and enter the larger waiting area. Turn left and walk down the aisle, with the long, dark grey display counter on your left. Continue past the end of the counter and walk towards the white reception desk. Stop in front of the shelves filled with medicine boxes, which are to the left of the desk.\"}",
+  "parsed_result": {
+    "instruction": "Exit the small room and enter the larger waiting area. Turn left and walk down the aisle, with the long, dark grey display counter on your left. Continue past the end of the counter and walk towards the white reception desk. Stop in front of the shelves filled with medicine boxes, which are to the left of the desk."
+  },
+  "provenance": {
+    "source_key": "grscenes_29/gpt56_052",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

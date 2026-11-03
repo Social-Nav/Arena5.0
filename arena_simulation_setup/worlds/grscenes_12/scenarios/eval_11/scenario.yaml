@@ -1,0 +1,39 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: construction_worker
+  pose: [-2.22074, -5.89203, 42.51045]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [-1.924, -5.62002, 52.43141]
+  - [-1.67673, -5.29856, 119.74488]
+  - [-1.87455, -4.95237, 48.57633]
+  - [-1.50363, -4.532, 95.44033]
+  - [-1.55309, -4.01272, 15.12401]
+  - [-0.63816, -3.76545, -6.70984]
+  - [-0.21779, -3.8149, -52.12502]
+  - [0.12839, -4.26, -113.19859]
+  - [-0.09416, -4.77928, -113.19859]
+- name: hunav_2
+  model: pedestrian
+  pose: [-0.91017, -0.50139, 34.69515]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.75
+  desired_velocity: 1.0
+  waypoints:
+  - [-0.58871, -0.27884, -47.29061]
+  - [-0.29198, -0.6003, -1.0e-05]
+  - [0.30149, -0.6003, -141.34019]
+  - [-0.19307, -0.99595, -38.65981]
+  - [0.30149, -1.39159, 63.43495]
+  - [0.49931, -0.99595, -46.84761]
+  - [0.87022, -1.39159, -46.84761]
+robot:
+  name: robot
+  pose: [-0.09416, -7.89497, 86.89547]
+  waypoints:
+  - [0.30149, -0.6003, 86.89547]
+  behavior: Traverses the main open aisle while keeping clear of seating recesses.

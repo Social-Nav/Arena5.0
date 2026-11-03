@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000222_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:08:47.635215+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward past the white printer on your left and the grey filing cabinet on your right. Go through the doorway into the large playroom. Turn left to face the long wooden shelving unit with light blue accents. Approach the shelves filled with stuffed animals and stop in front of them.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward past the white printer on your left and the grey filing cabinet on your right. Go through the doorway into the large playroom. Turn left to face the long wooden shelving unit with light blue accents. Approach the shelves filled with stuffed animals and stop in front of them."
+  },
+  "provenance": {
+    "source_key": "grscenes_9/gpt56_235",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

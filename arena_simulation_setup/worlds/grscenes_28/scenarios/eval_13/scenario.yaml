@@ -1,0 +1,37 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [3.44744, -17.81763, 177.56336]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.75
+  desired_velocity: 0.97
+  waypoints:
+  - [2.37989, -17.7722, -179.99999]
+  - [1.63032, -17.7722, -173.08877]
+  - [0.88076, -17.86306, -171.57302]
+  - [0.26748, -17.95391, 176.05482]
+  - [-0.39122, -17.90848, -179.99999]
+  - [-1.0045, -17.90848, -176.42366]
+  - [-1.73135, -17.95391, -176.42366]
+- name: hunav_2
+  model: construction_worker
+  pose: [4.24243, -7.23291, -171.67435]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.69
+  desired_velocity: 0.91
+  waypoints:
+  - [3.31116, -7.36919, 160.25316]
+  - [2.42531, -7.0512, -147.72436]
+  - [1.99375, -7.32377, 169.04594]
+  - [1.28961, -7.18748, 180.0]
+  - [0.26748, -7.18748, -176.30862]
+  - [-0.43665, -7.23291, 163.1416]
+  - [-1.18621, -7.00577, 163.1416]
+robot:
+  name: robot
+  pose: [4.71943, -16.04594, 92.23532]
+  waypoints:
+  - [4.24243, -3.82581, 92.23532]
+  behavior: transfers supplies across the lower shared passage

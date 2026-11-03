@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000062_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:18:07.759277+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the aisle between the two rows of booths upholstered in a black and white pattern. Continue forward past the booths on your right. The path will open up into a larger dining area. Proceed straight, passing a stainless steel counter on your left. Continue walking down the long hall with the continuous banquette seating on your right and individual tables and chairs on your left, heading towards the turquoise wall in the distance. Stop in the middle of this long aisle.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the aisle between the two rows of booths upholstered in a black and white pattern. Continue forward past the booths on your right. The path will open up into a larger dining area. Proceed straight, passing a stainless steel counter on your left. Continue walking down the long hall with the continuous banquette seating on your right and individual tables and chairs on your left, heading towards the turquoise wall in the distance. Stop in the middle of this long aisle."
+  },
+  "provenance": {
+    "source_key": "grscenes_20/gpt56_067",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

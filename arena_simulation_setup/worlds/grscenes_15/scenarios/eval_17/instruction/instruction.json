@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000001_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:14:48.373383+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward down the aisle, passing the freezer on your left and a circular wooden display on your right. Continue straight between the tall shelves filled with groceries. Go all the way to the end of this aisle. Stop in front of the wall of shelves, directly before the wooden bulk bins on the bottom.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward down the aisle, passing the freezer on your left and a circular wooden display on your right. Continue straight between the tall shelves filled with groceries. Go all the way to the end of this aisle. Stop in front of the wall of shelves, directly before the wooden bulk bins on the bottom."
+  },
+  "provenance": {
+    "source_key": "grscenes_15/gpt56_250",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,40 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [0.49931, -2.05924, 153.43494]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.95
+  desired_velocity: 1.15
+  waypoints:
+  - [0.15312, -1.88614, -96.34019]
+  - [0.10367, -2.33124, -84.28941]
+  - [0.15312, -2.82579, 13.24052]
+  - [0.57349, -2.72688, -85.91438]
+  - [0.62295, -3.41926, -63.43495]
+  - [0.82077, -3.8149, -87.7974]
+  - [0.8455, -4.45782, -94.39871]
+  - [0.79604, -5.10074, -80.90972]
+  - [0.89495, -5.71893, -80.90972]
+- name: hunav_2
+  model: pedestrian
+  pose: [-1.45418, -7.44987, 75.37913]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [-1.30581, -6.88113, 45.0]
+  - [-1.00908, -6.5844, 96.91123]
+  - [-1.10799, -5.76839, 3.17983]
+  - [-0.66289, -5.74366, 122.73523]
+  - [-0.88544, -5.39747, 90.0]
+  - [-0.88544, -5.00183, 45.0]
+  - [-0.51453, -4.63091, 131.63354]
+  - [-0.91017, -4.18582, 131.63354]
+robot:
+  name: robot
+  pose: [-0.86071, -8.16697, 88.58308]
+  waypoints:
+  - [-0.68762, -1.16904, 88.58308]
+  behavior: crosses behind pedestrian traffic with ample passing space

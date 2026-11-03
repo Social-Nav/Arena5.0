@@ -1,0 +1,22 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [4.58314, -14.25153, 59.65675]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [5.12828, -13.32026, 113.96249]
+  - [4.94657, -12.91141, 136.63658]
+  - [4.53771, -12.52527, -175.03026]
+  - [4.01529, -12.5707, 90.0]
+  - [4.01529, -11.73028, 75.37913]
+  - [4.15158, -11.20786, 75.37913]
+robot:
+  name: robot
+  pose: [4.15158, -16.27308, 89.84639]
+  waypoints:
+  - [4.197, 0.67156, 89.84639]
+  behavior: Makes a long supply transfer through the broad lower corridor.

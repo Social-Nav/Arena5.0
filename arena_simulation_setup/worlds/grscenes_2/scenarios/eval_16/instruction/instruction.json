@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000084_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:01:17.780568+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the grocery store aisle, passing the wooden shelves stocked with colorful products on your left and right. Continue forward, leaving the aisles behind you, and head towards the white checkout counters and desk area against the far wall. Stop at the long white desk, in front of the unique, geometric wireframe chair.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the grocery store aisle, passing the wooden shelves stocked with colorful products on your left and right. Continue forward, leaving the aisles behind you, and head towards the white checkout counters and desk area against the far wall. Stop at the long white desk, in front of the unique, geometric wireframe chair."
+  },
+  "provenance": {
+    "source_key": "grscenes_2/gpt56_301",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

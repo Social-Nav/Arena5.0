@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000138_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:00:07.061737+08:00",
+  "raw_text": "{\"instruction\": \"Start in the hospital waiting area. Walk straight forward, passing the blue reception desk on your right. Continue down the white hallway, going past the clear chair and the open doorway on your left. Turn right into the small office area and stop in front of the white desk with the computer on it.\"}",
+  "parsed_result": {
+    "instruction": "Start in the hospital waiting area. Walk straight forward, passing the blue reception desk on your right. Continue down the white hallway, going past the clear chair and the open doorway on your left. Turn right into the small office area and stop in front of the white desk with the computer on it."
+  },
+  "provenance": {
+    "source_key": "grscenes_1/gpt56_139",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,35 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [9.71408, -3.72035, 172.87498]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [8.72492, -3.59671, 169.42648]
+  - [7.69455, -3.40437, 171.8699]
+  - [7.11754, -3.32194, 173.45371]
+  - [6.2795, -3.22577, 105.70864]
+  - [6.03221, -2.34652, 32.00538]
+  - [6.47184, -2.07175, 32.00538]
+- name: hunav_2
+  model: police
+  pose: [7.54342, 2.69544, -84.95755]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.2
+  waypoints:
+  - [7.62585, 1.76123, -113.0513]
+  - [7.35109, 1.11553, -160.46335]
+  - [6.9252, 0.96441, -176.18593]
+  - [6.30698, 0.9232, -147.01148]
+  - [5.52389, 0.41488, -90.0]
+  - [5.52389, -0.4369, -90.0]
+robot:
+  name: robot
+  pose: [6.15586, 0.2775, -148.67778]
+  waypoints:
+  - [2.29539, -2.07175, -148.67778]
+  behavior: Traverses the open floor toward the upper west corridor.

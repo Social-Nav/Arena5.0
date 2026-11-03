@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000236_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:19:06.572978+08:00",
+  "raw_text": "{\"instruction\": \"From the booth with the black and white patterned upholstery, turn around and walk straight down the main aisle of the restaurant. Keep the long continuous booth under the turquoise wall on your left and the series of back-to-back booths on your right. Continue straight past all the tables and chairs. Stop in the aisle just before you reach the wooden double doors at the far end of the room.\"}",
+  "parsed_result": {
+    "instruction": "From the booth with the black and white patterned upholstery, turn around and walk straight down the main aisle of the restaurant. Keep the long continuous booth under the turquoise wall on your left and the series of back-to-back booths on your right. Continue straight past all the tables and chairs. Stop in the aisle just before you reach the wooden double doors at the far end of the room."
+  },
+  "provenance": {
+    "source_key": "grscenes_20/gpt56_248",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

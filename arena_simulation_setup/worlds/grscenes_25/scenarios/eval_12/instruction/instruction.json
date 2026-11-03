@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000148_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:23:23.105319+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward down the white hallway. Pass the white counter with a plant on your left and the large window with black panels on your right. Continue straight until you reach the child's art easel at the end of the hall and stop in front of it.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward down the white hallway. Pass the white counter with a plant on your left and the large window with black panels on your right. Continue straight until you reach the child's art easel at the end of the hall and stop in front of it."
+  },
+  "provenance": {
+    "source_key": "grscenes_25/gpt56_149",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

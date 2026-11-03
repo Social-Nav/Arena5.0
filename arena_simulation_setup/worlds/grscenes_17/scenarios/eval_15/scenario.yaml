@@ -1,0 +1,21 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-0.89545, -1.28747, 77.00538]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.18
+  waypoints:
+  - [-0.76202, -0.7093, 16.69925]
+  - [-0.46552, -0.62035, -3.46823]
+  - [0.0237, -0.65, 15.42216]
+  - [0.45363, -0.5314, 9.2726]
+  - [1.18005, -0.4128, 9.2726]
+robot:
+  name: robot
+  pose: [-0.95475, -3.42227, 91.04163]
+  waypoints:
+  - [-1.05852, 2.28535, 91.04163]
+  behavior: moves steadily between opposite sides of the dining room

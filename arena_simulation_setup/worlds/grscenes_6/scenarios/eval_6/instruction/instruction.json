@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000000_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:06:06.603325+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward, keeping the long white marble bar with the green stools on your left. Follow the path straight ahead, with the light green built-in shelving unit on your right. Continue past the dining tables and chairs until you approach a single light gray armchair with a green patterned pillow. Stop directly in front of this armchair.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward, keeping the long white marble bar with the green stools on your left. Follow the path straight ahead, with the light green built-in shelving unit on your right. Continue past the dining tables and chairs until you approach a single light gray armchair with a green patterned pillow. Stop directly in front of this armchair."
+  },
+  "provenance": {
+    "source_key": "grscenes_6/gpt56_183",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

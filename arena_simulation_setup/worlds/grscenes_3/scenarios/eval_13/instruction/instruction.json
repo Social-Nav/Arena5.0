@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000005_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:02:20.064796+08:00",
+  "raw_text": "{\"instruction\": \"Turn left and walk past the long, low wooden shelving unit on your left. Continue straight, passing the seating area with the wooden benches. Go through the open doorway in the white wall ahead of you. Once you enter the dining area, stop at the first table on your left.\"}",
+  "parsed_result": {
+    "instruction": "Turn left and walk past the long, low wooden shelving unit on your left. Continue straight, passing the seating area with the wooden benches. Go through the open doorway in the white wall ahead of you. Once you enter the dining area, stop at the first table on your left."
+  },
+  "provenance": {
+    "source_key": "grscenes_3/gpt56_226",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

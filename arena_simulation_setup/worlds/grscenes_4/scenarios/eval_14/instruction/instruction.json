@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000000_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:04:26.348981+08:00",
+  "raw_text": "{\"instruction\": \"Turn left and walk forward, passing the long white checkout counter on your left. Continue straight down the main aisle. At the end of the aisle, turn right and walk between the two wooden and metal shelving units. At the end of this aisle, turn left and then immediately right into the next aisle. Walk straight to the end of this aisle, heading towards the shelves of kitchenware on the back wall. Stop in the corner at the end of the aisle, next to the display of shoes and hats on your left.\"}",
+  "parsed_result": {
+    "instruction": "Turn left and walk forward, passing the long white checkout counter on your left. Continue straight down the main aisle. At the end of the aisle, turn right and walk between the two wooden and metal shelving units. At the end of this aisle, turn left and then immediately right into the next aisle. Walk straight to the end of this aisle, heading towards the shelves of kitchenware on the back wall. Stop in the corner at the end of the aisle, next to the display of shoes and hats on your left."
+  },
+  "provenance": {
+    "source_key": "grscenes_4/gpt56_276",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

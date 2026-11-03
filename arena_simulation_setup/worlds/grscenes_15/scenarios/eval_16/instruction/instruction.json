@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000002_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:14:58.464259+08:00",
+  "raw_text": "{\"instruction\": \"Go straight down the grocery aisle, with the chest freezer on your left and a circular wooden display on your right. Continue walking all the way to the end of the aisle. Stop in front of the shelves at the back wall, which are stocked with large bags of rice and other dry goods in wooden bins.\"}",
+  "parsed_result": {
+    "instruction": "Go straight down the grocery aisle, with the chest freezer on your left and a circular wooden display on your right. Continue walking all the way to the end of the aisle. Stop in front of the shelves at the back wall, which are stocked with large bags of rice and other dry goods in wooden bins."
+  },
+  "provenance": {
+    "source_key": "grscenes_15/gpt56_247",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

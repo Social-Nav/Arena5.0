@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000216_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:25:44.624864+08:00",
+  "raw_text": "{\"instruction\": \"Turn left and walk forward, passing the shelves of medicine on your left and the white reception desk on your right. Once you are past the desk, turn right. Walk straight ahead towards the row of grey medical chairs and the water cooler. Stop in front of the two chairs in the far left corner.\"}",
+  "parsed_result": {
+    "instruction": "Turn left and walk forward, passing the shelves of medicine on your left and the white reception desk on your right. Once you are past the desk, turn right. Walk straight ahead towards the row of grey medical chairs and the water cooler. Stop in front of the two chairs in the far left corner."
+  },
+  "provenance": {
+    "source_key": "grscenes_29/gpt56_238",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000237_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:24:00.374472+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight forward across the large white room towards the seating area in the back. You will see blue and white chairs arranged around tables. Head towards the grouping of four blue chairs on the left, near a white shopping cart. Stop in front of the small, round white table in the center of the four blue chairs.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight forward across the large white room towards the seating area in the back. You will see blue and white chairs arranged around tables. Head towards the grouping of four blue chairs on the left, near a white shopping cart. Stop in front of the small, round white table in the center of the four blue chairs."
+  },
+  "provenance": {
+    "source_key": "grscenes_27/gpt56_238",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

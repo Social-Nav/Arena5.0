@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000198_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:00:23.389204+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward into the waiting area, passing the rows of blue chairs on your right. Turn left to face the light blue reception desk. Walk past the desk and the silver geometric chair. Continue walking towards the blue chairs, then turn left and walk back towards the reception desk. Your destination is in front of the desk, near the dark glass panels.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward into the waiting area, passing the rows of blue chairs on your right. Turn left to face the light blue reception desk. Walk past the desk and the silver geometric chair. Continue walking towards the blue chairs, then turn left and walk back towards the reception desk. Your destination is in front of the desk, near the dark glass panels."
+  },
+  "provenance": {
+    "source_key": "grscenes_1/gpt56_199",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

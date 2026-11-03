@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000092_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:01:20.608284+08:00",
+  "raw_text": "{\"instruction\": \"Turn left past the white sofa and then turn right to enter the long grocery aisle. Walk straight down the aisle, keeping the product shelves on your right and the commercial refrigerators on your left. Continue all the way to the end of the aisle. Your destination is the empty white shopping cart waiting in front of the black wall.\"}",
+  "parsed_result": {
+    "instruction": "Turn left past the white sofa and then turn right to enter the long grocery aisle. Walk straight down the aisle, keeping the product shelves on your right and the commercial refrigerators on your left. Continue all the way to the end of the aisle. Your destination is the empty white shopping cart waiting in front of the black wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_2/gpt56_310",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

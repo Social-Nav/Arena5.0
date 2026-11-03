@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000220_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:08:04.070426+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the hallway, which has marble-tiled walls and a shiny white floor. Continue past the curved white reception desk on your left. Proceed forward past the white sofa and into the waiting area. Stop in front of the large dark windows, to the left of the potted plant and water cooler.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the hallway, which has marble-tiled walls and a shiny white floor. Continue past the curved white reception desk on your left. Proceed forward past the white sofa and into the waiting area. Stop in front of the large dark windows, to the left of the potted plant and water cooler."
+  },
+  "provenance": {
+    "source_key": "grscenes_8/gpt56_228",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

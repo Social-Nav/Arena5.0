@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000167_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:09:17.460921+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward through the open white office, passing the long desk with multiple workstations on your left. Continue straight towards the two potted plants in the far corner. Turn left at the plants and proceed along the wall. Stop next to the last black and white office chair on your left.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward through the open white office, passing the long desk with multiple workstations on your left. Continue straight towards the two potted plants in the far corner. Turn left at the plants and proceed along the wall. Stop next to the last black and white office chair on your left."
+  },
+  "provenance": {
+    "source_key": "grscenes_10/gpt56_199",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

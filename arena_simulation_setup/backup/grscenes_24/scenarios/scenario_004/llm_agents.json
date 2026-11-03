@@ -1,0 +1,124 @@
+{
+  "agents": [
+    {
+      "name": "hunav_1",
+      "role": "student crossing room",
+      "model": "female_adult_business_02",
+      "from_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "spawn_waypoint": "wp_r00_classroom_031",
+      "waypoints": [
+        "wp_r00_classroom_032",
+        "wp_r00_classroom_033",
+        "wp_r00_classroom_034",
+        "wp_r00_classroom_051",
+        "wp_r00_classroom_091",
+        "wp_r00_classroom_061",
+        "wp_r00_classroom_062"
+      ],
+      "velocity": 0.78,
+      "desired_velocity": 1.02,
+      "behavior": "walks from left side into the central area and crosses near the robot path"
+    },
+    {
+      "name": "hunav_2",
+      "role": "visitor moving upward",
+      "model": "male_adult_medical_01",
+      "from_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "spawn_waypoint": "wp_r00_classroom_025",
+      "waypoints": [
+        "wp_r00_classroom_054",
+        "wp_r00_classroom_069",
+        "wp_r00_classroom_063",
+        "wp_r00_classroom_065",
+        "wp_r00_classroom_059",
+        "wp_r00_classroom_046"
+      ],
+      "velocity": 0.83,
+      "desired_velocity": 1.08,
+      "behavior": "moves from the lower side toward the upper middle, passing close to the robot corridor"
+    },
+    {
+      "name": "hunav_3",
+      "role": "person traversing right side",
+      "model": "F_Medical_01",
+      "from_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "spawn_waypoint": "wp_r00_classroom_021",
+      "waypoints": [
+        "wp_r00_classroom_072",
+        "wp_r00_classroom_056",
+        "wp_r00_classroom_057",
+        "wp_r00_classroom_058",
+        "wp_r00_classroom_045",
+        "wp_r00_classroom_044",
+        "wp_r00_classroom_043"
+      ],
+      "velocity": 0.74,
+      "desired_velocity": 0.96,
+      "behavior": "walks up the right side and then turns through the upper open area near the robot route"
+    },
+    {
+      "name": "hunav_4",
+      "role": "student along upper aisle",
+      "model": "male_adult_construction_03",
+      "from_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "spawn_waypoint": "wp_r00_classroom_082",
+      "waypoints": [
+        "wp_r00_classroom_083",
+        "wp_r00_classroom_084",
+        "wp_r00_classroom_005",
+        "wp_r00_classroom_006",
+        "wp_r00_classroom_011",
+        "wp_r00_classroom_041"
+      ],
+      "velocity": 0.89,
+      "desired_velocity": 1.14,
+      "behavior": "uses the upper aisle from left to right while remaining near the main open space"
+    }
+  ],
+  "robot": {
+    "name": "robot",
+    "from_region": {
+      "region_id": 0,
+      "label": "classroom"
+    },
+    "to_region": {
+      "region_id": 0,
+      "label": "classroom"
+    },
+    "start_waypoint": "wp_r00_classroom_080",
+    "waypoints": [
+      "wp_r00_classroom_097",
+      "wp_r00_classroom_046",
+      "wp_r00_classroom_078"
+    ],
+    "behavior": "crosses the open classroom on a clear near-horizontal route with wide clearance from furniture"
+  }
+}

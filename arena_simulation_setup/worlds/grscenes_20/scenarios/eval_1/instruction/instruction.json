@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000001_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:18:18.297028+08:00",
+  "raw_text": "{\"instruction\": \"Start at the table next to the booth with the black and white cow-print upholstery. Turn left to face the main aisle of the restaurant. Walk straight down the center of the room, keeping the row of individual booths on your right and the long banquette with chairs on your left. Continue past all the tables with light wood tops, heading toward the back wall. Your destination is at the end of the aisle, just before the wooden double doors.\"}",
+  "parsed_result": {
+    "instruction": "Start at the table next to the booth with the black and white cow-print upholstery. Turn left to face the main aisle of the restaurant. Walk straight down the center of the room, keeping the row of individual booths on your right and the long banquette with chairs on your left. Continue past all the tables with light wood tops, heading toward the back wall. Your destination is at the end of the aisle, just before the wooden double doors."
+  },
+  "provenance": {
+    "source_key": "grscenes_20/gpt56_002",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

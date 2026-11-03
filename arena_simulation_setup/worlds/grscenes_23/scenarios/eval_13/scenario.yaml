@@ -1,0 +1,38 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [8.579, -6.33785, 17.92792]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.76
+  desired_velocity: 0.98
+  waypoints:
+  - [9.32913, -6.09516, 143.1301]
+  - [9.06438, -5.89659, 87.95459]
+  - [9.08644, -5.27884, 43.78113]
+  - [9.61594, -4.7714, -28.88658]
+  - [10.25576, -5.1244, -26.56505]
+  - [10.78527, -5.38915, -26.56505]
+- name: hunav_2
+  model: pedestrian
+  pose: [1.80575, 5.90694, 180.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.84
+  desired_velocity: 1.08
+  waypoints:
+  - [1.34244, 5.90694, -139.96974]
+  - [0.79087, 5.44363, -83.29016]
+  - [0.83499, 5.06856, -91.7357]
+  - [0.81293, 4.34049, -80.21759]
+  - [0.92324, 3.70068, -100.49148]
+  - [0.70262, 2.50929, -43.60282]
+  - [1.16593, 2.06804, -12.80427]
+  - [2.13669, 1.84741, -2.48955]
+  - [3.15158, 1.80328, -2.48955]
+robot:
+  name: robot
+  pose: [9.41738, -0.46917, -172.80154]
+  waypoints:
+  - [-7.52677, -2.60925, -172.80154]
+  behavior: crosses the store toward the northwest sales aisle

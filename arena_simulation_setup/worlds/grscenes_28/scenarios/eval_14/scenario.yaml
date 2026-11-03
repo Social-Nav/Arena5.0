@@ -1,0 +1,74 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-2.07206, -13.45654, -22.0679]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.76
+  desired_velocity: 1.0
+  waypoints:
+  - [-1.23164, -13.79725, 16.8584]
+  - [-0.48208, -13.57011, -27.55281]
+  - [0.04034, -13.84268, 4.15965]
+  - [1.28961, -13.75182, 5.44034]
+  - [2.2436, -13.66097, 5.82635]
+  - [3.35659, -13.5474, 5.82635]
+- name: hunav_2
+  model: pedestrian
+  pose: [-2.25377, -10.1403, 9.21103]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.95
+  waypoints:
+  - [-1.41335, -10.00402, -23.70264]
+  - [-0.48208, -10.41287, 0.0]
+  - [0.08577, -10.41287, -3.69138]
+  - [0.78991, -10.4583, -4.08562]
+  - [1.1079, -10.48101, 9.78241]
+  - [1.76661, -10.36744, 9.78241]
+- name: hunav_3
+  model: pedestrian
+  pose: [-1.9812, -3.87124, 15.124]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.86
+  desired_velocity: 1.12
+  waypoints:
+  - [-1.14078, -3.6441, 13.57043]
+  - [-0.48208, -3.4851, -42.61406]
+  - [0.08577, -4.00752, 17.10273]
+  - [0.97162, -3.73496, -0.0]
+  - [1.67575, -3.73496, -0.0]
+  - [2.51617, -3.73496, -0.0]
+- name: hunav_4
+  model: pedestrian
+  pose: [-2.73076, 0.33085, 5.71059]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.04
+  waypoints:
+  - [-1.59506, 0.44442, -20.55605]
+  - [-1.04993, 0.23999, 18.88608]
+  - [-0.18679, 0.53527, -1.87789]
+  - [1.19876, 0.48984, -7.96962]
+  - [2.33446, 0.33085, 2.8624]
+  - [2.78874, 0.35356, 2.8624]
+- name: hunav_5
+  model: pedestrian
+  pose: [4.94657, -12.91141, 99.46232]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.74
+  desired_velocity: 0.98
+  waypoints:
+  - [4.76485, -11.82114, 90.0]
+  - [4.76485, -11.32143, 90.0]
+  - [4.76485, -10.75358, 79.04594]
+  - [4.90114, -10.04944, 90.0]
+  - [4.90114, -9.29988, 90.0]
+  - [4.90114, -8.45947, 90.0]
+robot:
+  name: robot
+  pose: [4.15158, -16.27308, 89.62306]
+  waypoints:
+  - [4.24243, -2.46297, 89.62306]
+  behavior: Carries office materials along the wide lower corridor.

@@ -1,0 +1,45 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-0.20809, -5.19806, -4.39871]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [0.73619, -5.2707, -40.91438]
+  - [1.38993, -5.83727, -93.30187]
+  - [1.34635, -6.5927, -91.63658]
+  - [1.31729, -7.60962, -90.0]
+  - [1.31729, -9.04784, -90.0]
+- name: hunav_2
+  model: pedestrian
+  pose: [8.30499, -16.25345, 161.56506]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.2
+  waypoints:
+  - [7.43334, -15.9629, 77.125]
+  - [7.54956, -15.45444, 88.51213]
+  - [7.57862, -14.33583, 88.45184]
+  - [7.60767, -13.2608, 90.0]
+  - [7.60767, -12.06955, 90.0]
+- name: hunav_3
+  model: pedestrian
+  pose: [-2.61965, -0.21515, -13.60055]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [-1.71895, -0.43306, 4.61064]
+  - [-0.81824, -0.36043, 7.49585]
+  - [-0.2662, -0.28779, 5.49232]
+  - [0.48923, -0.21515, 25.08359]
+  - [1.17202, 0.10445, 25.08359]
+robot:
+  name: robot
+  pose: [1.49162, -15.01862, 55.83422]
+  waypoints:
+  - [8.30499, -4.98015, 55.83422]
+  behavior: travels between the far western and eastern dining lanes

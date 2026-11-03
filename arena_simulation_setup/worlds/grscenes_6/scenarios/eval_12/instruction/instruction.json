@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000001_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:06:21.154262+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight forward through the open room, passing the long bar with green stools on your left and the sage green wall with built-in shelving on your right. Continue towards the seating area in the back. Stop in the middle of the floor at the small seating arrangement, between the two light grey armchairs that are facing each other across a small, round glass table.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight forward through the open room, passing the long bar with green stools on your left and the sage green wall with built-in shelving on your right. Continue towards the seating area in the back. Stop in the middle of the floor at the small seating arrangement, between the two light grey armchairs that are facing each other across a small, round glass table."
+  },
+  "provenance": {
+    "source_key": "grscenes_6/gpt56_308",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

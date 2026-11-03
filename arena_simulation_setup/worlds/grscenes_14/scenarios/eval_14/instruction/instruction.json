@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000243_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:12:51.931704+08:00",
+  "raw_text": "{\"instruction\": \"Turn left and walk forward, keeping the white desk on your left. Head towards the corner of the room, passing a wooden bookshelf on your left and a large potted plant on your right. Stop in front of the large office printer located in the corner.\"}",
+  "parsed_result": {
+    "instruction": "Turn left and walk forward, keeping the white desk on your left. Head towards the corner of the room, passing a wooden bookshelf on your left and a large potted plant on your right. Stop in front of the large office printer located in the corner."
+  },
+  "provenance": {
+    "source_key": "grscenes_14/gpt56_267",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

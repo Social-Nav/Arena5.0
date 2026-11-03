@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000130_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:09:14.071194+08:00",
+  "raw_text": "{\"instruction\": \"Go forward through the open office space, heading towards the two potted plants against the far wall. Pass the rows of desks on your left and a grey sofa on your right. When you are near the plants, turn left and walk down the aisle. Stop in the aisle between the wall with framed pictures on your right and the row of empty black and white office chairs on your left.\"}",
+  "parsed_result": {
+    "instruction": "Go forward through the open office space, heading towards the two potted plants against the far wall. Pass the rows of desks on your left and a grey sofa on your right. When you are near the plants, turn left and walk down the aisle. Stop in the aisle between the wall with framed pictures on your right and the row of empty black and white office chairs on your left."
+  },
+  "provenance": {
+    "source_key": "grscenes_10/gpt56_153",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

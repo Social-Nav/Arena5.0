@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000176_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:15:34.867622+08:00",
+  "raw_text": "{\"instruction\": \"Turn left and walk across the carpeted area. Pass the small, child-sized activity table on your left and continue straight towards the art easel with the drawing on it. Stop on the white floor in front of the large wall of empty, backlit cubbies, just past the easel.\"}",
+  "parsed_result": {
+    "instruction": "Turn left and walk across the carpeted area. Pass the small, child-sized activity table on your left and continue straight towards the art easel with the drawing on it. Stop on the white floor in front of the large wall of empty, backlit cubbies, just past the easel."
+  },
+  "provenance": {
+    "source_key": "grscenes_16/gpt56_181",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

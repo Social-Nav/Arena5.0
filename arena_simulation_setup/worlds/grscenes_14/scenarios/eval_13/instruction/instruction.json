@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000238_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:13:49.258732+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward through the office, passing the reflective grid shelving on your right and the white desk on your left. Continue straight past the mannequin in the grey outfit and the wooden shelving. Enter the lounge area and stop in front of the peach-colored three-legged chair, with the large potted plants to your left.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward through the office, passing the reflective grid shelving on your right and the white desk on your left. Continue straight past the mannequin in the grey outfit and the wooden shelving. Enter the lounge area and stop in front of the peach-colored three-legged chair, with the large potted plants to your left."
+  },
+  "provenance": {
+    "source_key": "grscenes_14/gpt56_262",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

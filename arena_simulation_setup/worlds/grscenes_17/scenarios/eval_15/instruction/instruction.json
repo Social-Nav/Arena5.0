@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000218_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:16:17.565117+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward between the wooden bar on your left and the dining table on your right. Continue straight ahead towards the cat sleeping in its bed on the floor. Stop in front of the cat bed, directly underneath the large macrame wall hanging.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward between the wooden bar on your left and the dining table on your right. Continue straight ahead towards the cat sleeping in its bed on the floor. Stop in front of the cat bed, directly underneath the large macrame wall hanging."
+  },
+  "provenance": {
+    "source_key": "grscenes_17/gpt56_224",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

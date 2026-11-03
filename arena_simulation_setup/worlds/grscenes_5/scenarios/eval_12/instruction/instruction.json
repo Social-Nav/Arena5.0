@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000191_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:05:40.552335+08:00",
+  "raw_text": "{\"instruction\": \"From the white reception desk, proceed straight down the long hallway, passing the series of white-paneled doors on your left. At the end of the hall, enter the children's play area, walking past the small white easel. Turn left, moving alongside the large white sofa and the glass-walled offices on your right. Turn right into the training room, which is set up with rows of long wooden tables and white chairs. Walk to the far end of this room. Stop in the corner to the left of the low white partition, directly in front of the large screen mounted on the wall.\"}",
+  "parsed_result": {
+    "instruction": "From the white reception desk, proceed straight down the long hallway, passing the series of white-paneled doors on your left. At the end of the hall, enter the children's play area, walking past the small white easel. Turn left, moving alongside the large white sofa and the glass-walled offices on your right. Turn right into the training room, which is set up with rows of long wooden tables and white chairs. Walk to the far end of this room. Stop in the corner to the left of the low white partition, directly in front of the large screen mounted on the wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_5/gpt56_238",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

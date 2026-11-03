@@ -1,0 +1,30 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [5.11081, 1.47753, 91.48511]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [4.98739, 6.23815, 102.68038]
+  - [4.67001, 7.64871, 102.68038]
+- name: hunav_2
+  model: male_adult_medical_01
+  pose: [5.62214, 8.1953, -107.96914]
+  behavior_tree: BTRegularNav.xml
+  velocity: 1.0
+  desired_velocity: 1.2
+  waypoints:
+  - [4.98739, 6.23815, -90.0]
+  - [4.98739, 3.43468, -90.0]
+robot:
+  name: robot
+  pose: [1.98996, 6.07947, 3.03048]
+  social_attributes: neutral
+  waypoints:
+  - [4.98739, 6.23815, -17.41797]
+  - [6.78584, 5.67393, -17.41797]
+  behavior: moves straight through the center of the open classroom on a vertical
+    test pass, timed to avoid simultaneous occupancy of the crossing

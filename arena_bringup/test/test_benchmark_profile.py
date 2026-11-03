@@ -41,8 +41,8 @@ def test_profile_metadata_contains_content_hash():
 def test_profile_values_become_eval_defaults():
     defaults = evaluation_defaults(load_profile(PROFILE))
     assert defaults['sim'] == 'isaac_eval'
-    assert defaults['world'] == 'grscenes_20_v1'
-    assert defaults['scenario_file'] == 'default_2'
+    assert defaults['world'] == 'grscenes_1'
+    assert defaults['scenario_file'] == 'eval_1'
     assert defaults['dual_vln_device'] == 'cuda:0'
     assert defaults['internnav_external_server'] is True
     assert defaults['internnav_direct_cmd_vel'] is True

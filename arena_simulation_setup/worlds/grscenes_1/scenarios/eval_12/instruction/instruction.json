@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000258_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:00:21.397477+08:00",
+  "raw_text": "{\"instruction\": \"Begin in the hallway next to the white desk. Proceed straight ahead, passing the purple basket on your left. Enter the waiting area with the rows of blue chairs on the left. Continue walking past the medical cart on your right and stop in the open space before the potted plant in the far corner.\"}",
+  "parsed_result": {
+    "instruction": "Begin in the hallway next to the white desk. Proceed straight ahead, passing the purple basket on your left. Enter the waiting area with the rows of blue chairs on the left. Continue walking past the medical cart on your right and stop in the open space before the potted plant in the far corner."
+  },
+  "provenance": {
+    "source_key": "grscenes_1/gpt56_259",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

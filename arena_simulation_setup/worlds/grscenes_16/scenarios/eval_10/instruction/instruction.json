@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000115_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:15:22.595545+08:00",
+  "raw_text": "{\"instruction\": \"Begin in front of the low, white and wood shelving unit that has sports balls on it and a metal rack of balls to the left. Turn left and walk forward, passing the large, dark-paned window on your left. Go past the small child's table and the art easel. Continue straight ahead, following the long wall of built-in, backlit cubby shelves on your left. Walk to the end of the room and stop at the white desk with two computer monitors and a printer.\"}",
+  "parsed_result": {
+    "instruction": "Begin in front of the low, white and wood shelving unit that has sports balls on it and a metal rack of balls to the left. Turn left and walk forward, passing the large, dark-paned window on your left. Go past the small child's table and the art easel. Continue straight ahead, following the long wall of built-in, backlit cubby shelves on your left. Walk to the end of the room and stop at the white desk with two computer monitors and a printer."
+  },
+  "provenance": {
+    "source_key": "grscenes_16/gpt56_118",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

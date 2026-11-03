@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000180_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:25:16.649883+08:00",
+  "raw_text": "{\"instruction\": \"Begin in the open-plan office. Walk straight ahead down the central aisle, keeping the rows of desks on your left and the wooden bookshelves on your right. Continue forward until you reach the light-colored wooden double doors at the end of the room. Stop just before the doors.\"}",
+  "parsed_result": {
+    "instruction": "Begin in the open-plan office. Walk straight ahead down the central aisle, keeping the rows of desks on your left and the wooden bookshelves on your right. Continue forward until you reach the light-colored wooden double doors at the end of the room. Stop just before the doors."
+  },
+  "provenance": {
+    "source_key": "grscenes_28/gpt56_366",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

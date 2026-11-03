@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000094_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:06:46.836724+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward along the long, dark service counter, keeping it on your right. Pass the low, grey cushioned seating areas on your left. Continue straight until you reach the end of the counter. Stop in the corner by the bar stools, near the armchair with the orange and grey pillow and the small, illuminated white table.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward along the long, dark service counter, keeping it on your right. Pass the low, grey cushioned seating areas on your left. Continue straight until you reach the end of the counter. Stop in the corner by the bar stools, near the armchair with the orange and grey pillow and the small, illuminated white table."
+  },
+  "provenance": {
+    "source_key": "grscenes_7/gpt56_103",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

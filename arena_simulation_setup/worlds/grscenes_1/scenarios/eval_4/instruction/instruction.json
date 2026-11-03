@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000088_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:00:03.003101+08:00",
+  "raw_text": "{\"instruction\": \"Begin in the white hallway. Walk forward, passing the blue reception desk on your right. Continue straight down the corridor, moving past the open doorway on your left. Proceed to the end of the hall and stop in front of the large black door.\"}",
+  "parsed_result": {
+    "instruction": "Begin in the white hallway. Walk forward, passing the blue reception desk on your right. Continue straight down the corridor, moving past the open doorway on your left. Proceed to the end of the hall and stop in front of the large black door."
+  },
+  "provenance": {
+    "source_key": "grscenes_1/gpt56_089",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

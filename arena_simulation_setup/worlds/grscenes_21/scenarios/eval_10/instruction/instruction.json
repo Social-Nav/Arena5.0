@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000148_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:19:56.109779+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward on the grey carpet with orange stripes, passing the white counter on your left and the white desk on your right. Continue straight towards the yellow wall. Stop in the corner in front of the stainless steel refrigerator, with the water cooler to your left.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward on the grey carpet with orange stripes, passing the white counter on your left and the white desk on your right. Continue straight towards the yellow wall. Stop in the corner in front of the stainless steel refrigerator, with the water cooler to your left."
+  },
+  "provenance": {
+    "source_key": "grscenes_21/gpt56_216",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

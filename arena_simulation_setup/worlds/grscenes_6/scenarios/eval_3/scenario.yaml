@@ -1,0 +1,39 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-0.65725, -9.91958, 128.15723]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.74
+  desired_velocity: 0.95
+  waypoints:
+  - [-0.90171, -9.60845, 19.44004]
+  - [-0.52391, -9.47511, 6.3402]
+  - [-0.12388, -9.43066, -39.2894]
+  - [0.36503, -9.83068, 56.30993]
+  - [0.67616, -9.36399, -26.56505]
+  - [1.16508, -9.60845, -42.8789]
+  - [1.47621, -9.89735, 50.52754]
+  - [1.78734, -9.51955, 50.52754]
+- name: hunav_2
+  model: construction_worker
+  pose: [3.49855, -2.40803, -76.6075]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [3.60967, -2.87472, -100.49148]
+  - [3.49855, -3.47476, -77.19573]
+  - [3.60967, -3.96368, -103.3925]
+  - [3.49855, -4.43037, -91.50744]
+  - [3.47633, -5.27486, -86.82017]
+  - [3.49855, -5.67489, -139.08562]
+  - [3.1652, -5.96379, -72.29957]
+  - [3.49855, -7.0083, -72.29957]
+robot:
+  name: robot
+  pose: [5.27643, -9.564, 90.33902]
+  waypoints:
+  - [5.23198, -2.05246, 90.33902]
+  behavior: navigates from the lower lounge toward the east corridor

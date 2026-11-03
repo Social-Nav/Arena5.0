@@ -1,0 +1,39 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [1.11335, -4.7346, 129.61069]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [0.76218, -4.31027, -175.23635]
+  - [0.23543, -4.35417, 108.43495]
+  - [0.11837, -4.003, 57.72436]
+  - [0.46954, -3.44698, 137.48955]
+  - [0.11837, -3.12508, 113.42869]
+  - [-0.07185, -2.68612, 34.28688]
+  - [0.25006, -2.46664, 165.96376]
+  - [0.19153, -2.45201, 99.16235]
+  - [0.11837, -1.99841, 43.72697]
+  - [0.45491, -1.67651, 43.72697]
+- name: hunav_2
+  model: pedestrian
+  pose: [-7.49027, -5.62715, 90.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [-7.49027, -4.92482, 90.0]
+  - [-7.49027, -4.31027, 90.0]
+  - [-7.49027, -3.6372, -34.21569]
+  - [-7.12447, -3.88594, -71.56505]
+  - [-6.97815, -4.3249, 1.0e-05]
+  - [-6.37824, -4.3249, 1.0e-05]
+robot:
+  name: robot
+  pose: [-3.86153, -2.45201, -21.89513]
+  waypoints:
+  - [0.76218, -4.31027, -21.89513]
+  behavior: Navigates from the office passage to the waiting area perimeter.

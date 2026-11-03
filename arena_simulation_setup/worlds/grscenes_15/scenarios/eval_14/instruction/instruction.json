@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000000_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:14:54.488248+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward into the grocery aisle, passing the circular wooden display stand on your right and the chest freezer on your left. Continue straight down the long aisle between the shelves. When you reach the end of the aisle, make a right turn. Stop in front of the shelves with the large, open bulk bins filled with a white, granular product.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward into the grocery aisle, passing the circular wooden display stand on your right and the chest freezer on your left. Continue straight down the long aisle between the shelves. When you reach the end of the aisle, make a right turn. Stop in front of the shelves with the large, open bulk bins filled with a white, granular product."
+  },
+  "provenance": {
+    "source_key": "grscenes_15/gpt56_243",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,31 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-1.12642, -6.11825, 88.72697]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [-1.10019, -4.93795, 2.72631]
+  - [-0.54939, -4.91172, 84.55967]
+  - [-0.49693, -4.36091, -15.9454]
+  - [0.23748, -4.57074, -15.9454]
+- name: hunav_2
+  model: doctor
+  pose: [-10.96226, 4.34708, -1.97493]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [-10.20162, 4.32086, -13.49573]
+  - [-9.5459, 4.16348, -77.19573]
+  - [-9.41476, 3.58645, -56.30993]
+  - [-9.25738, 3.35039, -56.30993]
+robot:
+  name: robot
+  pose: [1.18172, 4.13725, -154.14999]
+  waypoints:
+  - [-12.35239, -2.41997, -154.14999]
+  behavior: heads from the east lobby toward the north wing

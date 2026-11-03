@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000273_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:13:49.428315+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight forward through the office space, passing the white desk on your left and the large, white grid shelving unit on your right. Continue past the person and the white pillar, heading towards the lounge area ahead. Enter the lounge area with the large potted plants and stop at the light wood coffee table in front of the white sofa.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight forward through the office space, passing the white desk on your left and the large, white grid shelving unit on your right. Continue past the person and the white pillar, heading towards the lounge area ahead. Enter the lounge area with the large potted plants and stop at the light wood coffee table in front of the white sofa."
+  },
+  "provenance": {
+    "source_key": "grscenes_14/gpt56_304",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

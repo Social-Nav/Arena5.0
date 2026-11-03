@@ -1,0 +1,31 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [-8.0916, 7.3409, -86.68222]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.1
+  waypoints:
+  - [-8.02795, 6.24281, -107.4027]
+  - [-8.69635, 4.11028, -90.0]
+  - [-8.69635, 3.10767, -168.97655]
+  - [-9.92176, 2.86896, 168.11134]
+  - [-10.22413, 2.93262, 94.08562]
+  - [-10.25596, 3.37822, -95.71059]
+  - [-10.39919, 1.94592, -80.10608]
+  - [-10.16048, 0.57729, -90.0]
+  - [-10.16048, 0.11577, -90.0]
+robot:
+  name: robot
+  pose: [-9.92176, 2.86896, 11.02345]
+  social_attributes: aggressive
+  social_yielding: true
+  waypoints:
+  - [-8.69635, 3.10767, 90.0]
+  - [-8.69635, 4.11028, 40.46223]
+  - [-8.15526, 4.5718, 79.2157]
+  - [-8.02795, 5.2402, 79.2157]
+  behavior: enter the office from the doorway-side waiting passage and stop inside
+    after a safe door interaction

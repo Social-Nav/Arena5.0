@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000006_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:25:05.487604+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward on the grey tiled floor, keeping the long grey curtains on your left and the rows of office desks on your right. Continue straight down the main aisle, passing a long conference table and a wooden bookshelf on your right. Proceed forward as the floor changes from tile to grey carpet. Stop at the end of the aisle in front of the large window, with the lit, built-in shelving units on your right.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward on the grey tiled floor, keeping the long grey curtains on your left and the rows of office desks on your right. Continue straight down the main aisle, passing a long conference table and a wooden bookshelf on your right. Proceed forward as the floor changes from tile to grey carpet. Stop at the end of the aisle in front of the large window, with the lit, built-in shelving units on your right."
+  },
+  "provenance": {
+    "source_key": "grscenes_28/gpt56_158",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

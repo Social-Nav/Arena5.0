@@ -1,0 +1,52 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [5.82257, -4.99084, -78.02387]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.75
+  desired_velocity: 0.95
+  waypoints:
+  - [5.93474, -5.51963, -7.90716]
+  - [6.5116, -5.59975, -146.97613]
+  - [6.19112, -5.80805, -78.23171]
+  - [6.27124, -6.19263, -35.90972]
+  - [6.73593, -6.52913, 60.25512]
+  - [6.92822, -6.19263, 112.24902]
+  - [6.784, -5.8401, 34.38035]
+  - [7.39291, -5.42348, -98.53076]
+  - [7.29676, -6.06444, -98.53076]
+- name: hunav_2
+  model: construction_worker
+  pose: [2.44155, -2.77955, -96.5198]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.85
+  desired_velocity: 1.05
+  waypoints:
+  - [2.37745, -3.34039, -88.5679]
+  - [2.39347, -3.98134, -86.00909]
+  - [2.44155, -4.67036, -82.50414]
+  - [2.52166, -5.27927, -86.00909]
+  - [2.56974, -5.96829, 2.48955]
+  - [3.30683, -5.93625, -115.34618]
+  - [3.16262, -6.2407, -115.34618]
+- name: hunav_3
+  model: pedestrian
+  pose: [-1.90091, -1.77005, 81.02737]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [-1.80477, -1.16115, 104.74356]
+  - [-1.96501, -0.55224, 64.0577]
+  - [-1.67658, 0.04064, -170.07376]
+  - [-2.31753, -0.07153, 180.0]
+  - [-3.19884, -0.07153, -146.07021]
+  - [-4.08015, -0.66441, -146.07021]
+robot:
+  name: robot
+  pose: [6.784, -5.8401, 140.56874]
+  waypoints:
+  - [-0.25046, -0.0555, 140.56874]
+  behavior: Travels from the lower central floor to the upper-right aisle.

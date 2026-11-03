@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000218_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:07:21.184227+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward through the cafe, keeping the dark textured coffee bar on your right. Go past the low modern coffee tables on your left and continue towards the back of the room. Bear left towards the dining area with the wooden oval tables. Your destination is the open space in front of the beige armchair with the colorful, leafy-patterned pillow.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward through the cafe, keeping the dark textured coffee bar on your right. Go past the low modern coffee tables on your left and continue towards the back of the room. Bear left towards the dining area with the wooden oval tables. Your destination is the open space in front of the beige armchair with the colorful, leafy-patterned pillow."
+  },
+  "provenance": {
+    "source_key": "grscenes_7/gpt56_246",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

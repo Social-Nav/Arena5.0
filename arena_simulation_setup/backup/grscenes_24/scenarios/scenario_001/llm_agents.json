@@ -1,0 +1,63 @@
+{
+  "agents": [
+    {
+      "name": "hunav_1",
+      "role": "student crossing right",
+      "model": "female_adult_business_02",
+      "from_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "spawn_waypoint": "wp_r00_classroom_052",
+      "waypoints": [
+        "wp_r00_classroom_063",
+        "wp_r00_classroom_075"
+      ],
+      "velocity": 0.7,
+      "desired_velocity": 0.9,
+      "behavior": "walks across the open classroom from left to right, yielding timing at the center crossing"
+    },
+    {
+      "name": "hunav_2",
+      "role": "student crossing left",
+      "model": "male_adult_medical_01",
+      "from_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "spawn_waypoint": "wp_r00_classroom_056",
+      "waypoints": [
+        "wp_r00_classroom_063",
+        "wp_r00_classroom_062"
+      ],
+      "velocity": 1.0,
+      "desired_velocity": 1.2,
+      "behavior": "crosses the classroom from right to left and passes the center point before the slower pedestrian"
+    }
+  ],
+  "robot": {
+    "name": "robot",
+    "from_region": {
+      "region_id": 0,
+      "label": "classroom"
+    },
+    "to_region": {
+      "region_id": 0,
+      "label": "classroom"
+    },
+    "start_waypoint": "wp_r00_classroom_046",
+    "waypoints": [
+      "wp_r00_classroom_063",
+      "wp_r00_classroom_073"
+    ],
+    "behavior": "moves straight through the center of the open classroom on a vertical test pass, timed to avoid simultaneous occupancy of the crossing"
+  }
+}

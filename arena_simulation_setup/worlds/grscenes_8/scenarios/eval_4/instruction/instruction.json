@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000112_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:07:49.381518+08:00",
+  "raw_text": "{\"instruction\": \"Start in the bright white hallway. Walk straight ahead, passing the curved white reception desk on your left. Continue forward past the long white sofa, also on your left. Stop in the seating area in front of the small chrome table that is between the white sofa and the row of blue chairs.\"}",
+  "parsed_result": {
+    "instruction": "Start in the bright white hallway. Walk straight ahead, passing the curved white reception desk on your left. Continue forward past the long white sofa, also on your left. Stop in the seating area in front of the small chrome table that is between the white sofa and the row of blue chairs."
+  },
+  "provenance": {
+    "source_key": "grscenes_8/gpt56_117",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

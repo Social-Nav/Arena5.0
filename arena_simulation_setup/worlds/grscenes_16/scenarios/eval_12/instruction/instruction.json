@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000159_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:15:31.318353+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward, passing the metal rack of balls on your right, and step from the carpet onto the white floor. Continue straight down the hallway, going past the child's drawing on the easel to your left. Proceed along the long wall of lit-up wooden cubbies, heading towards the desk area at the far end. Stop in the hallway before you reach the desk.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward, passing the metal rack of balls on your right, and step from the carpet onto the white floor. Continue straight down the hallway, going past the child's drawing on the easel to your left. Proceed along the long wall of lit-up wooden cubbies, heading towards the desk area at the far end. Stop in the hallway before you reach the desk."
+  },
+  "provenance": {
+    "source_key": "grscenes_16/gpt56_163",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

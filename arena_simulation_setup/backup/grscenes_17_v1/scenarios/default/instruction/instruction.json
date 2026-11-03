@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T07:12:41",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk forward through the dining area, keeping the wooden bar counter to your left. Pass the large round dining table and its woven chairs on your right. Continue straight towards the back wall. As you approach the end of the bar, you'll see a cat sleeping in a pet bed on the floor. Stop near the bar stools, just in front of the macrame wall hanging.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk forward through the dining area, keeping the wooden bar counter to your left. Pass the large round dining table and its woven chairs on your right. Continue straight towards the back wall. As you approach the end of the bar, you'll see a cat sleeping in a pet bed on the floor. Stop near the bar stools, just in front of the macrame wall hanging."
+  }
+}

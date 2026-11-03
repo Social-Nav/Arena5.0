@@ -1,0 +1,22 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: construction_worker
+  pose: [1.66343, -1.23372, -90.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [1.66343, -1.94811, 45.0]
+  - [2.18549, -1.42605, -9.2726]
+  - [2.85866, -1.53596, -6.65443]
+  - [3.68296, -1.63213, 92.08257]
+  - [3.65548, -0.87652, 69.8637]
+  - [3.95773, -0.05222, 69.8637]
+robot:
+  name: robot
+  pose: [4.6996, -0.904, 60.53113]
+  waypoints:
+  - [6.78782, 2.79161, 60.53113]
+  behavior: Moves supplies through the central opening to the east.

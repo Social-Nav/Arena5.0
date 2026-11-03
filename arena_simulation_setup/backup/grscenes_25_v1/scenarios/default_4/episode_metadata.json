@@ -1,0 +1,25 @@
+{
+  "schema": "arena.grscenes_episode_metadata",
+  "schema_version": 1,
+  "episode": {
+    "world": "grscenes_25_v1",
+    "scenario": "default_4",
+    "source_world": "grscenes_25",
+    "source_episode_index": 4
+  },
+  "reference_trajectory": {
+    "length_m": 9.95583724975586,
+    "n_frames": 410,
+    "duration_s": 13.6333332061767,
+    "trajectory_file": "grscenes_25/trajectories/episode_000004.npz",
+    "pose_column": "pose.132cm_30deg",
+    "robot_scale": 0.8
+  },
+  "provenance": {
+    "source_type": "provided_reference_trajectory_length_table",
+    "source_file": "reference_trajectory_lengths.csv.xlsx",
+    "source_file_sha256": "4f7d00d34e317a7d86e60bfaa9356de83eb5e0cd2e74e70536442cc3702baac9",
+    "source_table_row": 115,
+    "source_table_data_rows": 133
+  }
+}

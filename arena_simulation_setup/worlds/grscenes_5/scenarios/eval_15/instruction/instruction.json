@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000224_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:05:30.742976+08:00",
+  "raw_text": "{\"instruction\": \"Go straight down the hallway with the light wood flooring. Enter the room at the end, passing a child's drawing easel on your right. Continue past the low white toy shelves and turn left at the white couch. Walk towards the glass-walled offices, then turn right to face the training room with rows of desks and chairs. Walk forward between the desks and stop in the corner in front of the large screen on the wall.\"}",
+  "parsed_result": {
+    "instruction": "Go straight down the hallway with the light wood flooring. Enter the room at the end, passing a child's drawing easel on your right. Continue past the low white toy shelves and turn left at the white couch. Walk towards the glass-walled offices, then turn right to face the training room with rows of desks and chairs. Walk forward between the desks and stop in the corner in front of the large screen on the wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_5/gpt56_275",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000184_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:02:10.224375+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the narrow path between the large wooden bookshelf on your left and the glass sliding doors on your right. Continue forward on the grey speckled carpet, passing the end of the bookshelf. Proceed straight into the hallway, with the wooden reception desk on your left and a white wall on your right. Stop in the middle of this hallway before you reach the next set of doors.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the narrow path between the large wooden bookshelf on your left and the glass sliding doors on your right. Continue forward on the grey speckled carpet, passing the end of the bookshelf. Proceed straight into the hallway, with the wooden reception desk on your left and a white wall on your right. Stop in the middle of this hallway before you reach the next set of doors."
+  },
+  "provenance": {
+    "source_key": "grscenes_3/gpt56_223",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

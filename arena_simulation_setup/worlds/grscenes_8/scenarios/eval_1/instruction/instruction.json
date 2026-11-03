@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000018_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:07:40.152118+08:00",
+  "raw_text": "{\"instruction\": \"Proceed straight down the long corridor with the shiny white floor and light marble walls. Walk past the curved white reception desk on your left. Continue forward past the modern white sofa and into the waiting area. Stop in the open space in front of the row of blue and silver chairs, with the water cooler and potted plant to your left.\"}",
+  "parsed_result": {
+    "instruction": "Proceed straight down the long corridor with the shiny white floor and light marble walls. Walk past the curved white reception desk on your left. Continue forward past the modern white sofa and into the waiting area. Stop in the open space in front of the row of blue and silver chairs, with the water cooler and potted plant to your left."
+  },
+  "provenance": {
+    "source_key": "grscenes_8/gpt56_021",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

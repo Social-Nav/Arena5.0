@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000030_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:12:10.554938+08:00",
+  "raw_text": "{\"instruction\": \"Turn left, walking past the large white shelving unit on your right. Continue straight across the grey carpet with orange accents, heading towards the large window with white horizontal blinds. Stop directly in front of the window.\"}",
+  "parsed_result": {
+    "instruction": "Turn left, walking past the large white shelving unit on your right. Continue straight across the grey carpet with orange accents, heading towards the large window with white horizontal blinds. Stop directly in front of the window."
+  },
+  "provenance": {
+    "source_key": "grscenes_14/gpt56_036",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

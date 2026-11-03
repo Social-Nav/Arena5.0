@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000004_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:03:27.840074+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward past the produce display and turn left to go down the main aisle, keeping the long white checkout counter on your left. At the end of the counter, turn right into an aisle filled with snacks in colorful boxes. Walk to the end of this aisle and turn left. Proceed forward past the shelves of kitchenware on your right and clothing on your left. Make a final right turn at the end of the aisle. Stop in the corner in front of the white wall.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward past the produce display and turn left to go down the main aisle, keeping the long white checkout counter on your left. At the end of the counter, turn right into an aisle filled with snacks in colorful boxes. Walk to the end of this aisle and turn left. Proceed forward past the shelves of kitchenware on your right and clothing on your left. Make a final right turn at the end of the aisle. Stop in the corner in front of the white wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_4/gpt56_133",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

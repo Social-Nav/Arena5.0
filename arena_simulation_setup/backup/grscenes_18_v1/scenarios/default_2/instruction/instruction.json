@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T07:29:44",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk straight down the aisle between the wooden bookshelf on your left and the white bookshelf on your right. Continue forward, heading towards the white chest freezer at the end of the aisle. Stop directly in front of the freezer.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk straight down the aisle between the wooden bookshelf on your left and the white bookshelf on your right. Continue forward, heading towards the white chest freezer at the end of the aisle. Stop directly in front of the freezer."
+  }
+}

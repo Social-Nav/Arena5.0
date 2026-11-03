@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000007_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:15:37.672402+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward, passing the wooden bar counter on your right and the white textured counter on your left. Continue straight towards the white double doors with gold trim. Stop in the corner just before the doors, with the white counter to your left.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward, passing the wooden bar counter on your right and the white textured counter on your left. Continue straight towards the white double doors with gold trim. Stop in the corner just before the doors, with the white counter to your left."
+  },
+  "provenance": {
+    "source_key": "grscenes_17/gpt56_008",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000311_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:00:32.610661+08:00",
+  "raw_text": "{\"instruction\": \"Go straight down the white hallway, passing the reception desk and the purple basket on your left. Walk past the silver medical cart on your right and enter the waiting area with the blue chairs. Continue forward along the left side of the chairs and stop in the far corner next to the potted plant.\"}",
+  "parsed_result": {
+    "instruction": "Go straight down the white hallway, passing the reception desk and the purple basket on your left. Walk past the silver medical cart on your right and enter the waiting area with the blue chairs. Continue forward along the left side of the chairs and stop in the far corner next to the potted plant."
+  },
+  "provenance": {
+    "source_key": "grscenes_1/gpt56_312",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

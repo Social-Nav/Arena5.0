@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000004_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:02:14.305593+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward down the hallway with the light wood bookcase on your left and the large glass wall on your right. Continue straight along the grey carpeted floor. When you pass the end of the glass wall, turn left at the light wood reception desk. Proceed straight down the short corridor, and stop in front of the black-framed double doors at the end of the hall.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward down the hallway with the light wood bookcase on your left and the large glass wall on your right. Continue straight along the grey carpeted floor. When you pass the end of the glass wall, turn left at the light wood reception desk. Proceed straight down the short corridor, and stop in front of the black-framed double doors at the end of the hall."
+  },
+  "provenance": {
+    "source_key": "grscenes_3/gpt56_156",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

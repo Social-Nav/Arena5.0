@@ -1,0 +1,23 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: construction_worker
+  pose: [7.82613, -0.28566, 160.42688]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [7.03269, -0.00355, 81.8699]
+  - [7.10322, 0.49014, -163.21735]
+  - [5.99241, 0.15513, 79.87533]
+  - [6.08057, 0.64883, 94.26789]
+  - [5.99241, 1.83017, 73.8355]
+  - [6.34505, 3.04677, 16.55707]
+  - [6.99743, 3.24072, 16.55707]
+robot:
+  name: robot
+  pose: [3.66499, 3.89311, 101.01525]
+  waypoints:
+  - [2.76576, 8.51267, 101.01525]
+  behavior: crosses the clear middle toward the right-side teaching area

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000084_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:01:48.442228+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward past the end of the light wood bookshelves on your left. Turn left and proceed down the short corridor, keeping the large glass windows on your right and a low wooden partition on your left. At the end of the corridor, turn left and stop in the small area in front of the next set of glass doors.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward past the end of the light wood bookshelves on your left. Turn left and proceed down the short corridor, keeping the large glass windows on your right and a low wooden partition on your left. At the end of the corridor, turn left and stop in the small area in front of the next set of glass doors."
+  },
+  "provenance": {
+    "source_key": "grscenes_3/gpt56_099",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000002_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:03:32.452756+08:00",
+  "raw_text": "{\"instruction\": \"Turn left from the produce stand and walk straight, keeping the long white checkout counter on your left and wooden shelves on your right. At the end of the counter, turn right into an aisle with wooden and metal mesh shelves on both sides. Walk to the end of this aisle, then turn left and take another immediate left into the next aisle. Proceed forward, passing shelves of kitchenware on your right. At the end of the aisle, turn right. Stop in the clothing section at the end of the aisle, in front of the wooden wall.\"}",
+  "parsed_result": {
+    "instruction": "Turn left from the produce stand and walk straight, keeping the long white checkout counter on your left and wooden shelves on your right. At the end of the counter, turn right into an aisle with wooden and metal mesh shelves on both sides. Walk to the end of this aisle, then turn left and take another immediate left into the next aisle. Proceed forward, passing shelves of kitchenware on your right. At the end of the aisle, turn right. Stop in the clothing section at the end of the aisle, in front of the wooden wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_4/gpt56_194",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

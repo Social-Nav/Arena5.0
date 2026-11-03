@@ -1,0 +1,47 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: police
+  pose: [7.90062, 3.01142, -63.92465]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.1
+  waypoints:
+  - [8.2166, 2.36572, -86.30861]
+  - [8.27155, 1.51394, -94.14462]
+  - [8.20286, 0.566, -108.43495]
+  - [7.99679, -0.05222, -152.1759]
+  - [7.50221, -0.31325, 108.06047]
+  - [7.29613, 0.31871, 108.06047]
+- name: hunav_2
+  model: pedestrian
+  pose: [4.20502, -2.34652, 1.21888]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [4.85072, -2.33278, -12.69958]
+  - [5.82614, -2.55259, 45.0]
+  - [6.03221, -2.34652, 32.00538]
+  - [6.47184, -2.07175, 98.84181]
+  - [6.37567, -1.45353, 98.84181]
+- name: hunav_3
+  model: pedestrian
+  pose: [2.50147, 2.09095, 81.8699]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [2.5839, 2.66796, -23.96249]
+  - [3.32577, 2.33824, 18.43494]
+  - [3.57305, 2.42067, -43.15239]
+  - [4.45231, 1.59637, 30.6186]
+  - [5.12548, 1.99478, 14.28109]
+  - [5.88109, 2.18712, 14.28109]
+robot:
+  name: robot
+  pose: [3.07848, -3.23951, 51.64445]
+  waypoints:
+  - [7.09006, 1.82992, 51.64445]
+  behavior: navigates diagonally across the broad public floor

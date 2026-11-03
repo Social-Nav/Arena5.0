@@ -1,0 +1,38 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [0.99386, -6.90586, 145.30485]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.1
+  waypoints:
+  - [0.6724, -6.68331, -137.29061]
+  - [0.35094, -6.98004, -180.0]
+  - [-0.09416, -6.98004, 62.24146]
+  - [0.15312, -6.51022, 133.15239]
+  - [-0.21779, -6.11458, 40.23636]
+  - [0.10367, -5.84257, 104.93142]
+  - [0.00476, -5.47166, 98.1301]
+  - [-0.09416, -4.77928, 98.1301]
+- name: hunav_2
+  model: pedestrian
+  pose: [1.01859, 0.16625, -122.73523]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [0.79604, -0.17993, 179.99999]
+  - [0.35094, -0.17993, -96.70984]
+  - [0.30149, -0.6003, 179.99999]
+  - [-0.29198, -0.6003, 132.70939]
+  - [-0.58871, -0.27884, -111.80141]
+  - [-0.83599, -0.89704, -68.19859]
+  - [-0.58871, -1.51523, -68.19859]
+robot:
+  name: robot
+  pose: [-0.7618, -8.1917, 83.80738]
+  waypoints:
+  - [0.15312, 0.24044, 83.80738]
+  behavior: navigates across the open lounge while keeping to the aisle

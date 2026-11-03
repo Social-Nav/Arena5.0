@@ -1,0 +1,35 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-0.10881, -3.83026, 71.56505]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [0.08353, -3.25325, -63.43495]
+  - [0.48194, -4.05007, -36.02737]
+  - [0.78418, -4.26988, -24.34109]
+  - [1.36119, -4.53091, 22.16635]
+  - [1.73212, -4.37979, 7.43141]
+  - [2.68006, -4.25614, 7.43141]
+- name: hunav_2
+  model: pedestrian
+  pose: [4.42483, 3.65712, -24.77514]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [5.49642, 3.16254, -68.4774]
+  - [5.88109, 2.18712, -0.0]
+  - [6.47184, 2.18712, 18.43495]
+  - [6.84277, 2.31076, 28.76765]
+  - [7.54342, 2.69544, -84.95755]
+  - [7.62585, 1.76123, -84.95755]
+robot:
+  name: robot
+  pose: [4.24623, -1.79699, 51.65262]
+  waypoints:
+  - [7.41978, 2.2146, 51.65262]
+  behavior: Traverses the open corridor toward the upper-right side.

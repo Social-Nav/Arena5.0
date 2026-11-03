@@ -1,0 +1,10 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "instruction_mode": "object_as_goal",
+  "timestamp": "2026-08-18T09:08:14",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk forward past the white desks and turn right to walk down the aisle between the desks. Walk straight ahead towards the conference table and stop near the wooden bookshelf in the corner.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk forward past the white desks and turn right to walk down the aisle between the desks. Walk straight ahead towards the conference table and stop near the wooden bookshelf in the corner."
+  }
+}

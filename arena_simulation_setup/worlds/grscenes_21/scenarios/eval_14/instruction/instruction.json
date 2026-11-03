@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000226_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:20:50.270152+08:00",
+  "raw_text": "{\"instruction\": \"Begin in the open office area with the tan leather sofa on your left. Walk straight forward, passing the large white kitchen island on your left and a white desk on your right. Head towards the back wall with the yellow accent and the refrigerator. Before you reach the water cooler, turn left and proceed down the narrow walkway between the kitchen island and the main counter. Stop at the end of the walkway, in front of the window.\"}",
+  "parsed_result": {
+    "instruction": "Begin in the open office area with the tan leather sofa on your left. Walk straight forward, passing the large white kitchen island on your left and a white desk on your right. Head towards the back wall with the yellow accent and the refrigerator. Before you reach the water cooler, turn left and proceed down the narrow walkway between the kitchen island and the main counter. Stop at the end of the walkway, in front of the window."
+  },
+  "provenance": {
+    "source_key": "grscenes_21/gpt56_311",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

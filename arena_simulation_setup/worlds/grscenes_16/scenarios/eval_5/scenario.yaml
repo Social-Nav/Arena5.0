@@ -1,0 +1,39 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: construction_worker
+  pose: [1.35034, 0.32329, 180.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [0.60095, 0.32329, -160.90651]
+  - [-0.22816, 0.03629, -137.72631]
+  - [-0.57894, -0.2826, -50.19443]
+  - [-0.33977, -0.5696, -49.39871]
+  - [0.23423, -1.23927, 160.55996]
+  - [-0.03683, -1.1436, -126.8699]
+  - [-0.37166, -1.59005, -26.56505]
+  - [0.04289, -1.79733, 8.29715]
+  - [0.80823, -1.68572, 8.29715]
+- name: hunav_2
+  model: pedestrian
+  pose: [-3.17789, -3.902, -43.83086]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.85
+  desired_velocity: 1.05
+  waypoints:
+  - [-2.77928, -4.28466, 4.2364]
+  - [-2.34878, -4.25277, 15.9454]
+  - [-2.23717, -4.22089, -24.30454]
+  - [-1.74289, -4.44411, -102.26477]
+  - [-1.82261, -4.81083, -165.96375]
+  - [-2.26905, -4.92244, 178.1524]
+  - [-2.76333, -4.9065, 178.1524]
+robot:
+  name: robot
+  pose: [1.11117, -1.49438, 164.24883]
+  waypoints:
+  - [-3.8635, -0.09127, 164.24883]
+  behavior: navigates from the central classroom floor toward the front-right side

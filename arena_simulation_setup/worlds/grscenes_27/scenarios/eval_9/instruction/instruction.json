@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000182_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:23:52.957836+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward into the large white room. On your right, you will see a white sectional sofa with yellow pillows and a yellow pouf. Head towards the seating area on your left, which has several blue and white chairs arranged around small tables. Your destination is next to the cluster of blue chairs and a small round white table.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward into the large white room. On your right, you will see a white sectional sofa with yellow pillows and a yellow pouf. Head towards the seating area on your left, which has several blue and white chairs arranged around small tables. Your destination is next to the cluster of blue chairs and a small round white table."
+  },
+  "provenance": {
+    "source_key": "grscenes_27/gpt56_183",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

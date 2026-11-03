@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000049_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:07:47.617946+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward down the hallway with the shiny white floor, keeping the curved white reception desk on your left. Continue past the white sofa and enter the waiting area. Stop in front of the row of blue chairs, with the water cooler and potted plant to your left.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward down the hallway with the shiny white floor, keeping the curved white reception desk on your left. Continue past the white sofa and enter the waiting area. Stop in front of the row of blue chairs, with the water cooler and potted plant to your left."
+  },
+  "provenance": {
+    "source_key": "grscenes_8/gpt56_053",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

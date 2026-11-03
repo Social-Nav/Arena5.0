@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000197_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:15:36.472782+08:00",
+  "raw_text": "{\"instruction\": \"Start in front of the metal rack of sports balls and turn left. Walk along the wall of large windows, passing a child's art easel on your left. Continue straight, following the long wall of backlit wooden and white cubby shelves. Proceed to the end of the shelves until you reach the office area. Stop in front of the white desk with the two computer monitors and the printer.\"}",
+  "parsed_result": {
+    "instruction": "Start in front of the metal rack of sports balls and turn left. Walk along the wall of large windows, passing a child's art easel on your left. Continue straight, following the long wall of backlit wooden and white cubby shelves. Proceed to the end of the shelves until you reach the office area. Stop in front of the white desk with the two computer monitors and the printer."
+  },
+  "provenance": {
+    "source_key": "grscenes_16/gpt56_202",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

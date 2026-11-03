@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000272_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:23:32.938521+08:00",
+  "raw_text": "{\"instruction\": \"Begin in the large white room with the shopping cart on your left. Walk straight ahead, passing between the two white sofas. Continue moving forward towards the colorful abstract painting on the far wall. Your destination is the space between the two sofas, directly in front of the painting.\"}",
+  "parsed_result": {
+    "instruction": "Begin in the large white room with the shopping cart on your left. Walk straight ahead, passing between the two white sofas. Continue moving forward towards the colorful abstract painting on the far wall. Your destination is the space between the two sofas, directly in front of the painting."
+  },
+  "provenance": {
+    "source_key": "grscenes_25/gpt56_273",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

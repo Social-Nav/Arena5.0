@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000006_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:01:07.941006+08:00",
+  "raw_text": "{\"instruction\": \"Go straight down the grocery aisle, passing the shelves of products on both your left and right. At the end of the aisle, turn right and walk past the endcap. Make an immediate left turn into the next aisle. Walk forward and stop in front of the circular, three-tiered wooden display shelf.\"}",
+  "parsed_result": {
+    "instruction": "Go straight down the grocery aisle, passing the shelves of products on both your left and right. At the end of the aisle, turn right and walk past the endcap. Make an immediate left turn into the next aisle. Walk forward and stop in front of the circular, three-tiered wooden display shelf."
+  },
+  "provenance": {
+    "source_key": "grscenes_2/gpt56_208",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

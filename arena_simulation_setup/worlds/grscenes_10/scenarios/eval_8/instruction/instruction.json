@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000115_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:09:05.402774+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward through the white room, passing the grey leather sofa on your right. Continue straight towards the large, grey, geometrically patterned double doors. Stop directly in front of the doors, which are located next to a white shelving unit.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward through the white room, passing the grey leather sofa on your right. Continue straight towards the large, grey, geometrically patterned double doors. Stop directly in front of the doors, which are located next to a white shelving unit."
+  },
+  "provenance": {
+    "source_key": "grscenes_10/gpt56_137",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

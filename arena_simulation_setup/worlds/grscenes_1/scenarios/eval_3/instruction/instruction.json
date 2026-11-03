@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000063_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:00:11.970854+08:00",
+  "raw_text": "{\"instruction\": \"In the white waiting room, walk straight ahead. Keep the rows of blue chairs on your left and pass the silver medical cart on your right. Continue forward until you reach the corner. Stop in front of the potted plant.\"}",
+  "parsed_result": {
+    "instruction": "In the white waiting room, walk straight ahead. Keep the rows of blue chairs on your left and pass the silver medical cart on your right. Continue forward until you reach the corner. Stop in front of the potted plant."
+  },
+  "provenance": {
+    "source_key": "grscenes_1/gpt56_064",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

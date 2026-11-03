@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000060_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:23:44.790797+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight forward across the large, empty white room. Keep the white counter and stool to your left as you proceed towards the wall of white panels directly ahead. Stop in the middle of the open floor space.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight forward across the large, empty white room. Keep the white counter and stool to your left as you proceed towards the wall of white panels directly ahead. Stop in the middle of the open floor space."
+  },
+  "provenance": {
+    "source_key": "grscenes_27/gpt56_061",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T09:53:26",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk straight across the room with the grey terrazzo floor. Go past the low grey bench and the small wooden tables on your right. Continue moving forward, keeping the large white built-in shelving unit on your left. Your destination is the large, modern, grid-like bookshelf against the far wall. Stop when you are directly in front of it.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk straight across the room with the grey terrazzo floor. Go past the low grey bench and the small wooden tables on your right. Continue moving forward, keeping the large white built-in shelving unit on your left. Your destination is the large, modern, grid-like bookshelf against the far wall. Stop when you are directly in front of it."
+  }
+}

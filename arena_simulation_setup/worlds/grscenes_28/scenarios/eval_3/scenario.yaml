@@ -1,0 +1,23 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: police
+  pose: [-3.18504, 0.33085, -1.0e-05]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.02
+  waypoints:
+  - [-2.73076, 0.33085, 5.71059]
+  - [-1.59506, 0.44442, -20.55605]
+  - [-1.04993, 0.23999, 18.88608]
+  - [-0.18679, 0.53527, -1.87789]
+  - [1.19876, 0.48984, -49.08562]
+  - [1.49404, 0.14913, 12.20046]
+  - [2.33446, 0.33085, 12.20046]
+robot:
+  name: robot
+  pose: [4.15158, -16.27308, 89.62306]
+  waypoints:
+  - [4.24243, -2.46297, 89.62306]
+  behavior: relocates between distant monitoring points

@@ -1,0 +1,48 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-0.48411, -11.96785, 34.13594]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.2
+  waypoints:
+  - [0.37301, -11.38676, 12.61932]
+  - [1.34635, -11.16884, 25.01689]
+  - [1.56426, -11.06715, 98.47115]
+  - [1.46257, -10.38436, 96.20345]
+  - [1.31729, -9.04784, 90.0]
+  - [1.31729, -7.60962, 90.0]
+- name: hunav_2
+  model: pedestrian
+  pose: [8.30499, -4.98015, 90.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [8.30499, -3.81796, 90.0]
+  - [8.30499, -3.03348, 82.87498]
+  - [8.37763, -2.45238, 90.0]
+  - [8.37763, -1.69695, 90.0]
+  - [8.37763, -1.23207, 109.48613]
+  - [8.0435, -0.28779, 109.48613]
+- name: hunav_3
+  model: pedestrian
+  pose: [-0.55675, 0.395, 9.89391]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [0.69261, 0.61291, -46.68469]
+  - [1.17202, 0.10445, -3.30187]
+  - [1.92744, 0.06087, -3.57634]
+  - [2.39232, 0.03181, -3.40645]
+  - [3.61263, -0.04082, -5.7106]
+  - [4.339, -0.11346, -5.7106]
+robot:
+  name: robot
+  pose: [1.38993, -4.7913, -39.32871]
+  waypoints:
+  - [8.30499, -10.457, -39.32871]
+  behavior: Collects dishes from a distant lower table section.

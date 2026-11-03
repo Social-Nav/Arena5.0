@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000080_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:16:34.090718+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the aisle between the grey couches on the left and the white metal bookshelves on the right. Continue forward until you reach the wooden bookshelf at the back wall. Stop in front of the books, to the left of the white freezer.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the aisle between the grey couches on the left and the white metal bookshelves on the right. Continue forward until you reach the wooden bookshelf at the back wall. Stop in front of the books, to the left of the white freezer."
+  },
+  "provenance": {
+    "source_key": "grscenes_18/gpt56_083",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

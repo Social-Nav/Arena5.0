@@ -1,0 +1,37 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-4.43218, -2.02768, 21.80141]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [-3.8469, -1.79357, -18.43495]
+  - [-3.36405, -1.95452, 0.0]
+  - [-2.86656, -1.95452, -72.18111]
+  - [-2.73487, -2.36421, -12.09475]
+  - [-2.32517, -2.45201, -16.2602]
+  - [-1.97401, -2.55443, -45.0]
+  - [-1.59357, -2.93486, 15.25512]
+  - [-1.11072, -2.80317, 15.25512]
+- name: hunav_2
+  model: pedestrian
+  pose: [-5.83686, -2.71538, -109.65382]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [-5.98318, -3.12508, -126.8699]
+  - [-6.24655, -3.47625, 130.03026]
+  - [-6.55382, -3.11045, 164.29137]
+  - [-7.02205, -2.97876, -84.09386]
+  - [-6.97815, -3.40309, -90.0]
+  - [-6.97815, -4.3249, -90.0]
+robot:
+  name: robot
+  pose: [-4.68093, -3.82741, 51.78898]
+  waypoints:
+  - [0.19153, 2.36192, 51.78898]
+  behavior: Moves a service load from the kitchen to the far office corridor.

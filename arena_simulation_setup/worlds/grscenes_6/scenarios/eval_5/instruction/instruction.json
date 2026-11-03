@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000000_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:06:13.814976+08:00",
+  "raw_text": "{\"instruction\": \"Begin with the long, curved white marble bar on your left. Walk straight ahead, passing the line of tall green bar stools. Continue on the glossy white floor until you have passed the end of the bar. Turn right and walk into the dining area. Proceed past the modern armchairs and small tables. Stop in the open space in the middle of the dining room, near the round glass-topped table.\"}",
+  "parsed_result": {
+    "instruction": "Begin with the long, curved white marble bar on your left. Walk straight ahead, passing the line of tall green bar stools. Continue on the glossy white floor until you have passed the end of the bar. Turn right and walk into the dining area. Proceed past the modern armchairs and small tables. Stop in the open space in the middle of the dining room, near the round glass-topped table."
+  },
+  "provenance": {
+    "source_key": "grscenes_6/gpt56_142",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

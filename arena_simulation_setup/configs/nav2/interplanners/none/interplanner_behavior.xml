@@ -1,0 +1,6 @@
+<root main_tree_to_execute="EmptyTree">
+  <BehaviorTree ID="EmptyTree">
+    <!-- Empty Tree that has no effect -->
+    <AlwaysSuccess name="DoNothing"/>
+  </BehaviorTree>
+</root>

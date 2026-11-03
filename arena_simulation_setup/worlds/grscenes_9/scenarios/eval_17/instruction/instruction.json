@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000268_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:08:56.780434+08:00",
+  "raw_text": "{\"instruction\": \"Pan to your right and walk forward into the playroom. Head towards the long wooden shelving unit against the wall. Follow the shelving unit to the left, passing the various toys like the stuffed reindeer in the blue nook and the basketballs. Continue until you reach the end of the shelf. Stop on the carpet next to the large striped stuffed animal on the floor, just before the office desk and chair.\"}",
+  "parsed_result": {
+    "instruction": "Pan to your right and walk forward into the playroom. Head towards the long wooden shelving unit against the wall. Follow the shelving unit to the left, passing the various toys like the stuffed reindeer in the blue nook and the basketballs. Continue until you reach the end of the shelf. Stop on the carpet next to the large striped stuffed animal on the floor, just before the office desk and chair."
+  },
+  "provenance": {
+    "source_key": "grscenes_9/gpt56_282",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

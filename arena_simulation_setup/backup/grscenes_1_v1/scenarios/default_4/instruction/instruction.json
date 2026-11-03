@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T06:08:47",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk forward past the reception desk on your right. Continue straight down the hallway, passing the room with the bed on your left. Stop in front of the black door at the end of the hall, near the desk with the computer.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk forward past the reception desk on your right. Continue straight down the hallway, passing the room with the bed on your left. Stop in front of the black door at the end of the hall, near the desk with the computer."
+  }
+}

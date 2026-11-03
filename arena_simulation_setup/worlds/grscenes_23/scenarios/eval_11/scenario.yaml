@@ -1,0 +1,37 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [13.27835, -4.81552, 88.69805]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [13.32248, -2.87401, 90.0]
+  - [13.32248, -1.68262, 93.94519]
+  - [13.23422, -0.40298, 139.6859]
+  - [12.50616, 0.21477, -177.39744]
+  - [11.05002, 0.14858, -163.07249]
+  - [10.03513, -0.16029, -163.07249]
+- name: hunav_2
+  model: pedestrian
+  pose: [1.34244, 5.90694, -139.96974]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.1
+  waypoints:
+  - [0.79087, 5.44363, -83.29016]
+  - [0.83499, 5.06856, -91.7357]
+  - [0.81293, 4.34049, -80.21759]
+  - [0.92324, 3.70068, -100.49148]
+  - [0.70262, 2.50929, -43.60282]
+  - [1.16593, 2.06804, -162.64598]
+  - [0.45993, 1.84741, -73.1416]
+  - [0.68055, 1.11934, -73.1416]
+robot:
+  name: robot
+  pose: [11.77809, -2.85194, 171.7416]
+  waypoints:
+  - [-7.52677, -0.04998, 171.7416]
+  behavior: travels north through central circulation space

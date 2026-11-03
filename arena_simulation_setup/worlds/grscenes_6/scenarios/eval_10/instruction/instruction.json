@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000004_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:06:08.911204+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward through the open room, keeping the large, mint green built-in shelving unit on your right. Pass the dining tables and chairs on your left. Your destination is the single light grey armchair with a patterned blue and green cushion, located next to the shelving unit. Stop directly in front of it.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward through the open room, keeping the large, mint green built-in shelving unit on your right. Pass the dining tables and chairs on your left. Your destination is the single light grey armchair with a patterned blue and green cushion, located next to the shelving unit. Stop directly in front of it."
+  },
+  "provenance": {
+    "source_key": "grscenes_6/gpt56_266",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000201_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:09:24.372945+08:00",
+  "raw_text": "{\"instruction\": \"Start in the office space with a row of white desks and black chairs on your left and a white wall with potted plants on your right. Walk straight forward down the aisle, passing all of the desks and chairs. Stop at the end of the row, next to the last black and chrome office chair.\"}",
+  "parsed_result": {
+    "instruction": "Start in the office space with a row of white desks and black chairs on your left and a white wall with potted plants on your right. Walk straight forward down the aisle, passing all of the desks and chairs. Stop at the end of the row, next to the last black and chrome office chair."
+  },
+  "provenance": {
+    "source_key": "grscenes_10/gpt56_254",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

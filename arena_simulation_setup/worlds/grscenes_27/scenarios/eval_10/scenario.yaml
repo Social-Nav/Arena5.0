@@ -1,0 +1,72 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: doctor
+  pose: [1.36119, -4.53091, 22.16635]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.1
+  waypoints:
+  - [1.73212, -4.37979, 7.43141]
+  - [2.68006, -4.25614, -2.57915]
+  - [4.20502, -4.32484, -3.91825]
+  - [5.20791, -4.39353, 3.06649]
+  - [5.97726, -4.35231, -7.22431]
+  - [6.95268, -4.47596, -7.22431]
+- name: hunav_2
+  model: pedestrian
+  pose: [10.38725, -4.02259, 155.82089]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [9.71408, -3.72035, 172.87498]
+  - [8.72492, -3.59671, 169.42648]
+  - [7.69455, -3.40437, 171.8699]
+  - [7.11754, -3.32194, 172.87498]
+  - [5.79866, -3.15708, 87.39744]
+  - [5.82614, -2.55259, 87.39744]
+- name: hunav_3
+  model: construction_worker
+  pose: [2.07558, 3.21749, -112.61987]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [1.9382, 2.88777, -92.24574]
+  - [1.91072, 2.18712, -94.63546]
+  - [1.82829, 1.17049, -92.23117]
+  - [1.78708, 0.11264, -95.24714]
+  - [1.66343, -1.23372, -20.22486]
+  - [2.18549, -1.42605, -20.22486]
+- name: hunav_4
+  model: pedestrian
+  pose: [7.35109, 3.64338, 175.71084]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.6
+  desired_velocity: 0.8
+  waypoints:
+  - [6.80156, 3.68459, -63.43495]
+  - [7.04884, 3.19002, -45.0]
+  - [7.54342, 2.69544, -84.95755]
+  - [7.62585, 1.76123, -113.0513]
+  - [7.35109, 1.11553, -113.0513]
+- name: hunav_5
+  model: pedestrian
+  pose: [2.95483, -2.75867, 38.15723]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [3.53184, -2.3053, 77.34744]
+  - [3.68296, -1.63213, 92.08257]
+  - [3.65548, -0.87652, 69.8637]
+  - [3.95773, -0.05222, 24.0755]
+  - [4.60343, 0.23628, 24.0755]
+robot:
+  name: robot
+  pose: [4.24623, 2.24207, -78.79166]
+  waypoints:
+  - [5.42773, -3.72035, -78.79166]
+  behavior: traverses the open floor from east to west

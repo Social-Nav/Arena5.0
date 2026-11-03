@@ -1,0 +1,38 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: construction_worker
+  pose: [1.11117, -1.49438, -87.06433]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.65
+  desired_velocity: 0.85
+  waypoints:
+  - [1.17495, -2.73805, 142.88314]
+  - [0.58501, -2.2916, -142.12502]
+  - [0.011, -2.73805, 142.2532]
+  - [-0.48327, -2.35538, 81.70285]
+  - [-0.37166, -1.59005, 53.1301]
+  - [-0.03683, -1.1436, -19.44004]
+  - [0.23423, -1.23927, 51.5198]
+  - [0.72851, -0.61744, 51.5198]
+- name: hunav_2
+  model: pedestrian
+  pose: [-3.89539, 0.97701, -90.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.1
+  waypoints:
+  - [-3.89539, 0.64218, -87.51045]
+  - [-3.8635, -0.09127, -86.53177]
+  - [-3.83161, -0.61744, -90.0]
+  - [-3.83161, -1.46249, -90.0]
+  - [-3.83161, -2.30755, -93.81408]
+  - [-3.89539, -3.26422, -90.0]
+  - [-3.89539, -3.93389, -90.0]
+robot:
+  name: robot
+  pose: [3.07234, -2.10027, 165.79494]
+  waypoints:
+  - [-3.2895, -0.48988, 165.79494]
+  behavior: Navigates from the rear aisle to the front teaching zone.

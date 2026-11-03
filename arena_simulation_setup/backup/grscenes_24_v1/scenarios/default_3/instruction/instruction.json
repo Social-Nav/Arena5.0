@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T08:10:46",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk straight ahead towards the wooden door and the shelving unit on your right. You will pass a purple dolly on your left. The shelving unit is filled with light green bins and has toys on top. Stop directly in front of the potted topiary plant that is next to the door.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk straight ahead towards the wooden door and the shelving unit on your right. You will pass a purple dolly on your left. The shelving unit is filled with light green bins and has toys on top. Stop directly in front of the potted topiary plant that is next to the door."
+  }
+}

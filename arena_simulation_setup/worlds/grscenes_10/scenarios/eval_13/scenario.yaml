@@ -1,0 +1,38 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-2.4276, -4.44196, 37.23484]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.6
+  desired_velocity: 0.8
+  waypoints:
+  - [-2.0618, -4.16395, -24.62356]
+  - [-1.71063, -4.3249, 4.76365]
+  - [-1.18388, -4.28101, -35.75388]
+  - [-0.81808, -4.54438, 14.93143]
+  - [-0.37912, -4.42733, 100.49148]
+  - [-0.45228, -4.03226, 155.22486]
+  - [-0.83271, -3.85668, 155.22486]
+- name: hunav_2
+  model: pedestrian
+  pose: [-3.65669, -3.62257, 90.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [-3.65669, -3.13971, 101.59218]
+  - [-3.77374, -2.56906, 13.13403]
+  - [-3.33478, -2.46664, 4.08562]
+  - [-3.12993, -2.45201, 115.20112]
+  - [-3.36405, -1.95452, 100.95406]
+  - [-3.45184, -1.50093, -143.47114]
+  - [-3.8469, -1.79357, 74.0546]
+  - [-3.64205, -1.0766, 74.0546]
+robot:
+  name: robot
+  pose: [-1.47652, -3.88594, 73.64839]
+  waypoints:
+  - [0.27932, 2.09855, 73.64839]
+  behavior: moves documents from reception to the office

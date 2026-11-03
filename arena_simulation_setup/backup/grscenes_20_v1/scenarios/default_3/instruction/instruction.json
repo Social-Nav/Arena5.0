@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T07:42:20",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk straight down the aisle of the restaurant. On your left are booths and on your right is a long banquette, both upholstered in a black and white marble pattern. Continue forward on the white terrazzo floor, passing the tables on both sides. Your destination is at the end of the aisle, just before the white wall with the framed pictures.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk straight down the aisle of the restaurant. On your left are booths and on your right is a long banquette, both upholstered in a black and white marble pattern. Continue forward on the white terrazzo floor, passing the tables on both sides. Your destination is at the end of the aisle, just before the white wall with the framed pictures."
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000001_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:12:02.462643+08:00",
+  "raw_text": "{\"instruction\": \"From behind the reception desk, turn right and walk through the waiting area, passing the large, light-blue L-shaped sofa on your right. Continue straight past a white office desk on your left. Proceed forward towards the wooden shelves filled with medicine boxes. Turn right into the corner formed by the shelves. Your destination is in the corner, next to the purple basket on the floor.\"}",
+  "parsed_result": {
+    "instruction": "From behind the reception desk, turn right and walk through the waiting area, passing the large, light-blue L-shaped sofa on your right. Continue straight past a white office desk on your left. Proceed forward towards the wooden shelves filled with medicine boxes. Turn right into the corner formed by the shelves. Your destination is in the corner, next to the purple basket on the floor."
+  },
+  "provenance": {
+    "source_key": "grscenes_13/gpt56_273",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000006_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:00:52.115823+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward down the aisle. At the end, turn left passing the white sofa, then immediately turn right into the next aisle. Proceed straight down this aisle, with a white wall on your left and shelves on your right. Continue past the refrigerated coolers on your left until you reach the end of the aisle. Stop in the open area next to the empty white shopping cart.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward down the aisle. At the end, turn left passing the white sofa, then immediately turn right into the next aisle. Proceed straight down this aisle, with a white wall on your left and shelves on your right. Continue past the refrigerated coolers on your left until you reach the end of the aisle. Stop in the open area next to the empty white shopping cart."
+  },
+  "provenance": {
+    "source_key": "grscenes_2/gpt56_091",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

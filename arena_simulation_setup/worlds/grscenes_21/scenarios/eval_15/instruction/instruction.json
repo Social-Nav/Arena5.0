@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000232_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:20:51.814965+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward across the grey and yellow patterned carpet, keeping the tan sofa on your left and the large kitchen island on your left. Head towards the yellow wall in the back of the room. Your destination is the water cooler located in the corner, between the stainless steel refrigerator and the kitchen counter. Stop in front of the water cooler.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward across the grey and yellow patterned carpet, keeping the tan sofa on your left and the large kitchen island on your left. Head towards the yellow wall in the back of the room. Your destination is the water cooler located in the corner, between the stainless steel refrigerator and the kitchen counter. Stop in front of the water cooler."
+  },
+  "provenance": {
+    "source_key": "grscenes_21/gpt56_317",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

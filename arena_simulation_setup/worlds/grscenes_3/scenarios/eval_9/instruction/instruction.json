@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000006_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:01:55.829343+08:00",
+  "raw_text": "{\"instruction\": \"Begin in the room with the grey textured carpet, with the large, light-wood bookshelves on your left. Walk forward, passing the end of the shelving unit. Keep the large, black-framed glass wall on your right-hand side. When you clear the glass wall, turn left and proceed down the short hallway. You will see a low wooden partition on your left and a white wall with a large mirror on your right. Your destination is straight ahead, stop in front of the black double doors.\"}",
+  "parsed_result": {
+    "instruction": "Begin in the room with the grey textured carpet, with the large, light-wood bookshelves on your left. Walk forward, passing the end of the shelving unit. Keep the large, black-framed glass wall on your right-hand side. When you clear the glass wall, turn left and proceed down the short hallway. You will see a low wooden partition on your left and a white wall with a large mirror on your right. Your destination is straight ahead, stop in front of the black double doors."
+  },
+  "provenance": {
+    "source_key": "grscenes_3/gpt56_167",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

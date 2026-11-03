@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000003_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:07:38.841080+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight ahead into the cafe, keeping the long, dark, textured counter on your right side. As you move forward, you will pass a lounge area with modern coffee tables on your left. Continue past the stacks of white plates under the counter. Stop when you are at the end of the counter, near the high stools and just before the small, illuminated white table against the back wall.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight ahead into the cafe, keeping the long, dark, textured counter on your right side. As you move forward, you will pass a lounge area with modern coffee tables on your left. Continue past the stacks of white plates under the counter. Stop when you are at the end of the counter, near the high stools and just before the small, illuminated white table against the back wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_7/gpt56_239",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

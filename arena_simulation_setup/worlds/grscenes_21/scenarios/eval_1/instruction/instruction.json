@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000006_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:20:30.226147+08:00",
+  "raw_text": "{\"instruction\": \"Turn to your right and walk past the end of the white island. You will see a water cooler and a silver refrigerator. Turn left and walk straight down the narrow path between the island on your left and the white counter on your right. Stop in the middle of this walkway.\"}",
+  "parsed_result": {
+    "instruction": "Turn to your right and walk past the end of the white island. You will see a water cooler and a silver refrigerator. Turn left and walk straight down the narrow path between the island on your left and the white counter on your right. Stop in the middle of this walkway."
+  },
+  "provenance": {
+    "source_key": "grscenes_21/gpt56_007",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

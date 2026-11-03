@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000193_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:25:41.700568+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward, passing the white reception desk on your left. Continue straight past the black double doors and head towards the two grey medical chairs in the corner. Stop in front of the first grey chair on the left.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward, passing the white reception desk on your left. Continue straight past the black double doors and head towards the two grey medical chairs in the corner. Stop in front of the first grey chair on the left."
+  },
+  "provenance": {
+    "source_key": "grscenes_29/gpt56_214",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

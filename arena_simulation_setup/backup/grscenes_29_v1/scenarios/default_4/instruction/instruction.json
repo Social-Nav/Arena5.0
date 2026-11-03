@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T09:15:33",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk straight forward in the white medical room, passing the doctor on your right. Continue towards the corner, and stop in front of the two white recliner chairs next to the water cooler.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk straight forward in the white medical room, passing the doctor on your right. Continue towards the corner, and stop in front of the two white recliner chairs next to the water cooler."
+  }
+}

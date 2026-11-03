@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T08:25:18",
+  "raw_text": "```json\n{\n  \"instruction\": \"Begin in the large white room. Walk forward, passing the man in the doctor's coat and the white sofa on your left. Continue straight across the room towards the other white sofa that is positioned next to the large, black-framed window. Stop in front of this sofa.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Begin in the large white room. Walk forward, passing the man in the doctor's coat and the white sofa on your left. Continue straight across the room towards the other white sofa that is positioned next to the large, black-framed window. Stop in front of this sofa."
+  }
+}

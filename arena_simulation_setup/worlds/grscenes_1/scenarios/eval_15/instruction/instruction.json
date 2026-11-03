@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000296_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:00:25.892336+08:00",
+  "raw_text": "{\"instruction\": \"Exit the small alcove and walk forward into the brightly lit waiting room. Turn left and walk past the light blue reception desk. Continue straight into the open area and stop in the middle of the floor, with the rows of blue chairs on your right and the dark paneled wall on your left.\"}",
+  "parsed_result": {
+    "instruction": "Exit the small alcove and walk forward into the brightly lit waiting room. Turn left and walk past the light blue reception desk. Continue straight into the open area and stop in the middle of the floor, with the rows of blue chairs on your right and the dark paneled wall on your left."
+  },
+  "provenance": {
+    "source_key": "grscenes_1/gpt56_297",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

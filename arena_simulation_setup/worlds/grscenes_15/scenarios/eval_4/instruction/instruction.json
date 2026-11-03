@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000000_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:13:52.315337+08:00",
+  "raw_text": "{\"instruction\": \"Start in the supermarket aisle. Walk forward, passing the circular wooden display stand on your right and the chest freezer on your left. Continue straight down the long aisle between the shelves of food products. Proceed all the way to the end of the aisle. Stop in front of the wooden shelving unit that has large open bins of rice on the bottom shelves.\"}",
+  "parsed_result": {
+    "instruction": "Start in the supermarket aisle. Walk forward, passing the circular wooden display stand on your right and the chest freezer on your left. Continue straight down the long aisle between the shelves of food products. Proceed all the way to the end of the aisle. Stop in front of the wooden shelving unit that has large open bins of rice on the bottom shelves."
+  },
+  "provenance": {
+    "source_key": "grscenes_15/gpt56_094",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,37 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-0.91937, -4.32484, 81.51106]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [-0.78199, -3.40437, 9.90418]
+  - [0.08353, -3.25325, -10.38886]
+  - [0.90782, -3.40437, 9.72758]
+  - [1.38866, -3.32194, 70.09625]
+  - [1.67717, -2.52512, 65.17946]
+  - [2.18549, -1.42605, -9.2726]
+  - [2.85866, -1.53596, -9.2726]
+- name: hunav_2
+  model: pedestrian
+  pose: [7.35109, 3.64338, 175.71084]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.1
+  waypoints:
+  - [6.80156, 3.68459, -63.43495]
+  - [7.04884, 3.19002, -45.0]
+  - [7.54342, 2.69544, -84.95755]
+  - [7.62585, 1.76123, -113.0513]
+  - [7.35109, 1.11553, -160.46335]
+  - [6.9252, 0.96441, -176.18593]
+  - [6.30698, 0.9232, -176.18593]
+robot:
+  name: robot
+  pose: [5.79866, -3.15708, 105.81408]
+  waypoints:
+  - [4.45231, 1.59637, 105.81408]
+  behavior: Traverses the open corridor to deliver supplies.

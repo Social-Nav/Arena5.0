@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000029_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:04:10.653690+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward out of the narrow hallway into the children's play area. As you enter, turn left and walk past the small wooden table and chairs. Continue forward towards the white sofa. Stop in the open space in front of the white sofa, with the glass wall to the office visible behind it.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward out of the narrow hallway into the children's play area. As you enter, turn left and walk past the small wooden table and chairs. Continue forward towards the white sofa. Stop in the open space in front of the white sofa, with the glass wall to the office visible behind it."
+  },
+  "provenance": {
+    "source_key": "grscenes_5/gpt56_032",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

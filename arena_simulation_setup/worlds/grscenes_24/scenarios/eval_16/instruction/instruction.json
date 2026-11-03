@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000382_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:23:02.615246+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight across the large, open room with light-colored flooring. Head towards the back wall which is decorated with white animal silhouettes. As you proceed, you will pass a shelving unit and a potted plant on your right. Your destination is the raised platform at the back of the room. Stop in front of the purple flatbed dolly.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight across the large, open room with light-colored flooring. Head towards the back wall which is decorated with white animal silhouettes. As you proceed, you will pass a shelving unit and a potted plant on your right. Your destination is the raised platform at the back of the room. Stop in front of the purple flatbed dolly."
+  },
+  "provenance": {
+    "source_key": "grscenes_24/gpt56_383",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

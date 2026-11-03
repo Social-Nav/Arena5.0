@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000133_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:05:00.755620+08:00",
+  "raw_text": "{\"instruction\": \"Turn left from the white counter and walk down the hallway, keeping the white partitions on your right. Go straight to the end of the hall and enter the children's play area. You will see a white easel with a drawing on it to your right. Turn left, walk past the white couch and the glass-walled office. Enter the classroom and walk straight to the back, between the two rows of desks. Stop in the far left corner of the room, behind the last desk on the left.\"}",
+  "parsed_result": {
+    "instruction": "Turn left from the white counter and walk down the hallway, keeping the white partitions on your right. Go straight to the end of the hall and enter the children's play area. You will see a white easel with a drawing on it to your right. Turn left, walk past the white couch and the glass-walled office. Enter the classroom and walk straight to the back, between the two rows of desks. Stop in the far left corner of the room, behind the last desk on the left."
+  },
+  "provenance": {
+    "source_key": "grscenes_5/gpt56_164",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000156_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:02:12.636440+08:00",
+  "raw_text": "{\"instruction\": \"Turn away from the large wooden bookshelf and walk straight down the hallway. Pass the long, L-shaped wooden seating area on your left and the picture on the white wall to your right. Continue to the end of the hall and stop in front of the double doors with the dark frames.\"}",
+  "parsed_result": {
+    "instruction": "Turn away from the large wooden bookshelf and walk straight down the hallway. Pass the long, L-shaped wooden seating area on your left and the picture on the white wall to your right. Continue to the end of the hall and stop in front of the double doors with the dark frames."
+  },
+  "provenance": {
+    "source_key": "grscenes_3/gpt56_187",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

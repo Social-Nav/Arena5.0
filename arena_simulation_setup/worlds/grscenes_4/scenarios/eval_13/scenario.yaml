@@ -1,0 +1,37 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [7.29676, -6.06444, -140.35582]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.75
+  desired_velocity: 1.0
+  waypoints:
+  - [6.73593, -6.52913, 86.00909]
+  - [6.784, -5.8401, 138.57633]
+  - [6.5116, -5.59975, 172.09284]
+  - [5.93474, -5.51963, -147.14428]
+  - [5.1656, -6.01636, 169.99202]
+  - [4.89319, -5.96829, -155.22486]
+  - [4.47657, -6.16058, 178.49257]
+  - [3.86767, -6.14456, 178.49257]
+- name: hunav_2
+  model: construction_worker
+  pose: [4.94126, -2.55522, 179.26548]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [3.6914, -2.5392, -178.75464]
+  - [2.95431, -2.55522, 180.0]
+  - [1.92878, -2.55522, 178.5679]
+  - [1.28783, -2.5392, -179.01224]
+  - [0.35845, -2.55522, 178.02506]
+  - [-0.10624, -2.53919, 178.02506]
+robot:
+  name: robot
+  pose: [8.72288, -5.35939, 159.86159]
+  waypoints:
+  - [-4.08015, -0.66441, 159.86159]
+  behavior: Navigates from the lower open floor to the upper sales area

@@ -1,0 +1,65 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [4.69868, -4.95433, 178.31532]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [4.15657, -4.93839, 172.40536]
+  - [3.9174, -4.9065, 170.53768]
+  - [3.3434, -4.81083, 158.19859]
+  - [3.26368, -4.77894, 102.01148]
+  - [3.10423, -4.02955, 94.08562]
+  - [3.0564, -3.35988, 87.95459]
+  - [3.07234, -2.91344, 87.95459]
+- name: hunav_2
+  model: pedestrian
+  pose: [3.0564, 1.83801, 3.57633]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.75
+  desired_velocity: 0.95
+  waypoints:
+  - [3.31151, 1.85396, -90.0]
+  - [3.31151, 1.53507, -90.67404]
+  - [3.29557, 0.17979, -90.0]
+  - [3.29557, -0.55366, -90.0]
+  - [3.29557, -1.4306, -90.0]
+  - [3.29557, -2.25972, -90.0]
+  - [3.29557, -3.00911, -90.0]
+- name: hunav_3
+  model: construction_worker
+  pose: [3.00856, 1.45535, 158.55226]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [2.56212, 1.63073, -151.26021]
+  - [2.06784, 1.35968, -27.55282]
+  - [2.43456, 1.16834, -87.51045]
+  - [2.46645, 0.4349, -90.0]
+  - [2.46645, -0.55366, 69.8637]
+  - [2.64184, -0.07532, 31.26373]
+  - [3.08829, 0.19573, -96.58194]
+  - [3.04045, -0.21882, -96.58194]
+- name: hunav_4
+  model: pedestrian
+  pose: [1.15901, -4.77894, 100.12467]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.85
+  desired_velocity: 1.05
+  waypoints:
+  - [1.07928, -4.3325, 102.09476]
+  - [0.98362, -3.88605, 110.32314]
+  - [0.82417, -3.45555, 117.8241]
+  - [0.52123, -2.88155, 83.82982]
+  - [0.58501, -2.2916, -142.12502]
+  - [0.011, -2.73805, -142.12502]
+robot:
+  name: robot
+  pose: [2.11567, -1.0001, -159.36072]
+  waypoints:
+  - [-3.89539, -3.26422, -159.36072]
+  behavior: delivers classroom supplies toward the front area

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000297_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:22:10.757042+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the main aisle of the grocery store. Go past the white promotional display shelf in the middle of the aisle. Continue forward, keeping the long produce and deli counters on your left and the tall grocery shelves on your right. Walk all the way to the end of the aisle and stop at the back wall, with the bread display on your left.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the main aisle of the grocery store. Go past the white promotional display shelf in the middle of the aisle. Continue forward, keeping the long produce and deli counters on your left and the tall grocery shelves on your right. Walk all the way to the end of the aisle and stop at the back wall, with the bread display on your left."
+  },
+  "provenance": {
+    "source_key": "grscenes_23/gpt56_306",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

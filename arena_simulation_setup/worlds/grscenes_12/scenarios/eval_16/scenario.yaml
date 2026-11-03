@@ -1,0 +1,40 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-2.0971, -5.27383, -63.43495]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.1
+  waypoints:
+  - [-1.924, -5.62002, 52.43141]
+  - [-1.67673, -5.29856, 119.74488]
+  - [-1.87455, -4.95237, -6.00901]
+  - [-1.40472, -5.00183, -78.11134]
+  - [-1.30581, -5.47166, 42.70939]
+  - [-0.98435, -5.17492, 93.17983]
+  - [-1.00908, -4.72983, 93.17983]
+- name: hunav_2
+  model: pedestrian
+  pose: [0.87022, -1.39159, 133.15239]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [0.49931, -0.99595, -116.56505]
+  - [0.30149, -1.39159, 141.34019]
+  - [-0.19307, -0.99595, 38.65981]
+  - [0.30149, -0.6003, 179.99999]
+  - [-0.29198, -0.6003, 132.70939]
+  - [-0.58871, -0.27884, -111.80141]
+  - [-0.83599, -0.89704, -68.19859]
+  - [-0.58871, -1.51523, -172.5686]
+  - [-1.15745, -1.58941, 165.96375]
+  - [-1.75091, -1.44104, 165.96375]
+robot:
+  name: robot
+  pose: [-0.7618, -8.1917, 83.80738]
+  waypoints:
+  - [0.15312, 0.24044, 83.80738]
+  behavior: Carries supplies through the unobstructed length of the waiting area.

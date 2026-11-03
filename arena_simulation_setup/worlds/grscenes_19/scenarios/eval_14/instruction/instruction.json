@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000007_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:17:43.810251+08:00",
+  "raw_text": "{\"instruction\": \"Begin in the white reception area. Walk forward, passing the long white counter with blue stripes on your right and a potted plant on your left. Enter the narrow hallway ahead and to your right. Proceed straight down the hall, walking between the white handrails. Stop at the very end of the hallway, facing the wall with the high, dark-paned window.\"}",
+  "parsed_result": {
+    "instruction": "Begin in the white reception area. Walk forward, passing the long white counter with blue stripes on your right and a potted plant on your left. Enter the narrow hallway ahead and to your right. Proceed straight down the hall, walking between the white handrails. Stop at the very end of the hallway, facing the wall with the high, dark-paned window."
+  },
+  "provenance": {
+    "source_key": "grscenes_19/gpt56_085",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

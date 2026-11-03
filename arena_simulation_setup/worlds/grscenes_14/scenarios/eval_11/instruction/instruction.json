@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000222_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:12:33.307511+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the carpeted hallway, passing the white desk on your left and the large, mirrored shelving unit on your right. Continue forward past the wooden door and built-in shelves on your left. Stop in the lounge area in front of the modern, three-legged pink chair that is positioned before the large potted plants.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the carpeted hallway, passing the white desk on your left and the large, mirrored shelving unit on your right. Continue forward past the wooden door and built-in shelves on your left. Stop in the lounge area in front of the modern, three-legged pink chair that is positioned before the large potted plants."
+  },
+  "provenance": {
+    "source_key": "grscenes_14/gpt56_244",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

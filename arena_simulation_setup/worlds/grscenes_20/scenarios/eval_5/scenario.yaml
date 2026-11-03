@@ -1,0 +1,49 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [1.12843, -16.42778, 34.01935]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [1.70953, -16.03554, 32.94922]
+  - [2.49401, -15.52708, 9.92625]
+  - [3.07511, -15.42539, 9.92625]
+- name: hunav_2
+  model: pedestrian
+  pose: [-0.45506, -10.8783, 51.54629]
+  behavior_tree: BTRegularNav.xml
+  velocity: 1.0
+  desired_velocity: 1.3
+  waypoints:
+  - [-0.06282, -10.38436, 0.0]
+  - [0.88147, -10.38436, 0.0]
+  - [1.46257, -10.38436, 0.0]
+- name: hunav_3
+  model: pedestrian
+  pose: [8.08708, 0.64197, -92.68378]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [8.0435, -0.28779, -96.63251]
+  - [7.97086, -0.91247, -135.0]
+  - [7.43334, -1.44998, -135.0]
+- name: hunav_4
+  model: construction_worker
+  pose: [8.30499, -10.457, -90.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [8.30499, -11.45939, -90.0]
+  - [8.30499, -12.28746, -90.0]
+  - [8.30499, -13.43512, -90.0]
+robot:
+  name: robot
+  pose: [1.38993, -4.7913, -39.32871]
+  waypoints:
+  - [8.30499, -10.457, -39.32871]
+  behavior: transports cleaning materials to the lower dining aisle

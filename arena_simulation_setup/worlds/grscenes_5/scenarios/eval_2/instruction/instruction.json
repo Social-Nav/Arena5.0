@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000004_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:04:31.907686+08:00",
+  "raw_text": "{\"instruction\": \"Begin in the children's play area. Turn away from the alphabet abacus toy and walk straight down the long hallway with light wood flooring. At the end of the hall, enter the second play area, passing a child's drawing easel on your right and low white toy shelves on your left. Turn left, walk past the shelves and a white sofa, and then turn right to enter the glass-walled office space. Proceed straight to the back of the office, walking past the rows of desks and chairs. Stop in the far corner of the room, to the left of the large whiteboard mounted on the wall.\"}",
+  "parsed_result": {
+    "instruction": "Begin in the children's play area. Turn away from the alphabet abacus toy and walk straight down the long hallway with light wood flooring. At the end of the hall, enter the second play area, passing a child's drawing easel on your right and low white toy shelves on your left. Turn left, walk past the shelves and a white sofa, and then turn right to enter the glass-walled office space. Proceed straight to the back of the office, walking past the rows of desks and chairs. Stop in the far corner of the room, to the left of the large whiteboard mounted on the wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_5/gpt56_093",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

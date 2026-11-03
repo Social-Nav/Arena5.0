@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000250_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:16:52.649012+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the aisle, keeping the long white bookshelf on your left and the white seating area on your right. Continue forward until you reach the end of the room. Your destination is the white door at the end of the aisle, stop in front of it, just past the large printer on your left.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the aisle, keeping the long white bookshelf on your left and the white seating area on your right. Continue forward until you reach the end of the room. Your destination is the white door at the end of the aisle, stop in front of it, just past the large printer on your left."
+  },
+  "provenance": {
+    "source_key": "grscenes_18/gpt56_256",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

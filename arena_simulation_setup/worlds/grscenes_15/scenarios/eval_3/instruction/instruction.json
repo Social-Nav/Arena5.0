@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000002_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:13:50.834844+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the grocery aisle. On your right, you'll pass shelves stocked with boxes, shoes, and hats. Continue moving forward towards the produce section at the end of the aisle. Stop in front of the wooden crates filled with vegetables like onions, eggplants, and potatoes.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the grocery aisle. On your right, you'll pass shelves stocked with boxes, shoes, and hats. Continue moving forward towards the produce section at the end of the aisle. Stop in front of the wooden crates filled with vegetables like onions, eggplants, and potatoes."
+  },
+  "provenance": {
+    "source_key": "grscenes_15/gpt56_088",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

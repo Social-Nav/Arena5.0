@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000000_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T00:35:27.044726+08:00",
+  "raw_text": "{\"instruction\": \"Turn left and walk straight down the long, white hospital corridor. You will pass an open office doorway on your left. Continue straight, following the hallway with the white handrails on both sides. Walk all the way to the end of the corridor. Your destination is the dead end, directly in front of the window on the far wall.\"}",
+  "parsed_result": {
+    "instruction": "Turn left and walk straight down the long, white hospital corridor. You will pass an open office doorway on your left. Continue straight, following the hallway with the white handrails on both sides. Walk all the way to the end of the corridor. Your destination is the dead end, directly in front of the window on the far wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_19/gpt56_001",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

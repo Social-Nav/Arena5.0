@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000049_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:11:38.937055+08:00",
+  "raw_text": "{\"instruction\": \"Exit the small room and walk straight into the large waiting area. Continue forward, passing the long, light blue L-shaped sofa on your left and a row of individual blue chairs. Proceed to the end of the room and stop in front of the large glass panel doors.\"}",
+  "parsed_result": {
+    "instruction": "Exit the small room and walk straight into the large waiting area. Continue forward, passing the long, light blue L-shaped sofa on your left and a row of individual blue chairs. Proceed to the end of the room and stop in front of the large glass panel doors."
+  },
+  "provenance": {
+    "source_key": "grscenes_13/gpt56_115",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

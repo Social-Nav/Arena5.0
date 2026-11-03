@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000004_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:00:46.303544+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the grocery aisle, passing the shelves of products on both sides. At the end of the aisle, continue forward towards the white checkout counter. Turn left, walk past the round wooden display shelf and the empty white shopping cart. Stop in front of the blue ice cream freezer located next to the wall of silver lockers.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the grocery aisle, passing the shelves of products on both sides. At the end of the aisle, continue forward towards the white checkout counter. Turn left, walk past the round wooden display shelf and the empty white shopping cart. Stop in front of the blue ice cream freezer located next to the wall of silver lockers."
+  },
+  "provenance": {
+    "source_key": "grscenes_2/gpt56_048",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

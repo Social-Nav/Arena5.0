@@ -1,0 +1,41 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [5.06295, -3.28402, -33.69007]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.82
+  desired_velocity: 1.02
+  waypoints:
+  - [5.42862, -3.5278, -94.71475]
+  - [5.30673, -5.00571, -76.42957]
+  - [5.52003, -5.88941, -90.0]
+  - [5.52003, -6.42267, -80.53768]
+  - [5.59622, -6.87976, -80.53768]
+- name: hunav_2
+  model: male_adult_medical_01
+  pose: [0.79682, -3.45162, -88.76802]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.95
+  desired_velocity: 1.18
+  waypoints:
+  - [0.82729, -4.86858, 162.8241]
+  - [-0.0107, -4.60957, -172.40536]
+  - [-0.69633, -4.70098, 167.59258]
+  - [-1.45814, -4.53339, 165.96376]
+  - [-1.88475, -4.42673, -176.42367]
+  - [-2.61609, -4.47244, 162.80146]
+  - [-3.89593, -4.0763, 159.77514]
+  - [-4.18541, -3.96965, 86.56637]
+  - [-4.13971, -3.20784, 27.75854]
+  - [-3.85022, -3.05548, 5.90614]
+  - [-3.40837, -3.00977, -8.97263]
+  - [-3.11888, -3.05548, -8.97263]
+robot:
+  name: robot
+  pose: [0.81205, -1.3795, -6.15311]
+  waypoints:
+  - [4.91059, -1.82135, -6.15311]
+  behavior: moves across the open waiting area to reposition for service without entering
+    narrow office doorways

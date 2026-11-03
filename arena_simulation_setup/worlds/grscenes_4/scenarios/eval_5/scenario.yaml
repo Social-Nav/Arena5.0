@@ -1,0 +1,38 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-0.25046, -0.0555, -88.5679]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [-0.23443, -0.69646, -88.36342]
+  - [-0.20239, -1.81812, -82.40536]
+  - [-0.10624, -2.53919, -1.97494]
+  - [0.35845, -2.55522, 0.98776]
+  - [1.28783, -2.5392, 72.75854]
+  - [1.43204, -2.0745, 91.90915]
+  - [1.41602, -1.59379, 90.0]
+  - [1.41602, -0.74453, 90.0]
+- name: hunav_2
+  model: pedestrian
+  pose: [-1.90091, -1.77005, 81.02737]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [-1.80477, -1.16115, 104.74356]
+  - [-1.96501, -0.55224, 64.0577]
+  - [-1.67658, 0.04064, -170.07376]
+  - [-2.31753, -0.07153, 180.0]
+  - [-3.19884, -0.07153, -146.07021]
+  - [-4.08015, -0.66441, 109.02561]
+  - [-4.24039, -0.19972, 109.02561]
+robot:
+  name: robot
+  pose: [8.24217, -4.99084, 153.13248]
+  waypoints:
+  - [-0.23443, -0.69646, 153.13248]
+  behavior: follows the broad central route toward the upper retail area

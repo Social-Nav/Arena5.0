@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000273_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:07:31.385603+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight forward through the cafe, keeping the long, dark, textured counter on your right. Go past the modern lounge seating on your left and continue towards the back wall. Turn left and walk towards the dining area. Stop in front of the beige armchair that has a colorful, leaf-patterned pillow on it.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight forward through the cafe, keeping the long, dark, textured counter on your right. Go past the modern lounge seating on your left and continue towards the back wall. Turn left and walk towards the dining area. Stop in front of the beige armchair that has a colorful, leaf-patterned pillow on it."
+  },
+  "provenance": {
+    "source_key": "grscenes_7/gpt56_313",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

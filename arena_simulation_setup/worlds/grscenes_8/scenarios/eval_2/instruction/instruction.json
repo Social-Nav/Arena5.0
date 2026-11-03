@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000041_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:07:41.400076+08:00",
+  "raw_text": "{\"instruction\": \"Start in the white reception area. Turn right and walk forward, keeping the large, curved white desk on your left. Go past the white sofa and the black double doors. Continue towards the waiting area with the blue and chrome chairs. Stop in front of the water cooler and the large potted plant.\"}",
+  "parsed_result": {
+    "instruction": "Start in the white reception area. Turn right and walk forward, keeping the large, curved white desk on your left. Go past the white sofa and the black double doors. Continue towards the waiting area with the blue and chrome chairs. Stop in front of the water cooler and the large potted plant."
+  },
+  "provenance": {
+    "source_key": "grscenes_8/gpt56_045",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

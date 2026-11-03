@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000216_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:05:31.553199+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the hallway, passing the white panels on your left. Enter the children's play area at the end of the hall. Continue straight, passing a white easel and toy shelves on your right, and small wooden tables on your left. Proceed past the glass-walled office on your right and enter the training room. Walk to the far end of this room, keeping the long tables and white chairs on your left. Your destination is in the corner, to the right of the large screen on the wall.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the hallway, passing the white panels on your left. Enter the children's play area at the end of the hall. Continue straight, passing a white easel and toy shelves on your right, and small wooden tables on your left. Proceed past the glass-walled office on your right and enter the training room. Walk to the far end of this room, keeping the long tables and white chairs on your left. Your destination is in the corner, to the right of the large screen on the wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_5/gpt56_265",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000206_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:16:47.253450+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the aisle in the library. On your right, you will see a long white bookshelf, and on your left is a seating area with grey couches. Continue forward past the potted plant on your left and the white freezer on your right. Stop in front of the wooden bookshelves at the end of the aisle.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the aisle in the library. On your right, you will see a long white bookshelf, and on your left is a seating area with grey couches. Continue forward past the potted plant on your left and the white freezer on your right. Stop in front of the wooden bookshelves at the end of the aisle."
+  },
+  "provenance": {
+    "source_key": "grscenes_18/gpt56_212",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

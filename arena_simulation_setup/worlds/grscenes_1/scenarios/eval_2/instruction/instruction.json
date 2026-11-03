@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000059_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:00:09.012210+08:00",
+  "raw_text": "{\"instruction\": \"Start in the waiting room with the blue reception desk on your left and rows of blue chairs on your right. Walk straight forward, passing the modern white geometric chair. Continue past the reception desk and head towards the wall with the large, dark panels. Stop directly in front of the paneled wall.\"}",
+  "parsed_result": {
+    "instruction": "Start in the waiting room with the blue reception desk on your left and rows of blue chairs on your right. Walk straight forward, passing the modern white geometric chair. Continue past the reception desk and head towards the wall with the large, dark panels. Stop directly in front of the paneled wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_1/gpt56_060",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000113_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:23:19.835759+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward into the living room, passing the L-shaped sofa and the blue laundry basket on your left. Continue straight towards the far wall. Stop in front of the white two-seater sofa that is positioned under the two colorful paintings.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward into the living room, passing the L-shaped sofa and the blue laundry basket on your left. Continue straight towards the far wall. Stop in front of the white two-seater sofa that is positioned under the two colorful paintings."
+  },
+  "provenance": {
+    "source_key": "grscenes_25/gpt56_114",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000132_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:09:47.079270+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the office aisle, keeping the white wall on your left and the row of desks on your right. Go past the first desk with the silver filing cabinet and the blue bin. Continue forward past the second desk, which has a small red and blue fan on it. Stop in the middle of the grey carpeted walkway just beyond the second desk.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the office aisle, keeping the white wall on your left and the row of desks on your right. Go past the first desk with the silver filing cabinet and the blue bin. Continue forward past the second desk, which has a small red and blue fan on it. Stop in the middle of the grey carpeted walkway just beyond the second desk."
+  },
+  "provenance": {
+    "source_key": "grscenes_11/gpt56_141",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,50 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-0.83694, -2.75867, 90.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [-0.83694, -2.4839, 43.91907]
+  - [-0.46601, -2.12671, -22.24902]
+  - [0.13848, -2.374, -2.33731]
+  - [0.81166, -2.40147, -55.30484]
+  - [0.9353, -2.58007, 4.23639]
+  - [1.67717, -2.52512, -1.52752]
+  - [2.70754, -2.55259, -1.52752]
+- name: hunav_2
+  model: police
+  pose: [7.77697, -2.4839, 71.56505]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.1
+  waypoints:
+  - [8.05174, -1.6596, 112.20348]
+  - [7.50221, -0.31325, 171.11934]
+  - [6.62296, -0.17587, -166.63978]
+  - [5.52389, -0.4369, 90.0]
+  - [5.52389, 0.41488, 146.04094]
+  - [4.85072, 0.86824, 15.37625]
+  - [5.40025, 1.01936, 15.37625]
+- name: hunav_3
+  model: doctor
+  pose: [3.10595, 2.94273, -152.24146]
+  behavior_tree: BTRegularNav.xml
+  velocity: 1.0
+  desired_velocity: 1.2
+  waypoints:
+  - [2.5839, 2.66796, -98.1301]
+  - [2.50147, 2.09095, -49.39871]
+  - [3.07848, 1.41778, -3.46823]
+  - [3.9852, 1.36282, 26.56505]
+  - [4.45231, 1.59637, 30.6186]
+  - [5.12548, 1.99478, 30.6186]
+robot:
+  name: robot
+  pose: [3.95773, 0.86824, -52.98011]
+  waypoints:
+  - [7.11754, -3.32194, -52.98011]
+  behavior: Crosses the open hall toward the western lower junction.

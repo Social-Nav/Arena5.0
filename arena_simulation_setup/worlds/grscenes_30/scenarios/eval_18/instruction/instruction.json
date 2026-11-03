@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000255_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:27:23.522982+08:00",
+  "raw_text": "{\"instruction\": \"Enter the bright, modern dining room with white floors. Walk straight ahead, passing between the sets of tables with light grey chairs. Continue forward toward the back of the room, moving along the aisle with the long white counter on your left and more dining tables on your right. Stop in the corner at the end of the counter, just in front of the wooden door.\"}",
+  "parsed_result": {
+    "instruction": "Enter the bright, modern dining room with white floors. Walk straight ahead, passing between the sets of tables with light grey chairs. Continue forward toward the back of the room, moving along the aisle with the long white counter on your left and more dining tables on your right. Stop in the corner at the end of the counter, just in front of the wooden door."
+  },
+  "provenance": {
+    "source_key": "grscenes_30/gpt56_269",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

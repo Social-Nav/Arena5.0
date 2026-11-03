@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000017_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:02:50.577730+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward, passing the white refrigerator on your right and a black produce stand on your left. Continue straight, going by the small seating area with the gray couch. Proceed down the main aisle, keeping the long, curved white checkout counter on your left. After you pass the cashier station, turn right into the narrow aisle between the two tall wooden and metal shelving units. Walk straight to the end of this aisle and stop.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward, passing the white refrigerator on your right and a black produce stand on your left. Continue straight, going by the small seating area with the gray couch. Proceed down the main aisle, keeping the long, curved white checkout counter on your left. After you pass the cashier station, turn right into the narrow aisle between the two tall wooden and metal shelving units. Walk straight to the end of this aisle and stop."
+  },
+  "provenance": {
+    "source_key": "grscenes_4/gpt56_023",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

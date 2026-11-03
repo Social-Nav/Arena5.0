@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T06:48:53",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk straight ahead through the open-plan office, over the gray carpet with orange stripes. Go past the rows of white desks and black-and-white ergonomic chairs on your left and right. Continue moving forward towards the far wall. Your destination is the long white desk at the end of the room. Stop in front of the desk, in the space between two of the office chairs.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk straight ahead through the open-plan office, over the gray carpet with orange stripes. Go past the rows of white desks and black-and-white ergonomic chairs on your left and right. Continue moving forward towards the far wall. Your destination is the long white desk at the end of the room. Stop in front of the desk, in the space between two of the office chairs."
+  }
+}

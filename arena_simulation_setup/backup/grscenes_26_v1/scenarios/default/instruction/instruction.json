@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T08:33:42",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk straight down the convenience store aisle. On your left are tall white shelves stocked with various products, including colorful snack bags. To your right is a long wooden counter with a food warmer and other equipment. Continue forward between the shelves and the counter. Your destination is at the end of the aisle, just before the shelves on the back wall.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk straight down the convenience store aisle. On your left are tall white shelves stocked with various products, including colorful snack bags. To your right is a long wooden counter with a food warmer and other equipment. Continue forward between the shelves and the counter. Your destination is at the end of the aisle, just before the shelves on the back wall."
+  }
+}

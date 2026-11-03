@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000126_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:07:49.256129+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward down the hallway with the glossy white floor. Pass the curved white reception desk on your left and continue straight past the white sofa. Turn left into the waiting area and stop in front of the row of blue chairs, with the water cooler and potted plant to your left.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward down the hallway with the glossy white floor. Pass the curved white reception desk on your left and continue straight past the white sofa. Turn left into the waiting area and stop in front of the row of blue chairs, with the water cooler and potted plant to your left."
+  },
+  "provenance": {
+    "source_key": "grscenes_8/gpt56_131",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

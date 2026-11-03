@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000002_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:17:44.207762+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward through the white reception area, keeping the large white desk on your left. Pass the potted plant and the open office doorway, then turn left into the long hallway. Proceed straight down the hallway, which has white walls and handrails with a thin blue stripe. Continue all the way to the end of the hall and stop in front of the window.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward through the white reception area, keeping the large white desk on your left. Pass the potted plant and the open office doorway, then turn left into the long hallway. Proceed straight down the hallway, which has white walls and handrails with a thin blue stripe. Continue all the way to the end of the hall and stop in front of the window."
+  },
+  "provenance": {
+    "source_key": "grscenes_19/gpt56_093",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -15,7 +15,6 @@ setup(
         ('share/' + package_name, [
             'package.xml',
             'test_split.json',
-            'density_eval_split_10.json',
         ]),
         # Will recursively track all .yaml files in the entities/robots
         # directory and its subdirectories.

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000098_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:16:43.245287+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the aisle, keeping the long white bookshelf on your right and the grey couches on your left. Continue forward until you reach the wooden bookshelves built into the back wall. Stop in front of the wooden bookshelves.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the aisle, keeping the long white bookshelf on your right and the grey couches on your left. Continue forward until you reach the wooden bookshelves built into the back wall. Stop in front of the wooden bookshelves."
+  },
+  "provenance": {
+    "source_key": "grscenes_18/gpt56_102",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

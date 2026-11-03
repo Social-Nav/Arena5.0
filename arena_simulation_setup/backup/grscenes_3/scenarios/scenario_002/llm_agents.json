@@ -1,0 +1,49 @@
+{
+  "agents": [
+    {
+      "name": "hunav_1",
+      "role": "departing patient",
+      "model": "female_adult_medical_01",
+      "from_region": {
+        "region_id": 0,
+        "label": "office"
+      },
+      "to_region": {
+        "region_id": 2,
+        "label": "waiting_area"
+      },
+      "spawn_waypoint": "wp_r00_office_004",
+      "waypoints": [
+        "wp_r00_office_008",
+        "wp_r00_office_012",
+        "wp_r02_waiting_area_001",
+        "wp_r02_waiting_area_002",
+        "wp_r02_waiting_area_003",
+        "wp_r02_waiting_area_010",
+        "wp_r02_waiting_area_011"
+      ],
+      "velocity": 0.8,
+      "desired_velocity": 1.0,
+      "behavior": "Leaves the exam room and heads to the waiting area."
+    }
+  ],
+  "robot": {
+    "name": "robot",
+    "from_region": {
+      "region_id": 2,
+      "label": "waiting_area"
+    },
+    "to_region": {
+      "region_id": 0,
+      "label": "office"
+    },
+    "start_waypoint": "wp_r02_waiting_area_001",
+    "waypoints": [
+      "wp_r02_waiting_area_002",
+      "wp_r00_office_012",
+      "wp_r00_office_013",
+      "wp_r00_office_008"
+    ],
+    "behavior": "Approaches the office doorway from the waiting area and stops inside."
+  }
+}

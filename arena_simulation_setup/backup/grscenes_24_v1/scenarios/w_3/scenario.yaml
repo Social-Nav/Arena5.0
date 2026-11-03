@@ -1,0 +1,42 @@
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose:
+  - 3.87657
+  - 4.51022
+  - 1.526868483917
+  behavior_tree: ./BTRegularNav.xml
+  velocity: 0.72
+  desired_velocity: 0.94
+  waypoints:
+  - - 3.9471
+    - 6.11473
+    - 0.0
+  - - 3.75315
+    - 7.96608
+    - 0.0
+- name: hunav_2
+  model: male_adult_medical_01
+  pose:
+  - 4.67001
+  - 7.64871
+  - -2.011192289891
+  behavior_tree: ./BTRegularNav.xml
+  velocity: 1.05
+  desired_velocity: 1.2
+  waypoints:
+  - - 3.9471
+    - 6.11473
+    - 0.0
+  - - 3.87657
+    - 4.51022
+    - 0.0
+robots:
+- start:
+  - 4.98739
+  - 6.23815
+  - -3.02350070934
+  goal:
+  - 1.98996
+  - 6.07947
+  - -3.123576666919

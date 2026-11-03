@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000148_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:15:28.426553+08:00",
+  "raw_text": "{\"instruction\": \"Turn left and walk along the wall with the large, dark-paned windows. Go past the low white cabinet and the metal rack holding several sports balls. Continue straight until you come to a child's art easel with a colorful drawing on it. Stop in front of the easel.\"}",
+  "parsed_result": {
+    "instruction": "Turn left and walk along the wall with the large, dark-paned windows. Go past the low white cabinet and the metal rack holding several sports balls. Continue straight until you come to a child's art easel with a colorful drawing on it. Stop in front of the easel."
+  },
+  "provenance": {
+    "source_key": "grscenes_16/gpt56_152",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

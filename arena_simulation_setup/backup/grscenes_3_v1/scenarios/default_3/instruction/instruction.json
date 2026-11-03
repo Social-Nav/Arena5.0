@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T09:28:02",
+  "raw_text": "```json\n{\n  \"instruction\": \"Turn left and walk forward through the open, carpeted area, passing a glass-walled office on your left. Continue straight towards the large, freestanding wooden bookshelf in the center of the space. Go past the bookshelf, keeping it on your right. Proceed towards the far wall, which has a long, low wooden shelving unit with several potted plants on it. Stop in the open space in front of the low shelving, near the hand truck.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Turn left and walk forward through the open, carpeted area, passing a glass-walled office on your left. Continue straight towards the large, freestanding wooden bookshelf in the center of the space. Go past the bookshelf, keeping it on your right. Proceed towards the far wall, which has a long, low wooden shelving unit with several potted plants on it. Stop in the open space in front of the low shelving, near the hand truck."
+  }
+}

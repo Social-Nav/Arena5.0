@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T06:42:22",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk past the white counter on your left. Turn left and walk towards the desk with the computer monitor. Stop in front of the desk, near the person in the white lab coat.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk past the white counter on your left. Turn left and walk towards the desk with the computer monitor. Stop in front of the desk, near the person in the white lab coat."
+  }
+}

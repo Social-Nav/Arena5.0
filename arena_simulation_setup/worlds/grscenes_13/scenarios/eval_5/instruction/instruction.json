@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000057_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:11:28.225326+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward, passing the light blue L-shaped couch on your right. Turn left and proceed towards the back of the room. Stop in front of the white chair that is positioned at the white desk with the computer monitor.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward, passing the light blue L-shaped couch on your right. Turn left and proceed towards the back of the room. Stop in front of the white chair that is positioned at the white desk with the computer monitor."
+  },
+  "provenance": {
+    "source_key": "grscenes_13/gpt56_126",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

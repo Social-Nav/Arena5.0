@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000020_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:22:23.825899+08:00",
+  "raw_text": "{\"instruction\": \"In the large, bright room, walk straight ahead towards the back wall. Pass the wall with the white animal silhouettes on your left. Stop in front of the purple flatbed dolly that is sitting on the raised platform, to the left of the closed wooden door.\"}",
+  "parsed_result": {
+    "instruction": "In the large, bright room, walk straight ahead towards the back wall. Pass the wall with the white animal silhouettes on your left. Stop in front of the purple flatbed dolly that is sitting on the raised platform, to the left of the closed wooden door."
+  },
+  "provenance": {
+    "source_key": "grscenes_24/gpt56_021",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

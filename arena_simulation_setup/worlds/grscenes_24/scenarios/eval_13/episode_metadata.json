@@ -1,0 +1,34 @@
+{
+  "schema": "arena.grscenes_episode_metadata",
+  "schema_version": 1,
+  "episode": {
+    "world": "grscenes_24",
+    "scenario": "eval_13",
+    "source_world": "grscenes_24",
+    "source_scenario": "gpt56_315",
+    "source_episode_index": 314
+  },
+  "reference_trajectory": {
+    "length_m": 7.130491445665879,
+    "n_frames": 564,
+    "duration_s": 18.766666412353516,
+    "trajectory_file": "src/social_gen/traj_data/grscenes_gpt56_prod/grscenes_24/data/chunk-000/episode_000314.parquet",
+    "pose_column": "pose.132cm_30deg",
+    "robot_scale": 0.8
+  },
+  "provenance": {
+    "source_type": "arena_frozen_test500_selection",
+    "source_file": "exports/test500/selection.json",
+    "source_file_sha256": "4da95c0267607d8be5b9f5d8c01ff848296095ea62aefcbe2422c545c9bdc130",
+    "source_selection_ordinal": 410,
+    "source_sample_id": "scene_0024_long_low_density_0410",
+    "source_parquet_sha256": "90d5b5fad3b11a4ac5c28e6a8b155fcf944ede767860661c79091ff474311886",
+    "source_scenario_sha256": "419d96a802584f70385deee8726aa8eee58f5396a0028cbf6a98f0a9d1c30d50",
+    "path_length_definition": "sum of framewise executed robot XY displacements",
+    "trajectory_file_relative_to": "original_arena_workspace_not_this_export",
+    "trajectory_file_included": false,
+    "robot_scale_applied_again_to_length": false,
+    "source_algorithm": "original_astar",
+    "selection_replacement": null
+  }
+}

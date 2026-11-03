@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000112_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:09:08.498348+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight forward through the open office space. On your left, pass the white desk with the laptop, and on your right, pass the grey sofa. Continue towards the back wall and stop in front of the two potted plants next to the large white doors.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight forward through the open office space. On your left, pass the white desk with the laptop, and on your right, pass the grey sofa. Continue towards the back wall and stop in front of the two potted plants next to the large white doors."
+  },
+  "provenance": {
+    "source_key": "grscenes_10/gpt56_134",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

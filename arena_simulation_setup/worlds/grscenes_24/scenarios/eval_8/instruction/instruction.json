@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000134_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:22:44.769452+08:00",
+  "raw_text": "{\"instruction\": \"Begin in this large, bright room. In front of you is a wall decorated with white animal silhouettes, including deer and elephants. Walk forward and bear to your right, crossing the open, light-colored floor. Head towards the low shelving unit with the light green drawers on the far right wall. You will see a small potted topiary plant next to the shelves. Stop in front of the shelving unit.\"}",
+  "parsed_result": {
+    "instruction": "Begin in this large, bright room. In front of you is a wall decorated with white animal silhouettes, including deer and elephants. Walk forward and bear to your right, crossing the open, light-colored floor. Head towards the low shelving unit with the light green drawers on the far right wall. You will see a small potted topiary plant next to the shelves. Stop in front of the shelving unit."
+  },
+  "provenance": {
+    "source_key": "grscenes_24/gpt56_135",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

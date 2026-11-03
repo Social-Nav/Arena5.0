@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000005_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:17:37.523302+08:00",
+  "raw_text": "{\"instruction\": \"Start in the reception area with the shiny white floor. Walk forward, keeping the white counter with the blue stripes on your right. Pass the potted plant on your left and enter the narrow hallway straight ahead. Continue all the way to the end of the hallway. Stop at the end of the hall, just before the opening on the left that leads to a room with a white couch.\"}",
+  "parsed_result": {
+    "instruction": "Start in the reception area with the shiny white floor. Walk forward, keeping the white counter with the blue stripes on your right. Pass the potted plant on your left and enter the narrow hallway straight ahead. Continue all the way to the end of the hallway. Stop at the end of the hall, just before the opening on the left that leads to a room with a white couch."
+  },
+  "provenance": {
+    "source_key": "grscenes_19/gpt56_072",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000399_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:23:07.439568+08:00",
+  "raw_text": "{\"instruction\": \"In this bright, white room with a light-colored floor, turn to your left. Walk forward across the open space, keeping the wall decorated with white animal silhouettes, including deer and elephants, on your right side. Continue straight ahead and stop in the open area on the left side of the room.\"}",
+  "parsed_result": {
+    "instruction": "In this bright, white room with a light-colored floor, turn to your left. Walk forward across the open space, keeping the wall decorated with white animal silhouettes, including deer and elephants, on your right side. Continue straight ahead and stop in the open area on the left side of the room."
+  },
+  "provenance": {
+    "source_key": "grscenes_24/gpt56_400",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

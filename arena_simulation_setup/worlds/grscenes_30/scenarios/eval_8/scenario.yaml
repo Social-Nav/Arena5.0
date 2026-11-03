@@ -1,0 +1,27 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [0.97107, -5.82469, -177.95458]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [0.40524, -5.8449, 86.98721]
+  - [0.42545, -5.46094, 171.02738]
+  - [0.04149, -5.40031, 145.49148]
+  - [-0.28184, -5.17802, -153.43494]
+  - [-0.48393, -5.27906, 171.86991]
+  - [-0.9083, -5.21844, 161.56506]
+  - [-1.21142, -5.1174, 98.1301]
+  - [-1.27205, -4.69302, 95.5722]
+  - [-1.35288, -3.86448, 91.90915]
+  - [-1.37309, -3.25824, 95.19443]
+  - [-1.43371, -2.59136, 95.19443]
+robot:
+  name: robot
+  pose: [-0.05955, -5.8651, 92.52083]
+  waypoints:
+  - [-0.34247, 0.56113, 92.52083]
+  behavior: Makes a long service run across the dining area.

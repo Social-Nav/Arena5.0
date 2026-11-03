@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T09:28:58",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk forward towards the wooden shelving unit. Keep the large black windows and the grey armchair on your left. Stop when you are directly in front of the shelving unit.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk forward towards the wooden shelving unit. Keep the large black windows and the grey armchair on your left. Stop when you are directly in front of the shelving unit."
+  }
+}

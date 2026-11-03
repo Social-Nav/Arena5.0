@@ -1,0 +1,39 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: female_adult_business_02
+  pose: [-0.71235, 1.05645, -68.89516]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.78
+  desired_velocity: 1.02
+  waypoints:
+  - [-0.16834, -0.35303, -96.00901]
+  - [-0.36616, -2.23233, -107.44719]
+  - [-0.63816, -3.0978, -77.66091]
+  - [-0.46507, -3.88908, -88.12212]
+  - [-0.41562, -5.39747, -87.75426]
+  - [-0.36616, -6.65858, -90.0]
+  - [-0.36616, -8.11752, -90.0]
+- name: hunav_2
+  model: male_adult_medical_01
+  pose: [-1.2069, -9.20553, 100.17551]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.72
+  desired_velocity: 0.95
+  waypoints:
+  - [-1.37999, -8.24116, 95.35583]
+  - [-1.45418, -7.44987, 106.77122]
+  - [-1.99819, -5.64475, 96.34019]
+  - [-2.04764, -5.19965, 36.8699]
+  - [-1.25636, -4.60619, 86.90594]
+  - [-1.2069, -3.69126, 87.7974]
+  - [-1.13272, -1.7625, 92.60256]
+  - [-1.18217, -0.67449, 92.60256]
+robot:
+  name: robot
+  pose: [0.79604, -5.10074, 105.8477]
+  waypoints:
+  - [-0.29198, -1.26795, 105.8477]
+  behavior: makes a short service pass through the open center-right aisle while avoiding
+    the left-side pedestrian flow

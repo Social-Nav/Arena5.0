@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000203_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:21:11.535351+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight ahead towards the wooden wall unit. Continue forward, aiming for the double doors located in the center between the two bookshelves. Stop directly in front of the doors.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight ahead towards the wooden wall unit. Continue forward, aiming for the double doors located in the center between the two bookshelves. Stop directly in front of the doors."
+  },
+  "provenance": {
+    "source_key": "grscenes_22/gpt56_205",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

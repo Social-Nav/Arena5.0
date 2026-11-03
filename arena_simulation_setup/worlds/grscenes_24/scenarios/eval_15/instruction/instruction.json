@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000377_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:22:58.886017+08:00",
+  "raw_text": "{\"instruction\": \"Begin in the large, open room with the light-colored floor. Ahead of you is a wall decorated with white animal silhouettes, including deer and elephants. Walk straight across the room, heading towards the right side. Pass the shelves and stop in front of the purple flatbed dolly.\"}",
+  "parsed_result": {
+    "instruction": "Begin in the large, open room with the light-colored floor. Ahead of you is a wall decorated with white animal silhouettes, including deer and elephants. Walk straight across the room, heading towards the right side. Pass the shelves and stop in front of the purple flatbed dolly."
+  },
+  "provenance": {
+    "source_key": "grscenes_24/gpt56_378",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

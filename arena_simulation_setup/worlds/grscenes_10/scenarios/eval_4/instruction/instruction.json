@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000068_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:09:07.486612+08:00",
+  "raw_text": "{\"instruction\": \"Begin in the open-plan office. Walk straight forward down the main aisle between the two long rows of desks. At the end of the desks, turn right and walk towards the potted plants in the corner. Pass the plants, then turn left and proceed down the aisle with the office chairs on your left and a wall with framed pictures on your right. Continue to the end of this row and stop in front of the last office chair, facing the desk.\"}",
+  "parsed_result": {
+    "instruction": "Begin in the open-plan office. Walk straight forward down the main aisle between the two long rows of desks. At the end of the desks, turn right and walk towards the potted plants in the corner. Pass the plants, then turn left and proceed down the aisle with the office chairs on your left and a wall with framed pictures on your right. Continue to the end of this row and stop in front of the last office chair, facing the desk."
+  },
+  "provenance": {
+    "source_key": "grscenes_10/gpt56_080",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

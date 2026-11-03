@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000296_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:15:39.313222+08:00",
+  "raw_text": "{\"instruction\": \"Starting from the storage area with the rack of sports balls, turn left. Walk past the small children's table and chairs and continue along the windowed wall until you reach a child's drawing easel. Turn right and proceed down the narrow walkway, keeping the wall of lit cubbies on your left. Your destination is at the end of this path, in front of the white office printer.\"}",
+  "parsed_result": {
+    "instruction": "Starting from the storage area with the rack of sports balls, turn left. Walk past the small children's table and chairs and continue along the windowed wall until you reach a child's drawing easel. Turn right and proceed down the narrow walkway, keeping the wall of lit cubbies on your left. Your destination is at the end of this path, in front of the white office printer."
+  },
+  "provenance": {
+    "source_key": "grscenes_16/gpt56_306",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

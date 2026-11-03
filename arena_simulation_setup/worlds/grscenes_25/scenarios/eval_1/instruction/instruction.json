@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000031_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:23:03.679670+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight forward through the bright white room. On your left is a white counter with a plant, and on your right is a wall with large black panels. Continue straight towards the back wall until you reach the child's art easel with a colorful drawing on it. Stop in front of the easel.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight forward through the bright white room. On your left is a white counter with a plant, and on your right is a wall with large black panels. Continue straight towards the back wall until you reach the child's art easel with a colorful drawing on it. Stop in front of the easel."
+  },
+  "provenance": {
+    "source_key": "grscenes_25/gpt56_032",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

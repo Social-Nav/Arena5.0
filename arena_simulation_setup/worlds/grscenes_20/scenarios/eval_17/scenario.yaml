@@ -1,0 +1,44 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [4.9201, -16.57305, 81.02737]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.65
+  desired_velocity: 0.85
+  waypoints:
+  - [5.05084, -15.74499, 125.13419]
+  - [4.77482, -15.35275, 169.11448]
+  - [4.0194, -15.20747, -65.65891]
+  - [4.29542, -15.81763, -152.02052]
+  - [3.83054, -16.06459, -152.02052]
+- name: hunav_2
+  model: pedestrian
+  pose: [1.56426, -12.06955, 90.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 1.0
+  desired_velocity: 1.25
+  waypoints:
+  - [1.56426, -11.06715, 98.47115]
+  - [1.46257, -10.38436, -180.0]
+  - [0.88147, -10.38436, -180.0]
+  - [-0.06282, -10.38436, -128.45371]
+  - [-0.45506, -10.8783, -128.45371]
+- name: hunav_3
+  model: pedestrian
+  pose: [8.37763, -1.69695, -90.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [8.37763, -2.45238, -97.12502]
+  - [8.30499, -3.03348, -90.0]
+  - [8.30499, -3.81796, -90.0]
+  - [8.30499, -4.98015, -90.0]
+robot:
+  name: robot
+  pose: [0.66356, -3.61457, -48.61763]
+  waypoints:
+  - [8.30499, -12.28746, -48.61763]
+  behavior: moves diagonally across the dining room via wide connecting aisles

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000084_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:23:12.026272+08:00",
+  "raw_text": "{\"instruction\": \"Go forward into the living room, passing the shopping cart and a patterned box on your left. Walk straight ahead onto the beige rug, heading towards the gap between the two white sofas. Pass the blue shopping basket on your right. Stop in the space between the two sofas, facing the colorful painting on the wall.\"}",
+  "parsed_result": {
+    "instruction": "Go forward into the living room, passing the shopping cart and a patterned box on your left. Walk straight ahead onto the beige rug, heading towards the gap between the two white sofas. Pass the blue shopping basket on your right. Stop in the space between the two sofas, facing the colorful painting on the wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_25/gpt56_085",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

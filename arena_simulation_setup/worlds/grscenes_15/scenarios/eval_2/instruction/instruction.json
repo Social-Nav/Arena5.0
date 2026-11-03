@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000001_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:13:59.252315+08:00",
+  "raw_text": "{\"instruction\": \"Start in the grocery aisle next to a freezer. Walk straight ahead, passing the circular wooden display stand on your right. Continue all the way down this main aisle between the shelves of snacks. At the end of the aisle, turn right. Walk forward into the next aisle, passing the shelves with large bags of rice on your left and a tall, thin display rack on your right. Your destination is in the middle of this back aisle, in front of the shelves with pet food and other packaged goods.\"}",
+  "parsed_result": {
+    "instruction": "Start in the grocery aisle next to a freezer. Walk straight ahead, passing the circular wooden display stand on your right. Continue all the way down this main aisle between the shelves of snacks. At the end of the aisle, turn right. Walk forward into the next aisle, passing the shelves with large bags of rice on your left and a tall, thin display rack on your right. Your destination is in the middle of this back aisle, in front of the shelves with pet food and other packaged goods."
+  },
+  "provenance": {
+    "source_key": "grscenes_15/gpt56_077",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

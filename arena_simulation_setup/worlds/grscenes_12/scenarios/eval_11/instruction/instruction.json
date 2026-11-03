@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000155_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:11:07.444244+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the aisle, keeping the long wall of white cubby shelves on your right. Pass the seating area with the white couches and the potted plant on your left. Continue walking straight until you reach the end of the shelving unit. Stop in front of the white chest freezer.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the aisle, keeping the long wall of white cubby shelves on your right. Pass the seating area with the white couches and the potted plant on your left. Continue walking straight until you reach the end of the shelving unit. Stop in front of the white chest freezer."
+  },
+  "provenance": {
+    "source_key": "grscenes_12/gpt56_156",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000243_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:02:43.581028+08:00",
+  "raw_text": "{\"instruction\": \"Turn left from the wooden bookshelf and proceed down the hallway. You will pass a low wooden partition on your left and a dark glass wall on your right. At the end of the short hall, turn right into a breakroom area. Walk forward between the wooden tables with silver legs. Your destination is in the middle of the room, next to the table on your right.\"}",
+  "parsed_result": {
+    "instruction": "Turn left from the wooden bookshelf and proceed down the hallway. You will pass a low wooden partition on your left and a dark glass wall on your right. At the end of the short hall, turn right into a breakroom area. Walk forward between the wooden tables with silver legs. Your destination is in the middle of the room, next to the table on your right."
+  },
+  "provenance": {
+    "source_key": "grscenes_3/gpt56_310",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

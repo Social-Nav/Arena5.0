@@ -1,0 +1,38 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [5.82257, -6.5131, 162.89727]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.65
+  desired_velocity: 0.85
+  waypoints:
+  - [5.40595, -6.38491, 123.11134]
+  - [5.1656, -6.01636, 169.99202]
+  - [4.89319, -5.96829, -155.22486]
+  - [4.47657, -6.16058, 178.49257]
+  - [3.86767, -6.14456, 49.18492]
+  - [4.17212, -5.79203, 97.21426]
+  - [3.85164, -3.26027, 102.52881]
+  - [3.6914, -2.5392, 102.52881]
+- name: hunav_2
+  model: police
+  pose: [-0.23443, -0.69646, -88.36342]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.85
+  desired_velocity: 1.05
+  waypoints:
+  - [-0.20239, -1.81812, -82.40536]
+  - [-0.10624, -2.53919, -172.56859]
+  - [-0.84334, -2.63534, -100.61966]
+  - [-0.93948, -3.1481, -92.48955]
+  - [-0.97153, -3.8852, -94.39871]
+  - [-1.03562, -4.71843, -83.4802]
+  - [-0.97153, -5.27927, -83.4802]
+robot:
+  name: robot
+  pose: [8.21012, -5.77601, 162.85292]
+  waypoints:
+  - [2.39347, -3.98134, 162.85292]
+  behavior: navigates to a central shelf row for inventory scanning

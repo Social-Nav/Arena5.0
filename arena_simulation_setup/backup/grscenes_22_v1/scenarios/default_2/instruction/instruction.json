@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T11:22:41",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk straight through this large, bright room. Keep the long wooden bench and the wall of windows on your left side as you proceed. Continue walking past the tiered wooden seating area, also on your left, until you reach the far wall. Stop in front of the two water coolers that are standing next to each other.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk straight through this large, bright room. Keep the long wooden bench and the wall of windows on your left side as you proceed. Continue walking past the tiered wooden seating area, also on your left, until you reach the far wall. Stop in front of the two water coolers that are standing next to each other."
+  }
+}

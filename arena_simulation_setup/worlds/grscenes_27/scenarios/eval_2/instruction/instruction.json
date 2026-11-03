@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000022_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:23:39.109154+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward through the open white room. On your left are blue and white chairs at a long counter and a small table. Head towards the lounge area on your right, which has a large white sectional sofa with yellow pillows. Stop on the white floor in front of the wooden toy train.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward through the open white room. On your left are blue and white chairs at a long counter and a small table. Head towards the lounge area on your right, which has a large white sectional sofa with yellow pillows. Stop on the white floor in front of the wooden toy train."
+  },
+  "provenance": {
+    "source_key": "grscenes_27/gpt56_023",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

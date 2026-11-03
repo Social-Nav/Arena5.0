@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000088_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:10:35.400858+08:00",
+  "raw_text": "{\"instruction\": \"Go straight down the long office corridor, keeping the row of desks on your left and the plain white wall on your right. Continue forward until you reach the end of the desks. Turn left, and then immediately turn left again to face a new row of desks. Walk forward along this row, with a white bulletin board on your right. Stop in the corner where the white wall meets the black gridded wall.\"}",
+  "parsed_result": {
+    "instruction": "Go straight down the long office corridor, keeping the row of desks on your left and the plain white wall on your right. Continue forward until you reach the end of the desks. Turn left, and then immediately turn left again to face a new row of desks. Walk forward along this row, with a white bulletin board on your right. Stop in the corner where the white wall meets the black gridded wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_11/gpt56_093",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000259_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:21:25.262321+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight ahead through the open room, passing the light gray sofa and the white trash can on your right. On your left is a long wooden counter with stools under the window. Continue walking straight until you reach the two water coolers against the far wall. Stop directly in front of the water coolers.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight ahead through the open room, passing the light gray sofa and the white trash can on your right. On your left is a long wooden counter with stools under the window. Continue walking straight until you reach the two water coolers against the far wall. Stop directly in front of the water coolers."
+  },
+  "provenance": {
+    "source_key": "grscenes_22/gpt56_261",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000086_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:26:08.100264+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight through the bright cafe, passing between the tables and chairs. Head towards the wooden door in the back of the room. Stop in the corner in front of the table with the bowl of yellow fruit on it.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight through the bright cafe, passing between the tables and chairs. Head towards the wooden door in the back of the room. Stop in the corner in front of the table with the bowl of yellow fruit on it."
+  },
+  "provenance": {
+    "source_key": "grscenes_30/gpt56_094",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

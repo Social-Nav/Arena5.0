@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000019_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:22:24.582009+08:00",
+  "raw_text": "{\"instruction\": \"In the playroom with light wood floors, walk forward and to the left, heading towards the small white shopping cart. Pass the cart and stop next to the white rack holding the colorful balls.\"}",
+  "parsed_result": {
+    "instruction": "In the playroom with light wood floors, walk forward and to the left, heading towards the small white shopping cart. Pass the cart and stop next to the white rack holding the colorful balls."
+  },
+  "provenance": {
+    "source_key": "grscenes_24/gpt56_020",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

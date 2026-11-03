@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000174_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:11:06.389839+08:00",
+  "raw_text": "{\"instruction\": \"Turn left from the row of desks and proceed straight down the grey carpeted aisle, keeping the white wall on your left. Walk past the person and continue towards the conference room area. Your destination is the open space next to the large conference table, with the modern S-shaped bookshelf visible in the corner on your left.\"}",
+  "parsed_result": {
+    "instruction": "Turn left from the row of desks and proceed straight down the grey carpeted aisle, keeping the white wall on your left. Walk past the person and continue towards the conference room area. Your destination is the open space next to the large conference table, with the modern S-shaped bookshelf visible in the corner on your left."
+  },
+  "provenance": {
+    "source_key": "grscenes_11/gpt56_183",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

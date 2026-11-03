@@ -1,0 +1,35 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-0.30978, -7.1738, -23.96249]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.93
+  desired_velocity: 1.2
+  waypoints:
+  - [0.34395, -7.46435, -8.48894]
+  - [1.31729, -7.60962, 87.65313]
+  - [1.38993, -5.83727, 90.0]
+  - [1.38993, -4.7913, 171.15818]
+  - [0.73619, -4.6896, 93.86546]
+  - [0.66356, -3.61457, 93.86546]
+- name: hunav_2
+  model: pedestrian
+  pose: [8.30499, -9.2948, 90.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.79
+  desired_velocity: 1.03
+  waypoints:
+  - [8.30499, -7.90017, 90.0]
+  - [8.30499, -6.41837, 90.0]
+  - [8.30499, -6.12782, 90.0]
+  - [8.30499, -4.98015, 90.0]
+  - [8.30499, -3.81796, 90.0]
+  - [8.30499, -3.03348, 90.0]
+robot:
+  name: robot
+  pose: [1.49162, -13.21721, 64.55064]
+  waypoints:
+  - [8.08708, 0.64197, 64.55064]
+  behavior: Navigates around the dining rows to the southeast service point.

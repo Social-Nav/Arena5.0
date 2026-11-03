@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000025_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:16:26.352623+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the aisle in the library. Keep the long, grey, angled bookshelf on your right. Continue forward towards the wooden bookshelves on the far wall. Stop in front of the wooden shelves, just past the white freezer.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the aisle in the library. Keep the long, grey, angled bookshelf on your right. Continue forward towards the wooden bookshelves on the far wall. Stop in front of the wooden shelves, just past the white freezer."
+  },
+  "provenance": {
+    "source_key": "grscenes_18/gpt56_027",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

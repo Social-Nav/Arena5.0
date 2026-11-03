@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000152_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:07:07.100974+08:00",
+  "raw_text": "{\"instruction\": \"Go straight down the hallway with the light wood flooring, passing the white desk on your right. Continue forward into the children's play area, where you'll see a small art easel and toy shelves. Turn left and walk past the white curved sofa towards the glass-walled offices. Turn right to walk alongside the glass walls and enter the training room on your left. Proceed straight ahead between the rows of desks on your left and the low white partition on your right. Stop in the far corner of the room, in front of the large screen on the wall.\"}",
+  "parsed_result": {
+    "instruction": "Go straight down the hallway with the light wood flooring, passing the white desk on your right. Continue forward into the children's play area, where you'll see a small art easel and toy shelves. Turn left and walk past the white curved sofa towards the glass-walled offices. Turn right to walk alongside the glass walls and enter the training room on your left. Proceed straight ahead between the rows of desks on your left and the low white partition on your right. Stop in the far corner of the room, in front of the large screen on the wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_5/gpt56_188",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

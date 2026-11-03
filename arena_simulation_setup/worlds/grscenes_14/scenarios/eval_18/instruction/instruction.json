@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000282_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:13:48.824932+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight forward on the grey carpet, passing the white desk on your left and the large, white grid-style shelving unit on your right. Continue towards the seating area in the back. Stop at the office printer located in the corner, to the left of the potted plants and next to the wooden bookshelf.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight forward on the grey carpet, passing the white desk on your left and the large, white grid-style shelving unit on your right. Continue towards the seating area in the back. Stop at the office printer located in the corner, to the left of the potted plants and next to the wooden bookshelf."
+  },
+  "provenance": {
+    "source_key": "grscenes_14/gpt56_313",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

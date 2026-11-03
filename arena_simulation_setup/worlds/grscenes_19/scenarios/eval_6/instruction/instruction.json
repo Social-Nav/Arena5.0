@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000003_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:17:18.257864+08:00",
+  "raw_text": "{\"instruction\": \"Begin in the bright reception area with the shiny white floor. Walk forward, keeping the white reception desk with the light blue stripes on your right. Pass an office opening on your left and turn right into the narrow hallway. Proceed straight down the hallway, following the white handrails on the walls. Continue all the way to the end of the hall and stop in front of the wall with the high, two-paned window.\"}",
+  "parsed_result": {
+    "instruction": "Begin in the bright reception area with the shiny white floor. Walk forward, keeping the white reception desk with the light blue stripes on your right. Pass an office opening on your left and turn right into the narrow hallway. Proceed straight down the hallway, following the white handrails on the walls. Continue all the way to the end of the hall and stop in front of the wall with the high, two-paned window."
+  },
+  "provenance": {
+    "source_key": "grscenes_19/gpt56_046",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

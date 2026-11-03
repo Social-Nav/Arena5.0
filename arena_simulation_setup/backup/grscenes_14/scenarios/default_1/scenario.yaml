@@ -1,0 +1,42 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: male_adult_medical_01
+  pose: [1.23543, -5.13764, 158.7495]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.84
+  desired_velocity: 1.04
+  waypoints:
+  - [0.63574, -4.90443, 89.07595]
+  - [0.6524, -3.87163, 89.25594]
+  - [0.66905, -2.58896, 138.99091]
+  - [0.28592, -2.2558, 90.0]
+  - [0.28592, -1.30629, 93.65222]
+  - [0.23594, -0.52336, -176.30862]
+  - [-0.28046, -0.55667, 95.94686]
+  - [-0.36375, 0.24291, 1.7357]
+  - [0.18597, 0.25957, -0.0]
+  - [0.70237, 0.25957, -0.0]
+  - [1.36869, 0.25957, -0.0]
+- name: hunav_2
+  model: female_adult_business_02
+  pose: [-0.36375, 2.62502, -74.0546]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.72
+  desired_velocity: 0.95
+  waypoints:
+  - [-0.23048, 2.15859, -95.19443]
+  - [-0.31377, 1.2424, -92.86241]
+  - [-0.36375, 0.24291, -84.05314]
+  - [-0.28046, -0.55667, -88.02507]
+  - [-0.2638, -1.03976, -92.64255]
+  - [-0.31377, -2.12253, -91.90915]
+  - [-0.33043, -2.62227, -91.90915]
+robot:
+  name: robot
+  pose: [1.23543, -6.03718, 106.69924]
+  waypoints:
+  - [-0.2638, -1.03976, 106.69924]
+  behavior: moves across the open office floor for a short delivery while avoiding
+    the doorway crossing

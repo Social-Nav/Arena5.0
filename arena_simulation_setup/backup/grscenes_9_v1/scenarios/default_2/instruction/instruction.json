@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T10:24:57",
+  "raw_text": "```json\n{\n  \"instruction\": \"Begin in the playroom and walk forward, passing the small wooden table and stools on your left. Head towards the large wooden shelving unit against the far wall. Continue forward until you are standing directly in front of the large, light blue circular display nook that has a small stuffed reindeer inside.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Begin in the playroom and walk forward, passing the small wooden table and stools on your left. Head towards the large wooden shelving unit against the far wall. Continue forward until you are standing directly in front of the large, light blue circular display nook that has a small stuffed reindeer inside."
+  }
+}

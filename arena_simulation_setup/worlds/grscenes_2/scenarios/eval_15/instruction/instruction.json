@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000082_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:01:12.940793+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the grocery aisle. When you reach the white checkout counter at the end, turn left. Continue forward, passing the checkout counter on your right and a circular wooden display on your left. Turn left again towards the wall of silver lockers. Stop in front of the blue and white ice cream freezer next to the lockers.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the grocery aisle. When you reach the white checkout counter at the end, turn left. Continue forward, passing the checkout counter on your right and a circular wooden display on your left. Turn left again towards the wall of silver lockers. Stop in front of the blue and white ice cream freezer next to the lockers."
+  },
+  "provenance": {
+    "source_key": "grscenes_2/gpt56_299",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

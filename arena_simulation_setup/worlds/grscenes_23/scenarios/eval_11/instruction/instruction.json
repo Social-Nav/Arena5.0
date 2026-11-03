@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000310_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:22:16.756358+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the wide supermarket aisle. On your left are empty produce bins, and on your right is a low white display shelf. Continue forward, passing the bread section on your left. At the end of the bread display, turn right into the narrow aisle. Proceed a short distance down this aisle and stop between the empty shelves on your left and the partially stocked shelves on your right.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the wide supermarket aisle. On your left are empty produce bins, and on your right is a low white display shelf. Continue forward, passing the bread section on your left. At the end of the bread display, turn right into the narrow aisle. Proceed a short distance down this aisle and stop between the empty shelves on your left and the partially stocked shelves on your right."
+  },
+  "provenance": {
+    "source_key": "grscenes_23/gpt56_319",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000002_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:05:55.881216+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight forward into the room, keeping the long white marble bar and its green stools on your left. As you proceed on the shiny white floor, you will pass a red table on your right, followed by a large, built-in shelving unit painted sage green. Continue walking towards the back of the room, heading for the seating area. Your destination is the single light-colored armchair with a green patterned pillow, located in front of the shelving unit. Stop directly in front of this chair.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight forward into the room, keeping the long white marble bar and its green stools on your left. As you proceed on the shiny white floor, you will pass a red table on your right, followed by a large, built-in shelving unit painted sage green. Continue walking towards the back of the room, heading for the seating area. Your destination is the single light-colored armchair with a green patterned pillow, located in front of the shelving unit. Stop directly in front of this chair."
+  },
+  "provenance": {
+    "source_key": "grscenes_6/gpt56_137",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000086_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:19:24.505786+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward on the grey carpet with orange stripes, passing the long white table on your right and the white counter on your left. Continue straight towards the yellow wall. Stop when you reach the white water cooler located between the two silver cabinets.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward on the grey carpet with orange stripes, passing the long white table on your right and the white counter on your left. Continue straight towards the yellow wall. Stop when you reach the white water cooler located between the two silver cabinets."
+  },
+  "provenance": {
+    "source_key": "grscenes_21/gpt56_108",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

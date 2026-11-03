@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000134_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:23:45.212845+08:00",
+  "raw_text": "{\"instruction\": \"In this all-white room, walk straight ahead towards the white shopping cart with the blue handle. Pass the seating area with the blue and white chairs on your right. Stop when you are directly in front of the shopping cart.\"}",
+  "parsed_result": {
+    "instruction": "In this all-white room, walk straight ahead towards the white shopping cart with the blue handle. Pass the seating area with the blue and white chairs on your right. Stop when you are directly in front of the shopping cart."
+  },
+  "provenance": {
+    "source_key": "grscenes_27/gpt56_135",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

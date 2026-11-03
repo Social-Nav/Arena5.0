@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000101_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:10:50.151801+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the aisle, keeping the large white shelving unit on your right and the white seating area on your left. Continue towards the light wood-paneled wall at the far end of the room. Stop in front of the white chest freezer located at the end of the aisle.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the aisle, keeping the large white shelving unit on your right and the white seating area on your left. Continue towards the light wood-paneled wall at the far end of the room. Stop in front of the white chest freezer located at the end of the aisle."
+  },
+  "provenance": {
+    "source_key": "grscenes_12/gpt56_102",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000143_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:07:10.507796+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward through the cafe, keeping the long, dark counter on your right side. Pass the low, curved couches on your left and the bar stools on your right. Continue straight until you reach the end of the counter. Stop in front of the small, white, illuminated table next to the armchair with the orange and grey pillow.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward through the cafe, keeping the long, dark counter on your right side. Pass the low, curved couches on your left and the bar stools on your right. Continue straight until you reach the end of the counter. Stop in front of the small, white, illuminated table next to the armchair with the orange and grey pillow."
+  },
+  "provenance": {
+    "source_key": "grscenes_7/gpt56_161",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

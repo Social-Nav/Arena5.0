@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000001_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:03:53.211926+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward past the black refrigerators on your right. Go straight down the aisle, keeping the white checkout counter on your left and wooden shelves on your right. At the end of the counter, turn right into the next aisle. Continue straight between the shelves of snacks. When you reach the end of this aisle, make a left turn. Walk down the aisle with kitchenware, including mugs and pots, on your right. Finally, turn left at the end of the aisle and stop in the corner where clothes and shoes are displayed.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward past the black refrigerators on your right. Go straight down the aisle, keeping the white checkout counter on your left and wooden shelves on your right. At the end of the counter, turn right into the next aisle. Continue straight between the shelves of snacks. When you reach the end of this aisle, make a left turn. Walk down the aisle with kitchenware, including mugs and pots, on your right. Finally, turn left at the end of the aisle and stop in the corner where clothes and shoes are displayed."
+  },
+  "provenance": {
+    "source_key": "grscenes_4/gpt56_262",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

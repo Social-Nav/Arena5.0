@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000259_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:05:53.503130+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the hallway with the wood-look flooring. Pass the children's play area on your left, which has a small easel and white toy shelves. Continue past the glass-walled offices on your left and enter the training room with the long wooden tables and white chairs. Walk towards the back of the room. Stop in the corner to the right of the last table, directly in front of the large screen on the wall.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the hallway with the wood-look flooring. Pass the children's play area on your left, which has a small easel and white toy shelves. Continue past the glass-walled offices on your left and enter the training room with the long wooden tables and white chairs. Walk towards the back of the room. Stop in the corner to the right of the last table, directly in front of the large screen on the wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_5/gpt56_322",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

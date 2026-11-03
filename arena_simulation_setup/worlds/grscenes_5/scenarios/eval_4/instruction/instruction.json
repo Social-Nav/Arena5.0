@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000102_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:04:33.877023+08:00",
+  "raw_text": "{\"instruction\": \"Start with the colorful abacus on the white bench to your right. Turn left and walk straight down the hallway with the light wood floors, passing the white partitions on your left. Enter the children's play area at the end of the hall, walking past the art easel and low white shelves. Turn left towards the white sofa, then turn right to face the glass-walled office. Walk forward towards the glass wall and stop at the grey filing cabinet with binders on the shelves, located to the right of the glass office doors.\"}",
+  "parsed_result": {
+    "instruction": "Start with the colorful abacus on the white bench to your right. Turn left and walk straight down the hallway with the light wood floors, passing the white partitions on your left. Enter the children's play area at the end of the hall, walking past the art easel and low white shelves. Turn left towards the white sofa, then turn right to face the glass-walled office. Walk forward towards the glass wall and stop at the grey filing cabinet with binders on the shelves, located to the right of the glass office doors."
+  },
+  "provenance": {
+    "source_key": "grscenes_5/gpt56_128",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

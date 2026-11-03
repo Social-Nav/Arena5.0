@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000163_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:05:17.870714+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the hallway, passing the white counter on your right. Continue forward past the white doors on the left until you reach a children's play area, identifiable by the white easel and low toy shelves. Walk through the play area, heading towards the glass-walled office space. Enter the office and walk past the rows of long tables and white chairs. Stop in the back right corner of the room, next to the large screen on the wall.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the hallway, passing the white counter on your right. Continue forward past the white doors on the left until you reach a children's play area, identifiable by the white easel and low toy shelves. Walk through the play area, heading towards the glass-walled office space. Enter the office and walk past the rows of long tables and white chairs. Stop in the back right corner of the room, next to the large screen on the wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_5/gpt56_202",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

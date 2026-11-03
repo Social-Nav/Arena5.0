@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000001_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:22:31.871529+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the main aisle of the supermarket, passing the low white display shelf on your right and the produce bins on your left. Continue past the refrigerated section with bread and cheese. Turn left into the narrow aisle with shelves of colorful cleaning supplies on your left. Walk to the end of this aisle and stop in front of the gray wall.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the main aisle of the supermarket, passing the low white display shelf on your right and the produce bins on your left. Continue past the refrigerated section with bread and cheese. Turn left into the narrow aisle with shelves of colorful cleaning supplies on your left. Walk to the end of this aisle and stop in front of the gray wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_23/gpt56_434",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

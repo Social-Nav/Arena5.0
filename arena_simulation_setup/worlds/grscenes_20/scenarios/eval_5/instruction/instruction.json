@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000055_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:18:12.827306+08:00",
+  "raw_text": "{\"instruction\": \"Turn left from the corner booth with the black and white patterned upholstery. Walk straight down the long corridor, passing the stainless steel counters on your right. Head towards the main dining area marked by the bright turquoise wall. Continue straight down the central aisle, with the long banquette seating on your left and a row of booths on your right. Proceed all the way to the back of the restaurant and stop at the end of the aisle.\"}",
+  "parsed_result": {
+    "instruction": "Turn left from the corner booth with the black and white patterned upholstery. Walk straight down the long corridor, passing the stainless steel counters on your right. Head towards the main dining area marked by the bright turquoise wall. Continue straight down the central aisle, with the long banquette seating on your left and a row of booths on your right. Proceed all the way to the back of the restaurant and stop at the end of the aisle."
+  },
+  "provenance": {
+    "source_key": "grscenes_20/gpt56_059",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

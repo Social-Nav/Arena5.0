@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000000_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:14:48.357596+08:00",
+  "raw_text": "{\"instruction\": \"Start in the aisle facing the three-tiered circular wooden display stand that has boots and pink towels on it. Turn left and proceed straight down the long, narrow grocery aisle, passing the chest freezer on your left. Walk all the way to the end of the aisle. At the back wall, which is stocked with large bags and open bins of flour or sugar, make a left turn. Stop in the produce area in front of the wooden crates of onions and the shelves holding kitchenware.\"}",
+  "parsed_result": {
+    "instruction": "Start in the aisle facing the three-tiered circular wooden display stand that has boots and pink towels on it. Turn left and proceed straight down the long, narrow grocery aisle, passing the chest freezer on your left. Walk all the way to the end of the aisle. At the back wall, which is stocked with large bags and open bins of flour or sugar, make a left turn. Stop in the produce area in front of the wooden crates of onions and the shelves holding kitchenware."
+  },
+  "provenance": {
+    "source_key": "grscenes_15/gpt56_139",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

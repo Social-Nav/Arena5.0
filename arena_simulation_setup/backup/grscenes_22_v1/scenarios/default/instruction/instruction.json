@@ -1,0 +1,9 @@
+{
+  "video_file": "rgb_video.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-08-17T08:01:19",
+  "raw_text": "```json\n{\n  \"instruction\": \"Walk forward into the room. On your left is a long wooden bench with round cushions under a large window. On your right, walk past the light-colored sofa and the white trash can. Continue straight ahead and stop in the corner in front of the two water coolers.\"\n}\n```",
+  "parsed_result": {
+    "instruction": "Walk forward into the room. On your left is a long wooden bench with round cushions under a large window. On your right, walk past the light-colored sofa and the white trash can. Continue straight ahead and stop in the corner in front of the two water coolers."
+  }
+}

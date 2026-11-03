@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000172_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:09:34.499628+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward through the open office space, keeping the row of white desks and black chairs on your left. At the end of the desk row, turn right toward the potted plants. Make a left turn and proceed down the aisle, with a wall of framed pictures on your right and a line of office chairs on your left. Continue straight, walking alongside the long white desk. Your destination is the workstation with a small white fan and a tray holding a mug and pencil holder.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward through the open office space, keeping the row of white desks and black chairs on your left. At the end of the desk row, turn right toward the potted plants. Make a left turn and proceed down the aisle, with a wall of framed pictures on your right and a line of office chairs on your left. Continue straight, walking alongside the long white desk. Your destination is the workstation with a small white fan and a tray holding a mug and pencil holder."
+  },
+  "provenance": {
+    "source_key": "grscenes_10/gpt56_207",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

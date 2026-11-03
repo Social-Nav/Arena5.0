@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000003_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:04:32.399492+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward along the white curved checkout counter, keeping it on your left. Pass the cash registers and continue straight down the main aisle with snack shelves on your right. Turn right into the first aisle between the wooden and metal shelves. Walk to the end of this aisle, turn left, and then make an immediate right into the next aisle. Proceed forward, passing the shelves of mugs and kitchenware on your right. At the end of this aisle, turn left into the narrow passage with clothing on the right. Stop in the corner at the very end.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward along the white curved checkout counter, keeping it on your left. Pass the cash registers and continue straight down the main aisle with snack shelves on your right. Turn right into the first aisle between the wooden and metal shelves. Walk to the end of this aisle, turn left, and then make an immediate right into the next aisle. Proceed forward, passing the shelves of mugs and kitchenware on your right. At the end of this aisle, turn left into the narrow passage with clothing on the right. Stop in the corner at the very end."
+  },
+  "provenance": {
+    "source_key": "grscenes_4/gpt56_302",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000229_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:15:36.076759+08:00",
+  "raw_text": "{\"instruction\": \"Turn left, moving away from the rack of sports balls and along the wall of large windows. Walk past the child's art easel. As the floor changes from carpet to a smooth white surface, turn right. Proceed straight down the hallway, keeping the long wall of white and wood cubbies on your left. Stop at the white printer located on the floor at the end of the hallway, just before the office desk.\"}",
+  "parsed_result": {
+    "instruction": "Turn left, moving away from the rack of sports balls and along the wall of large windows. Walk past the child's art easel. As the floor changes from carpet to a smooth white surface, turn right. Proceed straight down the hallway, keeping the long wall of white and wood cubbies on your left. Stop at the white printer located on the floor at the end of the hallway, just before the office desk."
+  },
+  "provenance": {
+    "source_key": "grscenes_16/gpt56_237",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

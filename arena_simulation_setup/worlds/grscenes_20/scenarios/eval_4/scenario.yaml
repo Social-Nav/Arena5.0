@@ -1,0 +1,29 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [3.22039, -15.91932, 106.38954]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.71
+  desired_velocity: 0.92
+  waypoints:
+  - [3.07511, -15.42539, -170.07375]
+  - [2.49401, -15.52708, -147.05078]
+  - [1.70953, -16.03554, -147.05078]
+- name: hunav_2
+  model: construction_worker
+  pose: [8.37763, -1.23207, -90.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.67
+  desired_velocity: 0.86
+  waypoints:
+  - [8.37763, -1.69695, -90.0]
+  - [8.37763, -2.45238, -97.12502]
+  - [8.30499, -3.03348, -97.12502]
+robot:
+  name: robot
+  pose: [1.38993, -5.83727, -53.57325]
+  waypoints:
+  - [8.30499, -15.20747, -53.57325]
+  behavior: Crosses between widely separated dining aisles for a delivery.

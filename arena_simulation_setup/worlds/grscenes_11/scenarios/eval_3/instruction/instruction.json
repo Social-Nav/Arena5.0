@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000061_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:09:49.052647+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the office aisle, keeping the desks with chrome bases on your left and the white wall on your right. Turn left and proceed forward along the grey carpet. Keep the next row of desks on your left and the large white board on your right. Stop when you arrive at the black gridded wall at the end of the path.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the office aisle, keeping the desks with chrome bases on your left and the white wall on your right. Turn left and proceed forward along the grey carpet. Keep the next row of desks on your left and the large white board on your right. Stop when you arrive at the black gridded wall at the end of the path."
+  },
+  "provenance": {
+    "source_key": "grscenes_11/gpt56_063",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

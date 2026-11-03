@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000225_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:08:07.248512+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the long hallway with the shiny white floor. Go past the large, curved white reception desk on your left. After passing the desk, turn left into the waiting area. Stop in the open space between the white sofa on your right and the blue chairs on your left.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the long hallway with the shiny white floor. Go past the large, curved white reception desk on your left. After passing the desk, turn left into the waiting area. Stop in the open space between the white sofa on your right and the blue chairs on your left."
+  },
+  "provenance": {
+    "source_key": "grscenes_8/gpt56_240",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

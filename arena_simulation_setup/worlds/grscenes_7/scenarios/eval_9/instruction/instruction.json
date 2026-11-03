@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000150_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:07:11.486452+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight forward through the cafe, keeping the long, dark, textured service counter on your right and the modern lounge seating on your left. Continue past the stools at the counter and the two beige armchairs with colorful pillows. When you reach the end of the counter, turn left towards the dining area. Stop in front of the oval wooden table with the grey chairs.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight forward through the cafe, keeping the long, dark, textured service counter on your right and the modern lounge seating on your left. Continue past the stools at the counter and the two beige armchairs with colorful pillows. When you reach the end of the counter, turn left towards the dining area. Stop in front of the oval wooden table with the grey chairs."
+  },
+  "provenance": {
+    "source_key": "grscenes_7/gpt56_169",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

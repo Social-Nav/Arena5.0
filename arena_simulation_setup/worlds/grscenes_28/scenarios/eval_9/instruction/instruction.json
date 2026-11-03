@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000044_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:24:41.775556+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the office aisle. On your left are rows of desks with light wood tops, and on your right is a white wall with wooden bookshelves and potted plants. Continue forward until you reach the end of the aisle, stopping just before the wooden double doors.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the office aisle. On your left are rows of desks with light wood tops, and on your right is a white wall with wooden bookshelves and potted plants. Continue forward until you reach the end of the aisle, stopping just before the wooden double doors."
+  },
+  "provenance": {
+    "source_key": "grscenes_28/gpt56_230",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

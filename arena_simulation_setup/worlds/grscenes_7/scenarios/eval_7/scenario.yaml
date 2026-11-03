@@ -1,0 +1,76 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [2.66107, -4.88411, -77.00538]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.1
+  waypoints:
+  - [2.84165, -5.66661, 59.03625]
+  - [3.15766, -5.13993, -42.95459]
+  - [3.59405, -5.54623, -35.90972]
+  - [4.03045, -5.86224, -76.37301]
+  - [4.15084, -6.35883, 37.69425]
+  - [4.81296, -5.84719, -10.78429]
+  - [5.44498, -5.96758, -10.78429]
+- name: hunav_2
+  model: pedestrian
+  pose: [-0.55924, -0.64052, 90.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [-0.55924, 0.06674, 68.19859]
+  - [-0.28838, 0.74391, -5.04246]
+  - [0.22326, 0.69877, 2.7263]
+  - [0.85529, 0.72886, -12.42595]
+  - [1.74313, 0.53324, -103.3925]
+  - [1.59265, -0.09879, -28.17859]
+  - [2.014, -0.32451, -28.17859]
+- name: hunav_3
+  model: pedestrian
+  pose: [-1.11602, -7.98403, 22.78241]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [-0.36362, -7.66802, 79.9194]
+  - [-0.24323, -6.99085, 119.31001]
+  - [-0.72477, -6.13311, 56.30993]
+  - [-0.30342, -5.50108, 65.37644]
+  - [-0.13789, -5.13993, 8.53077]
+  - [0.765, -5.00449, 8.53077]
+- name: hunav_4
+  model: pedestrian
+  pose: [5.08382, 0.96963, -165.25644]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [4.79791, 0.89439, -139.18492]
+  - [4.46685, 0.60848, -83.51693]
+  - [4.54209, -0.05364, 62.44719]
+  - [4.72267, 0.29246, -22.61987]
+  - [5.08382, 0.14198, -90.0]
+  - [5.08382, -0.76091, -90.0]
+- name: hunav_5
+  model: pedestrian
+  pose: [4.30132, 1.70699, 63.43495]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [4.40666, 1.91767, -31.3287]
+  - [4.75276, 1.70699, -87.95459]
+  - [4.76781, 1.28564, -85.6013]
+  - [4.79791, 0.89439, -53.53077]
+  - [5.05373, 0.54828, -85.76361]
+  - [5.08382, 0.14198, -85.76361]
+robot:
+  name: robot
+  pose: [0.61452, -6.01272, 96.84722]
+  waypoints:
+  - [-0.30342, 1.63175, 96.84722]
+  behavior: crosses the main open aisle toward the far-right side

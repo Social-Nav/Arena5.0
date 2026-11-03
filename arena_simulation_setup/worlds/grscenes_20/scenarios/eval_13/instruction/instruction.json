@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000214_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:20:37.161341+08:00",
+  "raw_text": "{\"instruction\": \"Turn away from the table and walk straight down the main aisle of the restaurant. You'll see booths with black and white cow-print upholstery on your right and a long banquette with matching chairs on your left. Continue walking straight on the white terrazzo floor, heading towards the back of the room. Stop when you reach the end of the aisle, directly in front of the wooden double doors.\"}",
+  "parsed_result": {
+    "instruction": "Turn away from the table and walk straight down the main aisle of the restaurant. You'll see booths with black and white cow-print upholstery on your right and a long banquette with matching chairs on your left. Continue walking straight on the white terrazzo floor, heading towards the back of the room. Stop when you reach the end of the aisle, directly in front of the wooden double doors."
+  },
+  "provenance": {
+    "source_key": "grscenes_20/gpt56_219",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

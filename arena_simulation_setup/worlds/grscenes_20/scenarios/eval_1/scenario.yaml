@@ -1,0 +1,35 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [1.12843, -15.52708, 54.46232]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [1.49162, -15.01862, 135.83032]
+  - [0.98316, -14.52468, 68.74949]
+  - [1.49162, -13.21721, 86.37852]
+  - [1.56426, -12.06955, 90.0]
+  - [1.56426, -11.06715, 98.47115]
+  - [1.46257, -10.38436, 98.47115]
+- name: hunav_2
+  model: pedestrian
+  pose: [8.30499, -3.03348, -90.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.1
+  waypoints:
+  - [8.30499, -3.81796, -90.0]
+  - [8.30499, -4.98015, -90.0]
+  - [8.30499, -6.12782, -90.0]
+  - [8.30499, -7.90017, -90.0]
+  - [8.30499, -9.2948, -90.0]
+  - [8.30499, -10.457, -90.0]
+robot:
+  name: robot
+  pose: [1.38993, -5.83727, -39.11198]
+  waypoints:
+  - [8.30499, -11.45939, -39.11198]
+  behavior: Traverses the dining room to collect used service items.

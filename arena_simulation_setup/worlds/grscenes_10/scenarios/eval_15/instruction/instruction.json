@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000206_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:09:30.200091+08:00",
+  "raw_text": "{\"instruction\": \"Start in the modern office space. Turn right and walk along the long white desk, passing the black and chrome office chairs. When you reach the end of the desk, turn left at the potted plants. Proceed straight down the aisle, keeping the white wall with framed art on your right and the row of desks and chairs on your left. Stop in the aisle next to the last office chair on your left.\"}",
+  "parsed_result": {
+    "instruction": "Start in the modern office space. Turn right and walk along the long white desk, passing the black and chrome office chairs. When you reach the end of the desk, turn left at the potted plants. Proceed straight down the aisle, keeping the white wall with framed art on your right and the row of desks and chairs on your left. Stop in the aisle next to the last office chair on your left."
+  },
+  "provenance": {
+    "source_key": "grscenes_10/gpt56_260",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,38 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-5.70629, -4.51672, 38.15723]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.75
+  desired_velocity: 1.0
+  waypoints:
+  - [-4.83455, -3.83178, -15.12401]
+  - [-4.06659, -4.03934, 12.72436]
+  - [-3.42317, -3.89405, -16.69924]
+  - [-2.17783, -4.26765, -97.49586]
+  - [-2.28161, -5.05637, -24.44395]
+  - [-1.59667, -5.3677, 90.0]
+  - [-1.59667, -4.18463, 90.0]
+- name: hunav_2
+  model: pedestrian
+  pose: [4.48474, -2.2336, -175.36454]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.91
+  desired_velocity: 1.18
+  waypoints:
+  - [3.71678, -2.29586, 180.0]
+  - [3.09411, -2.29586, 175.84036]
+  - [1.95255, -2.21284, -81.46923]
+  - [2.07709, -3.04307, -82.47618]
+  - [2.22238, -4.14312, 0.0]
+  - [3.09411, -4.14312, -6.63251]
+  - [3.98661, -4.2469, 0.0]
+  - [4.6923, -4.2469, 0.0]
+robot:
+  name: robot
+  pose: [-4.85531, -1.96377, -6.704]
+  waypoints:
+  - [6.97542, -3.3544, -6.704]
+  behavior: moves through broad store aisles toward the lower exit area

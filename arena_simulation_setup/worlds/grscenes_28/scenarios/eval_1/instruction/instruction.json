@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000004_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:24:16.549792+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the office aisle. Pass the tall wooden bookshelf on your left and the row of desks on your right. Continue towards the back wall until you reach the corner. Stop in front of the small wooden table that has a microwave and a kettle on it, with the large office printer to your right.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the office aisle. Pass the tall wooden bookshelf on your left and the row of desks on your right. Continue towards the back wall until you reach the corner. Stop in front of the small wooden table that has a microwave and a kettle on it, with the large office printer to your right."
+  },
+  "provenance": {
+    "source_key": "grscenes_28/gpt56_036",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

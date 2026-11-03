@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000125_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:22:37.693600+08:00",
+  "raw_text": "{\"instruction\": \"In the large open room with light-colored flooring, pan to the right past the various grey sofas and chairs. Move forward, heading towards the space between the long sofa on the left and the two armchairs in the center. Pass the small purple basket on your left. Stop in front of the small white table with the yellow bear figure on it.\"}",
+  "parsed_result": {
+    "instruction": "In the large open room with light-colored flooring, pan to the right past the various grey sofas and chairs. Move forward, heading towards the space between the long sofa on the left and the two armchairs in the center. Pass the small purple basket on your left. Stop in front of the small white table with the yellow bear figure on it."
+  },
+  "provenance": {
+    "source_key": "grscenes_24/gpt56_126",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

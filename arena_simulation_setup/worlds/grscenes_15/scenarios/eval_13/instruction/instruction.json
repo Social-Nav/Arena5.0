@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000002_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:14:30.815752+08:00",
+  "raw_text": "{\"instruction\": \"Start in the supermarket aisle with the circular wooden display stand in front of you. Turn left and walk down the long aisle, passing the chest freezer on your left. Continue straight to the very end of this aisle, with shelves of groceries on both your left and right. Your destination is at the back wall, in front of the shelves holding bulk bins, produce, and dishes.\"}",
+  "parsed_result": {
+    "instruction": "Start in the supermarket aisle with the circular wooden display stand in front of you. Turn left and walk down the long aisle, passing the chest freezer on your left. Continue straight to the very end of this aisle, with shelves of groceries on both your left and right. Your destination is at the back wall, in front of the shelves holding bulk bins, produce, and dishes."
+  },
+  "provenance": {
+    "source_key": "grscenes_15/gpt56_238",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

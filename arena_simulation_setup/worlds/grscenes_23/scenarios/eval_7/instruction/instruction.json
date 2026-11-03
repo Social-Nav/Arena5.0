@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000141_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:21:45.832895+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the main aisle of the supermarket, keeping the empty produce bins on your left. Continue past the low white display rack on your right. When you reach the tall shelving units, turn right into the narrow aisle. Proceed to the end of this aisle and stop in front of the grey wall.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the main aisle of the supermarket, keeping the empty produce bins on your left. Continue past the low white display rack on your right. When you reach the tall shelving units, turn right into the narrow aisle. Proceed to the end of this aisle and stop in front of the grey wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_23/gpt56_142",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

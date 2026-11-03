@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000167_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:02:22.098319+08:00",
+  "raw_text": "{\"instruction\": \"Begin facing the large, empty wooden bookshelf. Turn left and walk forward on the grey carpet, keeping the long, tiered shelving unit on your left side. Continue past the seating area with the light wood sofa. Go straight through the wide opening into the next room, which is a dining area. Once inside, turn left and walk towards the black-framed glass doors. Stop directly in front of the glass doors.\"}",
+  "parsed_result": {
+    "instruction": "Begin facing the large, empty wooden bookshelf. Turn left and walk forward on the grey carpet, keeping the long, tiered shelving unit on your left side. Continue past the seating area with the light wood sofa. Go straight through the wide opening into the next room, which is a dining area. Once inside, turn left and walk towards the black-framed glass doors. Stop directly in front of the glass doors."
+  },
+  "provenance": {
+    "source_key": "grscenes_3/gpt56_200",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

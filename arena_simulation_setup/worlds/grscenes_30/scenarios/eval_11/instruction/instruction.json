@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000097_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:26:38.744636+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight forward through the bright, minimalist cafe. Pass the white service counter on your left and the dining tables on your right. Continue straight towards the back wall until you are standing directly in front of the wooden door with the silver diagonal line inlays.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight forward through the bright, minimalist cafe. Pass the white service counter on your left and the dining tables on your right. Continue straight towards the back wall until you are standing directly in front of the wooden door with the silver diagonal line inlays."
+  },
+  "provenance": {
+    "source_key": "grscenes_30/gpt56_105",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

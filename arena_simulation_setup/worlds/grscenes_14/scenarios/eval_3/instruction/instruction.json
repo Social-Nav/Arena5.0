@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000057_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:13:49.190666+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward down the office aisle, passing the white shelving unit on your right and the white desks on your left. Continue straight past the white partition wall and head towards the corner with the large window and potted plants. You will see a built-in wooden bookshelf on your left. Stop in the corner next to the large office printer, which is located between the bookshelf and the plants.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward down the office aisle, passing the white shelving unit on your right and the white desks on your left. Continue straight past the white partition wall and head towards the corner with the large window and potted plants. You will see a built-in wooden bookshelf on your left. Stop in the corner next to the large office printer, which is located between the bookshelf and the plants."
+  },
+  "provenance": {
+    "source_key": "grscenes_14/gpt56_065",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

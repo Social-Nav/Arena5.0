@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000085_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:25:25.172437+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward into the medical room. Pass the row of four grey recliner chairs on your left. Continue straight past the water cooler and head towards the light blue privacy curtain. Stop in front of the hospital bed on the other side of the curtain.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward into the medical room. Pass the row of four grey recliner chairs on your left. Continue straight past the water cooler and head towards the light blue privacy curtain. Stop in front of the hospital bed on the other side of the curtain."
+  },
+  "provenance": {
+    "source_key": "grscenes_29/gpt56_103",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

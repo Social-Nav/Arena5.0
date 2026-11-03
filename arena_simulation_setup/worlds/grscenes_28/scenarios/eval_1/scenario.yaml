@@ -1,0 +1,43 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-2.68533, -13.66097, 18.43495]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.92
+  desired_velocity: 1.18
+  waypoints:
+  - [-2.07206, -13.45654, -22.0679]
+  - [-1.23164, -13.79725, 16.8584]
+  - [-0.48208, -13.57011, -27.55281]
+  - [0.04034, -13.84268, 4.15965]
+  - [1.28961, -13.75182, 4.15965]
+- name: hunav_2
+  model: construction_worker
+  pose: [-2.48091, -7.27834, -0.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.68
+  desired_velocity: 0.9
+  waypoints:
+  - [-1.75406, -7.27834, 25.641]
+  - [-1.18621, -7.00577, 63.43495]
+  - [-1.0045, -6.64235, -0.0]
+  - [-0.43665, -6.64235, -0.0]
+- name: hunav_3
+  model: police
+  pose: [-3.18504, 0.33085, -1.0e-05]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.84
+  desired_velocity: 1.08
+  waypoints:
+  - [-2.73076, 0.33085, 5.71059]
+  - [-1.59506, 0.44442, -20.55605]
+  - [-1.04993, 0.23999, 18.88608]
+  - [-0.18679, 0.53527, 18.88608]
+robot:
+  name: robot
+  pose: [4.33329, -5.84736, -87.63719]
+  waypoints:
+  - [4.71943, -15.20552, -87.63719]
+  behavior: Moves west along the broad southern aisle with a small parcel.

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000151_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:21:03.366121+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight ahead, passing the white sofa on your left. Continue forward towards the large, light-wood bookshelf unit that spans the wall. Stop in front of the books on the lower shelves of the bookcase.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight ahead, passing the white sofa on your left. Continue forward towards the large, light-wood bookshelf unit that spans the wall. Stop in front of the books on the lower shelves of the bookcase."
+  },
+  "provenance": {
+    "source_key": "grscenes_22/gpt56_153",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

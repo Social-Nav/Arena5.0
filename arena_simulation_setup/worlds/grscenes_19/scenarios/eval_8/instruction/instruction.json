@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000008_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:17:28.497056+08:00",
+  "raw_text": "{\"instruction\": \"Exit from behind the white counter and turn left into the main corridor, passing a potted plant on your right and vending machines on your left. Proceed straight down the long, white hallway, walking past the nurses' station on the left. Continue all the way to the end of the hall. Your destination is the metal trolley parked under the window.\"}",
+  "parsed_result": {
+    "instruction": "Exit from behind the white counter and turn left into the main corridor, passing a potted plant on your right and vending machines on your left. Proceed straight down the long, white hallway, walking past the nurses' station on the left. Continue all the way to the end of the hall. Your destination is the metal trolley parked under the window."
+  },
+  "provenance": {
+    "source_key": "grscenes_19/gpt56_055",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

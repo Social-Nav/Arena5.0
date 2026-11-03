@@ -1,0 +1,38 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: construction_worker
+  pose: [1.9382, 2.88777, 67.38013]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [2.07558, 3.21749, 34.18612]
+  - [2.80371, 3.71207, 3.17982]
+  - [3.29829, 3.73955, -4.18492]
+  - [4.42483, 3.65712, -24.77514]
+  - [5.49642, 3.16254, -68.4774]
+  - [5.88109, 2.18712, -0.0]
+  - [6.47184, 2.18712, 18.43495]
+  - [6.84277, 2.31076, 18.43495]
+- name: hunav_2
+  model: pedestrian
+  pose: [7.99679, -0.05222, -152.1759]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [7.50221, -0.31325, -130.91438]
+  - [7.14501, -0.7254, -170.88214]
+  - [6.03221, -0.904, 137.41951]
+  - [5.52389, -0.4369, -157.61987]
+  - [5.05679, -0.62923, -118.96766]
+  - [4.6309, -1.39858, -166.15931]
+  - [3.68296, -1.63213, -166.15931]
+robot:
+  name: robot
+  pose: [0.45446, -3.56923, 39.70538]
+  waypoints:
+  - [7.41978, 2.2146, 39.70538]
+  behavior: travels diagonally through the open public corridor

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000301_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:11:17.384864+08:00",
+  "raw_text": "{\"instruction\": \"Walk straight down the wide hallway, keeping the long wall of white, empty shelves on your left. Pass the waiting area with the white sofas and chairs on your right. Continue forward until you reach the end of the shelving unit. Stop in the open space in front of the large office printer and the silver hand truck.\"}",
+  "parsed_result": {
+    "instruction": "Walk straight down the wide hallway, keeping the long wall of white, empty shelves on your left. Pass the waiting area with the white sofas and chairs on your right. Continue forward until you reach the end of the shelving unit. Stop in the open space in front of the large office printer and the silver hand truck."
+  },
+  "provenance": {
+    "source_key": "grscenes_12/gpt56_303",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

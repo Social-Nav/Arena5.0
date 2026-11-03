@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000051_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:27:05.450693+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward into the bright, white dining area. Go straight, keeping the long, curved white counter on your left. Pass by the modern tables and chairs on both sides as you make your way toward the back of the room. Your destination is the light wood door with the thin, diagonal line pattern on it. Stop in front of the door.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward into the bright, white dining area. Go straight, keeping the long, curved white counter on your left. Pass by the modern tables and chairs on both sides as you make your way toward the back of the room. Your destination is the light wood door with the thin, diagonal line pattern on it. Stop in front of the door."
+  },
+  "provenance": {
+    "source_key": "grscenes_30/gpt56_057",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000355_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:24:08.080796+08:00",
+  "raw_text": "{\"instruction\": \"Begin in this bright, white space with paneled walls. Move forward towards the small seating area with blue chairs and the shopping cart. As you walk, keep the paneled wall on your left and pass the blue chairs on your right. Your destination is the empty shopping cart parked against the wall.\"}",
+  "parsed_result": {
+    "instruction": "Begin in this bright, white space with paneled walls. Move forward towards the small seating area with blue chairs and the shopping cart. As you walk, keep the paneled wall on your left and pass the blue chairs on your right. Your destination is the empty shopping cart parked against the wall."
+  },
+  "provenance": {
+    "source_key": "grscenes_27/gpt56_356",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}

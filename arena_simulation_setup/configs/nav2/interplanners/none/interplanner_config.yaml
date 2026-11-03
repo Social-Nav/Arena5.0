@@ -1,0 +1,8 @@
+bt_navigator:
+  ros__parameters:
+    default_nav_to_pose_bt_xml: "$(find-pkg-share arena_simulation_setup)/configs/nav2/interplanners/none/interplanner_behavior.xml"
+    default_nav_through_poses_bt_xml: "$(find-pkg-share arena_simulation_setup)/configs/nav2/interplanners/none/interplanner_behavior.xml"
+    plugin_lib_names: [] # minimal configuration for plugin_lib_names
+                                                   # has no effect since empty behavior tree is used which does not use any plugins but is used to avoid error
+
+      

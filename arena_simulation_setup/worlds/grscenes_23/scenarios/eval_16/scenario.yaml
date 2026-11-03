@@ -1,0 +1,40 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-3.64373, 1.45028, -92.7927]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [-3.68786, 0.54571, -92.48955]
+  - [-3.70992, 0.03827, -90.0]
+  - [-3.70992, -1.32962, -90.0]
+  - [-3.70992, -2.25625, -85.71085]
+  - [-3.64373, -3.13876, -18.43495]
+  - [-2.98185, -3.35938, -12.52881]
+  - [-2.58472, -3.44764, -90.0]
+  - [-2.58472, -3.75651, -74.29136]
+  - [-2.38616, -4.46252, -74.29136]
+- name: hunav_2
+  model: pedestrian
+  pose: [5.22547, 1.16347, 99.46232]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.7
+  desired_velocity: 0.9
+  waypoints:
+  - [5.11516, 1.82535, 118.88658]
+  - [4.76215, 2.46517, 79.04594]
+  - [5.0269, 3.83305, 93.27049]
+  - [4.98278, 4.60525, 87.7974]
+  - [5.00484, 5.17888, 104.62087]
+  - [4.87247, 5.68632, 110.55605]
+  - [4.74009, 6.03932, -167.27565]
+  - [4.05615, 5.88488, -167.27565]
+robot:
+  name: robot
+  pose: [11.20446, -0.62361, -177.2898]
+  waypoints:
+  - [-3.70992, -1.32962, -177.2898]
+  behavior: Navigates from the lower sales floor toward the upper cross aisle.

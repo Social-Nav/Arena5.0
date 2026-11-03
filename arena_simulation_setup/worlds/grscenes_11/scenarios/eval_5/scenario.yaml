@@ -1,0 +1,48 @@
+# Generated from topdown pixel waypoints
+
+dynamic:
+- name: hunav_1
+  model: pedestrian
+  pose: [-5.29815, -5.15792, -53.1301]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.8
+  desired_velocity: 1.0
+  waypoints:
+  - [-4.97823, -5.58448, 39.55967]
+  - [-4.56945, -5.24679, -43.5312]
+  - [-4.21398, -5.58448, -6.34019]
+  - [-3.73411, -5.6378, 116.56505]
+  - [-3.92961, -5.24679, 45.0]
+  - [-3.59192, -4.9091, 45.0]
+- name: hunav_2
+  model: pedestrian
+  pose: [-0.60604, -5.38898, 21.80141]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.65
+  desired_velocity: 0.85
+  waypoints:
+  - [-0.25057, -5.24679, 90.0]
+  - [-0.25057, -4.85578, 99.16235]
+  - [-0.33944, -4.30481, -155.22486]
+  - [-0.80154, -4.51809, 113.42869]
+  - [-1.03259, -3.9849, 113.42869]
+- name: hunav_3
+  model: pedestrian
+  pose: [3.19741, 0.36952, 90.0]
+  behavior_tree: BTRegularNav.xml
+  velocity: 0.9
+  desired_velocity: 1.15
+  waypoints:
+  - [3.19741, 0.81385, -64.17901]
+  - [3.46401, 0.26288, -112.9321]
+  - [3.26851, -0.19922, -51.95296]
+  - [3.58842, -0.608, -87.70939]
+  - [3.6062, -1.05233, -63.43495]
+  - [3.8017, -1.44334, 18.43495]
+  - [4.17494, -1.31893, 18.43495]
+robot:
+  name: robot
+  pose: [-5.08487, -4.23372, 25.11187]
+  waypoints:
+  - [3.71284, -0.11035, 25.11187]
+  behavior: delivers office materials to the lower desk area

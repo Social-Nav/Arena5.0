@@ -1,0 +1,124 @@
+{
+  "agents": [
+    {
+      "name": "hunav_1",
+      "role": "crossing student",
+      "model": "female_adult_business_02",
+      "from_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "spawn_waypoint": "wp_r00_classroom_037",
+      "waypoints": [
+        "wp_r00_classroom_038",
+        "wp_r00_classroom_039",
+        "wp_r00_classroom_080",
+        "wp_r00_classroom_079",
+        "wp_r00_classroom_097",
+        "wp_r00_classroom_046",
+        "wp_r00_classroom_059"
+      ],
+      "velocity": 0.82,
+      "desired_velocity": 1.08,
+      "behavior": "walks from the left side into the central aisle and continues toward the upper-right side"
+    },
+    {
+      "name": "hunav_2",
+      "role": "returning attendee",
+      "model": "male_adult_medical_01",
+      "from_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "spawn_waypoint": "wp_r00_classroom_018",
+      "waypoints": [
+        "wp_r00_classroom_095",
+        "wp_r00_classroom_057",
+        "wp_r00_classroom_056",
+        "wp_r00_classroom_055",
+        "wp_r00_classroom_054"
+      ],
+      "velocity": 0.74,
+      "desired_velocity": 0.96,
+      "behavior": "moves down from the right edge and merges into the lower central walking space"
+    },
+    {
+      "name": "hunav_3",
+      "role": "diagonal passerby",
+      "model": "F_Medical_01",
+      "from_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "spawn_waypoint": "wp_r00_classroom_082",
+      "waypoints": [
+        "wp_r00_classroom_083",
+        "wp_r00_classroom_084",
+        "wp_r00_classroom_005",
+        "wp_r00_classroom_040",
+        "wp_r00_classroom_046",
+        "wp_r00_classroom_059",
+        "wp_r00_classroom_064"
+      ],
+      "velocity": 0.9,
+      "desired_velocity": 1.18,
+      "behavior": "crosses from the upper-left side through the open center toward the right-center area"
+    },
+    {
+      "name": "hunav_4",
+      "role": "lower aisle walker",
+      "model": "male_adult_construction_03",
+      "from_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "to_region": {
+        "region_id": 0,
+        "label": "classroom"
+      },
+      "spawn_waypoint": "wp_r00_classroom_031",
+      "waypoints": [
+        "wp_r00_classroom_032",
+        "wp_r00_classroom_033",
+        "wp_r00_classroom_052",
+        "wp_r00_classroom_053",
+        "wp_r00_classroom_054",
+        "wp_r00_classroom_055"
+      ],
+      "velocity": 0.78,
+      "desired_velocity": 1.0,
+      "behavior": "walks along the lower side of the room and approaches the central-right aisle"
+    }
+  ],
+  "robot": {
+    "name": "robot",
+    "from_region": {
+      "region_id": 0,
+      "label": "classroom"
+    },
+    "to_region": {
+      "region_id": 0,
+      "label": "classroom"
+    },
+    "start_waypoint": "wp_r00_classroom_039",
+    "waypoints": [
+      "wp_r00_classroom_080",
+      "wp_r00_classroom_079",
+      "wp_r00_classroom_097",
+      "wp_r00_classroom_046"
+    ],
+    "behavior": "travels on a clear near-horizontal path across the open central area for navigation testing"
+  }
+}

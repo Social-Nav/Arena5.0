@@ -1,0 +1,16 @@
+{
+  "video_file": "episode_000308_rgb.mp4",
+  "model": "gemini-2.5-pro",
+  "timestamp": "2026-10-31T02:00:27.522128+08:00",
+  "raw_text": "{\"instruction\": \"Walk forward into the waiting room, passing the light blue reception desk on your left. Continue straight ahead towards the large, black-paneled doors, with the rows of blue chairs on your right. Stop in front of the black doors.\"}",
+  "parsed_result": {
+    "instruction": "Walk forward into the waiting room, passing the light blue reception desk on your left. Continue straight ahead towards the large, black-paneled doors, with the rows of blue chairs on your right. Stop in front of the black doors."
+  },
+  "provenance": {
+    "source_key": "grscenes_1/gpt56_309",
+    "source": "saved_successful_instruction_record",
+    "raw_text_source": "reconstructed_json_from_saved_instruction",
+    "raw_text_is_original_provider_response": false,
+    "instruction_text_changed": false
+  }
+}
