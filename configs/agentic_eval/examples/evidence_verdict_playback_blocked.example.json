@@ -1,0 +1,42 @@
+{
+  "contract_reasons": [],
+  "deterministic": true,
+  "flags": {
+    "artifact_complete": false,
+    "contract_blocked": false,
+    "playback_blocked": true,
+    "scientific_fail": true
+  },
+  "input_sha256": "e85af6d06adc8d501fa4ab2601c5f781942ef2f5635afbabdace3a0841dd8194",
+  "metrics_evidence": {
+    "artifact_status": "OK",
+    "metrics_known": true,
+    "social_failed": true,
+    "social_status": "OK",
+    "task_failed": true,
+    "task_status": "OK"
+  },
+  "policy": {
+    "precedence": [
+      "contract_blocked",
+      "playback_blocked",
+      "scientific_fail",
+      "artifact_complete"
+    ],
+    "unknown_never_pass": true,
+    "version": 1
+  },
+  "schema": "arena.paper.evidence_verdict.v1",
+  "secondary_verdicts": [
+    "scientific_fail"
+  ],
+  "unknowns": [
+    "ARTIFACT_MISSING:benchmark_result.json",
+    "DECODE_AVAILABLE_NOT_RUN_SCOPED",
+    "PLAYBACK_BLOCKER:CAMERA_INFO_NOT_IN_BAG",
+    "PLAYBACK_BLOCKER:LASER_SCAN_ZERO_MESSAGES",
+    "PLAYBACK_BLOCKER:RGB_NOT_IN_BAG",
+    "TIMEBASE_AVAILABLE_UNVERIFIED"
+  ],
+  "verdict": "playback_blocked"
+}

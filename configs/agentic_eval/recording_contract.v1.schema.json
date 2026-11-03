@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "arena.agentic.recording_contract.v1",
+  "title": "Arena5 future-bag recording contract",
+  "type": "object",
+  "required": [
+    "schema",
+    "track",
+    "sensor_profile",
+    "bag_path",
+    "recording_command",
+    "open_mode",
+    "required_types",
+    "required_topics",
+    "min_messages",
+    "playback_policy"
+  ],
+  "properties": {
+    "schema": {"const": "arena.agentic.recording_contract.v1"},
+    "track": {"enum": ["A", "B"]},
+    "sensor_profile": {"enum": ["rgb_lidar", "rgb_only"]},
+    "bag_path": {"type": "string", "minLength": 1, "not": {"pattern": "\\.\\."}},
+    "recording_command": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "open_mode": {"const": "ro"},
+    "required_types": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": {"type": "string", "minLength": 1}
+      }
+    },
+    "required_topics": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": {"type": "string", "minLength": 1}
+      }
+    },
+    "min_messages": {
+      "type": "object",
+      "additionalProperties": {"type": "integer", "minimum": 1}
+    },
+    "playback_policy": {"type": "string", "minLength": 1},
+    "status": {"type": "string"},
+    "note": {"type": "string"}
+  },
+  "additionalProperties": true
+}

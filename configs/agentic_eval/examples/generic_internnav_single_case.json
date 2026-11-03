@@ -1,0 +1,30 @@
+{
+  "schema": "arena.agentic.operator_request.v1",
+  "request_id": "generic-internnav-grscenes20-default2",
+  "mode": "single_case",
+  "track": "generic_internnav",
+  "case": {
+    "world": "grscenes_20_v1",
+    "scenario": "default_2",
+    "robot": "Ai2_Bot2"
+  },
+  "episodes": 1,
+  "seed": 0,
+  "timeout": 300,
+  "profile": "arena_bringup/configs/benchmark/profiles/internnav_grscenes.yaml",
+  "workspace_root": "/home/ubuntu/arena_jazzy_ws",
+  "arena_dir": "/home/ubuntu/arena_jazzy_ws/src/Arena",
+  "source_binding": "/home/ubuntu/arena_jazzy_ws/src/Arena",
+  "model": "internnav",
+  "model_revision": "InternVLA-N1-DualVLN",
+  "action_control": "common_follow_path",
+  "hunav_config": "arena_bringup/configs/hunav/default_sf60.yaml",
+  "hunav_config_sha256": "a834b6bb42e6c8f14ea4734aa5ab1fd03791a1897f9445d24c2fb7ccade9eeb1",
+  "expected_outputs": [
+    "benchmark_result.json",
+    "run_manifest.yaml",
+    "metrics.csv",
+    "video_index.json"
+  ],
+  "smoke_only": true
+}

@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "arena.agentic.method_bundle.v1",
+  "title": "Arena5 method bundle",
+  "type": "object",
+  "required": [
+    "schema",
+    "method_id",
+    "role",
+    "status",
+    "runtime_status",
+    "launchable",
+    "blockers",
+    "profile",
+    "model",
+    "sensors",
+    "adapter",
+    "controller",
+    "ros",
+    "output",
+    "lock",
+    "cleanup",
+    "private_fields",
+    "source_binding",
+    "source_commit"
+  ],
+  "properties": {
+    "schema": {"const": "arena.agentic.method_bundle.v1"},
+    "source_commit": {"type": "string", "pattern": "^[0-9a-f]{7,40}$"},
+    "method_id": {
+      "enum": [
+        "internnav",
+        "navila",
+        "lightnav",
+        "qwen_agent_proxmpc",
+        "strict_b_on",
+        "strict_b_off",
+        "socialmpc_oracle"
+      ]
+    },
+    "role": {"type": "string", "minLength": 1},
+    "status": {"enum": ["READY", "BLOCKED"]},
+    "runtime_status": {"type": "string", "minLength": 1},
+    "launchable": {"type": "boolean"},
+    "blockers": {"type": "array", "items": {"type": "string"}},
+    "profile": {
+      "type": "object",
+      "required": ["kind", "path", "id", "sha256"],
+      "properties": {
+        "kind": {"enum": ["benchmark_profile", "audit_identity", "bfast_profile", "oracle"]},
+        "path": {"type": "string"},
+        "id": {"type": "string"},
+        "sha256": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "model": {
+      "type": "object",
+      "required": ["image", "service", "container", "entrypoint", "revision", "checkpoint_source"],
+      "properties": {
+        "image": {"type": "string"},
+        "service": {"type": "string"},
+        "container": {"type": "string"},
+        "entrypoint": {"type": "string"},
+        "revision": {"type": "string"},
+        "checkpoint_source": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "sensors": {
+      "type": "object",
+      "required": ["sensor_profile", "recording_contract", "allowed_topics"],
+      "properties": {
+        "sensor_profile": {"enum": ["rgb_lidar", "rgb_only", "none"]},
+        "recording_contract": {"type": "string"},
+        "allowed_topics": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "adapter": {
+      "type": "object",
+      "required": ["name", "action_mapping", "common_executor"],
+      "properties": {
+        "name": {"type": "string"},
+        "action_mapping": {"type": "string"},
+        "common_executor": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "controller": {
+      "type": "object",
+      "required": ["local_planner", "control_path"],
+      "properties": {
+        "local_planner": {"type": "string"},
+        "control_path": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "ros": {
+      "type": "object",
+      "required": ["domain_id", "namespace", "topics", "ports"],
+      "properties": {
+        "domain_id": {"type": "integer"},
+        "namespace": {"type": "string", "minLength": 1},
+        "topics": {
+          "type": "object",
+          "additionalProperties": {"type": "string", "minLength": 1}
+        },
+        "ports": {"type": "array", "items": {"type": "integer"}}
+      },
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "required": ["prefix", "run_root"],
+      "properties": {
+        "prefix": {"type": "string", "minLength": 1},
+        "run_root": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "lock": {
+      "type": "object",
+      "required": ["path", "scope"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "scope": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "cleanup": {"type": "array", "items": {"type": "string"}},
+    "private_fields": {"type": "array", "items": {"type": "string"}},
+    "source_binding": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": false
+}

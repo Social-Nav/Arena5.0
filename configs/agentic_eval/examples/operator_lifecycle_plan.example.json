@@ -1,0 +1,121 @@
+{
+  "action": "plan",
+  "allowed_next_actions": [
+    "start",
+    "cancel",
+    "read",
+    "audit"
+  ],
+  "audit_manifest": null,
+  "blockers": [],
+  "cleanup": [],
+  "commands": [
+    [
+      "/home/ubuntu/arena_jazzy_ws/src/Arena/_meta/docker/features/benchmark/main",
+      "plan",
+      "run",
+      "--profile",
+      "/home/ubuntu/arena_jazzy_ws/.trae/worktrees/vln-target-merged-20261013/arena_bringup/configs/benchmark/profiles/internnav_grscenes.yaml",
+      "--case",
+      "grscenes_20_v1/default_2",
+      "--robot",
+      "Ai2_Bot2",
+      "--episodes",
+      "1",
+      "--pedestrian-seed",
+      "0",
+      "--timeout",
+      "300",
+      "--",
+      "--output-prefix",
+      "agentic/generic-internnav-grscenes20-default2"
+    ]
+  ],
+  "env": {
+    "ARENA_BENCHMARK_DEVICE": "cuda:0",
+    "ARENA_DIR": "/home/ubuntu/arena_jazzy_ws/src/Arena",
+    "ARENA_HUNAV_CONFIG": "/home/ubuntu/arena_jazzy_ws/.trae/worktrees/vln-target-merged-20261013/arena_bringup/configs/hunav/default_sf60.yaml",
+    "ARENA_HUNAV_CONFIG_SHA256": "a834b6bb42e6c8f14ea4734aa5ab1fd03791a1897f9445d24c2fb7ccade9eeb1",
+    "ARENA_IMAGE": "arena:dev",
+    "ARENA_PROJECT_NAME": "arena-arena_jazzy_ws",
+    "ARENA_REPO_ROOT": "/home/ubuntu/arena_jazzy_ws/.trae/worktrees/vln-target-merged-20261013",
+    "ARENA_WS_DIR": "/home/ubuntu/arena_jazzy_ws",
+    "FASTDDS_BUILTIN_TRANSPORTS": "UDPv4",
+    "HOST_ARENA_WS_DIR": "/home/ubuntu/arena_jazzy_ws",
+    "PYTHONPATH": "/home/ubuntu/arena_jazzy_ws/src/Arena/arena_bringup",
+    "RMW_IMPLEMENTATION": "rmw_fastrtps_cpp",
+    "ROS_AUTOMATIC_DISCOVERY_RANGE": "SUBNET",
+    "ROS_DOMAIN_ID": "1",
+    "ROS_LOCALHOST_ONLY": "0"
+  },
+  "errors": [],
+  "executable": true,
+  "exit_taxonomy": {
+    "contract_or_evidence_blocked": 2,
+    "ok": 0,
+    "scientific_fail": 1
+  },
+  "expected_outputs": [
+    "benchmark_result.json",
+    "run_manifest.yaml",
+    "metrics.csv",
+    "video_index.json"
+  ],
+  "from_state": null,
+  "idempotency_key": "sha256:5627aa6108a154ea268b1cac411c3c40519f719abd64c68a3003a6d78904606d",
+  "identity": {
+    "action_control": "common_follow_path",
+    "arena_dir": "/home/ubuntu/arena_jazzy_ws/src/Arena",
+    "hunav_config": "/home/ubuntu/arena_jazzy_ws/.trae/worktrees/vln-target-merged-20261013/arena_bringup/configs/hunav/default_sf60.yaml",
+    "hunav_config_sha256": "a834b6bb42e6c8f14ea4734aa5ab1fd03791a1897f9445d24c2fb7ccade9eeb1",
+    "model": "internnav",
+    "model_revision": "InternVLA-N1-DualVLN",
+    "profile": {
+      "adapter_target": "arena_vln_models.internnav:load_internvla_realworld_http_adapter",
+      "evaluation": {
+        "episodes": 1,
+        "human_simulator": "hunav",
+        "local_planner": "dual_vln",
+        "robot": "Ai2_Bot2",
+        "scenario": "default_2",
+        "world": "grscenes_20_v1"
+      },
+      "model": "internnav",
+      "model_path": "/opt/arena_ws/deps/models/InternVLA-N1-DualVLN",
+      "model_revision": "InternVLA-N1-DualVLN",
+      "profile_id": "internnav_grscenes",
+      "profile_path": "/home/ubuntu/arena_jazzy_ws/.trae/worktrees/vln-target-merged-20261013/arena_bringup/configs/benchmark/profiles/internnav_grscenes.yaml",
+      "profile_sha256": "81b0303057728f00b402a3f202853db713bd23eb5c340da334ff4e184777cbb5",
+      "runtime": {
+        "device": "cuda:0",
+        "fastdds_builtin_transports": "UDPv4",
+        "http_port": 5801,
+        "rmw_implementation": "rmw_fastrtps_cpp",
+        "ros_automatic_discovery_range": "SUBNET",
+        "ros_domain_id": 1,
+        "ros_localhost_only": 0
+      },
+      "server_mode": "internnav"
+    },
+    "profile_path": "/home/ubuntu/arena_jazzy_ws/.trae/worktrees/vln-target-merged-20261013/arena_bringup/configs/benchmark/profiles/internnav_grscenes.yaml",
+    "runtime": {
+      "device": "cuda:0",
+      "fastdds_builtin_transports": "UDPv4",
+      "http_port": 5801,
+      "rmw_implementation": "rmw_fastrtps_cpp",
+      "ros_automatic_discovery_range": "SUBNET",
+      "ros_domain_id": 1,
+      "ros_localhost_only": 0
+    },
+    "source_binding": "/home/ubuntu/arena_jazzy_ws/src/Arena",
+    "workspace_root": "/home/ubuntu/arena_jazzy_ws"
+  },
+  "output_root": null,
+  "preconditions": [],
+  "request_id": "generic-internnav-grscenes20-default2",
+  "request_valid": true,
+  "run_dir": null,
+  "schema": "arena.agentic.operator_lifecycle.v1",
+  "sensor_profile": "rgb_lidar",
+  "state": "planned"
+}

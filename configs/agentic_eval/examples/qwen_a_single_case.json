@@ -1,0 +1,28 @@
+{
+  "schema": "arena.agentic.operator_request.v1",
+  "request_id": "qwen-prox-a-grscenes20-default2",
+  "mode": "single_case",
+  "track": "qwen_prox_a",
+  "case": {
+    "world": "grscenes_20_v1",
+    "scenario": "default_2",
+    "robot": "Ai2_Bot2"
+  },
+  "episodes": 1,
+  "seed": 0,
+  "timeout": 59,
+  "profile": "configs/agentic_eval/profiles/qwen_prox_a_audit_identity.v1.json",
+  "workspace_root": "/home/ubuntu/arena_jazzy_ws",
+  "arena_dir": "/home/ubuntu/arena_jazzy_ws/src/Arena",
+  "source_binding": "/home/ubuntu/arena_jazzy_ws/src/Arena",
+  "model": "Qwen/Qwen3-VL-8B-Instruct-FP8",
+  "model_revision": "9cdc6310a8cb770ce18efaf4e9935334512aee45",
+  "action_control": "common_follow_path",
+  "sensor_profile": "rgb_lidar",
+  "expected_outputs": [
+    "evidence_index.json",
+    "evidence_verdict.json",
+    "audit_consolidated.json"
+  ],
+  "smoke_only": true
+}

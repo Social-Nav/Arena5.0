@@ -1,0 +1,80 @@
+{
+  "schema": "arena.agentic.method_bundle.v1",
+  "method_id": "navila",
+  "role": "navila",
+  "status": "READY",
+  "runtime_status": "PLAN_ONLY_NOT_RUNTIME_VERIFIED",
+  "launchable": true,
+  "blockers": [],
+  "profile": {
+    "kind": "benchmark_profile",
+    "path": "arena_bringup/configs/benchmark/profiles/navila_grscenes.yaml",
+    "id": "navila_grscenes",
+    "sha256": "40a2b5a8da4be076a2e4a78567c10e6f58ab402fd67e6ffa0ad47faee42684bd"
+  },
+  "model": {
+    "image": "arena:dev",
+    "service": "navila-tcp",
+    "container": "arena-arena_jazzy_ws-arena-1",
+    "entrypoint": "arena_vln_models.runner:navila",
+    "revision": "navila",
+    "checkpoint_source": "unified runner / navila adapter"
+  },
+  "sensors": {
+    "sensor_profile": "rgb_lidar",
+    "recording_contract": "configs/agentic_eval/recording/a_rgb_lidar.json",
+    "allowed_topics": [
+      "/task_generator_node/Ai2_Bot2/head_camera/image",
+      "/task_generator_node/Ai2_Bot2/head_camera/camera_info",
+      "/task_generator_node/Ai2_Bot2/laser_scan"
+    ]
+  },
+  "adapter": {
+    "name": "navila",
+    "action_mapping": "common_follow_path_stop_hold_error",
+    "common_executor": "arena_vln_models.model_adapter:ArenaModelExecutor"
+  },
+  "controller": {
+    "local_planner": "regulated_pure_pursuit",
+    "control_path": "nav2_follow_path_rpp"
+  },
+  "ros": {
+    "domain_id": 1,
+    "namespace": "/task_generator_node/Ai2_Bot2",
+    "topics": {
+      "status": "/task_generator_node/Ai2_Bot2/navila/status",
+      "raw_cmd_vel": "/task_generator_node/Ai2_Bot2/navila/raw_cmd_vel",
+      "model_output": "/task_generator_node/Ai2_Bot2/navila/model_output"
+    },
+    "ports": [
+      54321
+    ]
+  },
+  "output": {
+    "prefix": "navila_eval",
+    "run_root": "outputs/navila_eval"
+  },
+  "lock": {
+    "path": "/tmp/arena_jazzy_ws_isaac_gpu_runtime.lock",
+    "scope": "shared"
+  },
+  "cleanup": [
+    "stop unified runner",
+    "verify LOCK_FREE",
+    "verify no model/Isaac/eval process remains"
+  ],
+  "private_fields": [
+    "profile",
+    "model",
+    "sensors",
+    "adapter",
+    "controller",
+    "ros",
+    "output",
+    "lock",
+    "cleanup",
+    "source_binding"
+  ],
+  "source_binding": "/home/ubuntu/arena_jazzy_ws/src/Arena",
+  "source_commit": "780ff3e"
+}

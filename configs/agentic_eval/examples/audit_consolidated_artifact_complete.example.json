@@ -1,0 +1,43 @@
+{
+  "blockers": [],
+  "deterministic": true,
+  "exit_code": 0,
+  "policy": {
+    "precedence": [
+      "contract_blocked",
+      "playback_blocked",
+      "scientific_fail",
+      "artifact_complete"
+    ],
+    "unknown_never_pass": true,
+    "version": 1
+  },
+  "reasons": [],
+  "receipts": {
+    "benchmark_result": {
+      "path": "/tmp/audit_example_2108_sw7h2b2e/benchmark_result.json",
+      "present": true,
+      "sha256": "cdc90c84cdb27903b46325623224f748cb441af90f0630f8954622b7d0145773",
+      "size": 1712,
+      "status": "OK"
+    },
+    "evidence_verdict": {
+      "path": "/tmp/audit_example_2108_sw7h2b2e/evidence_verdict.json",
+      "present": true,
+      "sha256": "20095a538c9a056dee3a0d09397ee102e82997de509e4979c729ff4dd8b95e19",
+      "size": 1679,
+      "status": "OK"
+    },
+    "metrics_receipt": {
+      "path": "/tmp/audit_example_2108_sw7h2b2e/metrics_receipt.json",
+      "present": true,
+      "sha256": "27cfe48bb1f4f8f7d2a64c2b22c6814bd43d1cec411e268dd8b320317363617d",
+      "size": 1665,
+      "status": "OK"
+    }
+  },
+  "request_id": "qwen-prox-a-grscenes20-default2",
+  "schema": "arena.agentic.audit_consolidated.v1",
+  "track": "qwen_prox_a",
+  "verdict": "artifact_complete"
+}

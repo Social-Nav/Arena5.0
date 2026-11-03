@@ -1,0 +1,59 @@
+{
+  "action": "finalize",
+  "allowed_next_actions": [],
+  "audit_manifest": null,
+  "blockers": [
+    "ACTION_NOT_BOUND:finalize"
+  ],
+  "cleanup": [],
+  "commands": [],
+  "env": {},
+  "errors": [],
+  "executable": false,
+  "exit_taxonomy": {
+    "contract_or_evidence_blocked": 2,
+    "ok": 0,
+    "scientific_fail": 1
+  },
+  "expected_outputs": [],
+  "from_state": null,
+  "idempotency_key": "sha256:29d463f03c70a372fee43e77d93074128a43582ca8cdb7fe48db3b5cfeba7824",
+  "identity": {
+    "action_control": "common_follow_path",
+    "arena_dir": "/home/ubuntu/arena_jazzy_ws/src/Arena",
+    "audit_identity": {
+      "action_control": "common_follow_path",
+      "control_path": "nav2_follow_path_prox_mpc",
+      "controller": "prox_mpc",
+      "launchable": false,
+      "model": "Qwen/Qwen3-VL-8B-Instruct-FP8",
+      "model_backend": "lisn_qwen3vl_fp8",
+      "model_revision": "9cdc6310a8cb770ce18efaf4e9935334512aee45",
+      "note": "A is Qwen FP8 + RGB + real RTX LiDAR + common FollowPath + Prox. This contract is audit-only and never produces a launchable episode command.",
+      "run_profile_id": "internnav_follow_path_grscenes",
+      "run_profile_sha256": "f2ef7d2b506092a03fed3dbc9432468fef0ee537eb93d83a133b4bb6dcf32b89",
+      "schema": "arena.agentic.audit_identity.v1",
+      "sensor_profile": "rgb_lidar",
+      "status": "AUDIT_ONLY",
+      "track": "qwen_prox_a"
+    },
+    "hunav_config": "/home/ubuntu/arena_jazzy_ws/.trae/worktrees/vln-target-merged-20261013/arena_bringup/configs/hunav/default_sf60.yaml",
+    "hunav_config_sha256": "a834b6bb42e6c8f14ea4734aa5ab1fd03791a1897f9445d24c2fb7ccade9eeb1",
+    "model": "Qwen/Qwen3-VL-8B-Instruct-FP8",
+    "model_revision": "9cdc6310a8cb770ce18efaf4e9935334512aee45",
+    "profile_path": "/home/ubuntu/arena_jazzy_ws/.trae/worktrees/vln-target-merged-20261013/configs/agentic_eval/profiles/qwen_prox_a_audit_identity.v1.json",
+    "source_binding": "/home/ubuntu/arena_jazzy_ws/src/Arena",
+    "workspace_root": "/home/ubuntu/arena_jazzy_ws"
+  },
+  "output_root": null,
+  "preconditions": [],
+  "provenance": null,
+  "provenance_path": null,
+  "request_id": "qwen-prox-a-grscenes20-default2",
+  "request_valid": true,
+  "run_dir": null,
+  "run_identity": null,
+  "schema": "arena.agentic.operator_lifecycle.v1",
+  "sensor_profile": "rgb_lidar",
+  "state": "blocked"
+}

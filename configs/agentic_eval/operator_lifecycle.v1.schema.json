@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "arena.agentic.operator_lifecycle.v1",
+  "title": "Arena5 operator lifecycle response",
+  "type": "object",
+  "required": [
+    "schema",
+    "request_id",
+    "action",
+    "state",
+    "executable",
+    "commands",
+    "env",
+    "blockers",
+    "errors",
+    "exit_taxonomy",
+    "expected_outputs",
+    "allowed_next_actions",
+    "preconditions",
+    "cleanup",
+    "idempotency_key",
+    "identity",
+    "request_valid"
+  ],
+  "properties": {
+    "schema": {"const": "arena.agentic.operator_lifecycle.v1"},
+    "request_id": {"type": "string", "minLength": 1},
+    "action": {"enum": ["plan", "start", "cancel", "finalize", "read", "audit"]},
+    "from_state": {
+      "type": ["string", "null"],
+      "enum": [
+        "new", "planned", "started", "cancelled", "read_ready",
+        "finalize_ready", "audit_ready", "blocked", null
+      ]
+    },
+    "state": {
+      "enum": [
+        "planned", "started", "cancelled", "read_ready",
+        "finalize_ready", "audit_ready", "blocked"
+      ]
+    },
+    "executable": {"type": "boolean"},
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "items": {"type": "string", "minLength": 1}
+      }
+    },
+    "env": {
+      "type": "object",
+      "additionalProperties": {"type": "string"}
+    },
+    "blockers": {"type": "array", "items": {"type": "string"}},
+    "errors": {"type": "array", "items": {"type": "string"}},
+    "exit_taxonomy": {
+      "type": "object",
+      "required": ["ok", "scientific_fail", "contract_or_evidence_blocked"],
+      "properties": {
+        "ok": {"const": 0},
+        "scientific_fail": {"const": 1},
+        "contract_or_evidence_blocked": {"const": 2}
+      },
+      "additionalProperties": false
+    },
+    "expected_outputs": {"type": "array", "items": {"type": "string"}},
+    "allowed_next_actions": {
+      "type": "array",
+      "items": {"enum": ["plan", "start", "cancel", "finalize", "read", "audit"]}
+    },
+    "preconditions": {"type": "array", "items": {"type": "string"}},
+    "cleanup": {"type": "array", "items": {"type": "string"}},
+    "idempotency_key": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "identity": {"type": "object"},
+    "request_valid": {"type": "boolean"},
+    "run_dir": {"type": ["string", "null"]},
+    "output_root": {"type": ["string", "null"]},
+    "sensor_profile": {"enum": ["rgb_lidar", "rgb_only", "none"]},
+    "run_identity": {"type": ["object", "null"]},
+    "provenance": {"type": ["object", "null"]},
+    "provenance_path": {"type": ["string", "null"]},
+    "audit_manifest": {"type": ["object", "null"]}
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "arena.paper.evidence_verdict.v1",
+  "title": "Arena5 deterministic evidence verdict",
+  "type": "object",
+  "required": [
+    "schema",
+    "verdict",
+    "secondary_verdicts",
+    "flags",
+    "contract_reasons",
+    "unknowns",
+    "metrics_evidence",
+    "input_sha256",
+    "policy",
+    "deterministic"
+  ],
+  "properties": {
+    "schema": {"const": "arena.paper.evidence_verdict.v1"},
+    "verdict": {
+      "enum": [
+        "artifact_complete",
+        "scientific_fail",
+        "playback_blocked",
+        "contract_blocked"
+      ]
+    },
+    "secondary_verdicts": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "artifact_complete",
+          "scientific_fail",
+          "playback_blocked",
+          "contract_blocked"
+        ]
+      }
+    },
+    "flags": {
+      "type": "object",
+      "required": [
+        "artifact_complete",
+        "scientific_fail",
+        "playback_blocked",
+        "contract_blocked"
+      ],
+      "properties": {
+        "artifact_complete": {"type": "boolean"},
+        "scientific_fail": {"type": ["boolean", "null"]},
+        "playback_blocked": {"type": "boolean"},
+        "contract_blocked": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "contract_reasons": {"type": "array", "items": {"type": "string"}},
+    "unknowns": {"type": "array", "items": {"type": "string"}},
+    "metrics_evidence": {
+      "type": "object",
+      "required": [
+        "task_status",
+        "social_status",
+        "artifact_status",
+        "task_failed",
+        "social_failed",
+        "metrics_known"
+      ],
+      "properties": {
+        "task_status": {"type": "string"},
+        "social_status": {"type": "string"},
+        "artifact_status": {"type": "string"},
+        "task_failed": {"type": ["boolean", "null"]},
+        "social_failed": {"type": ["boolean", "null"]},
+        "metrics_known": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "input_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "policy": {
+      "type": "object",
+      "required": ["version", "precedence", "unknown_never_pass"],
+      "properties": {
+        "version": {"const": 1},
+        "precedence": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "artifact_complete",
+              "scientific_fail",
+              "playback_blocked",
+              "contract_blocked"
+            ]
+          }
+        },
+        "unknown_never_pass": {"const": true}
+      },
+      "additionalProperties": false
+    },
+    "deterministic": {"const": true}
+  },
+  "additionalProperties": false
+}

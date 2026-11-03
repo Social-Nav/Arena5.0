@@ -15,7 +15,12 @@ nav:
   - Installation: installation.md
   - Benchmark:
       - Run Current Benchmarks: benchmark/running-benchmarks.md
+      - Camera Backends and TF: benchmark/camera-backends.md
+      - Runtime Source Binding Gate: benchmark/source-binding-gate.md
       - Artifacts and Validation: benchmark/outputs-and-metrics.md
+      - ProxMPC A-Track Runbook: benchmark/prox_mpc_a_track_runbook.md
+      - Paper Pipeline Coverage: benchmark/paper_pipeline_coverage.md
+      - Agentic Evaluation Contract: benchmark/agentic_eval.md
       - Troubleshooting: benchmark/troubleshooting.md
 markdown_extensions:
   - admonition

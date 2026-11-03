@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "arena.agentic.recording_preflight.v1",
+  "title": "Arena5 recording preflight result",
+  "type": "object",
+  "required": [
+    "schema",
+    "track",
+    "sensor_profile",
+    "run_dir",
+    "bag_path",
+    "bag_present",
+    "open_mode",
+    "checks",
+    "playback_status",
+    "blockers",
+    "contract_status",
+    "current_run_status"
+  ],
+  "properties": {
+    "schema": {"const": "arena.agentic.recording_preflight.v1"},
+    "contract_schema": {"type": "string"},
+    "track": {"enum": ["A", "B"]},
+    "sensor_profile": {"enum": ["rgb_lidar", "rgb_only"]},
+    "run_dir": {"type": "string"},
+    "bag_path": {"type": "string"},
+    "bag_present": {"type": "boolean"},
+    "bag_sha256": {"type": ["string", "null"]},
+    "open_mode": {"const": "ro"},
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["sensor", "topic", "required_types", "min_messages",
+                     "present", "type", "messages", "status"],
+        "properties": {
+          "sensor": {"type": "string"},
+          "topic": {"type": "string"},
+          "required_types": {"type": "array", "items": {"type": "string"}},
+          "min_messages": {"type": "integer"},
+          "present": {"type": "boolean"},
+          "type": {"type": ["string", "null"]},
+          "messages": {"type": "integer"},
+          "status": {"enum": ["PASS", "MISSING_TOPIC", "TYPE_MISMATCH",
+                              "MESSAGES_BELOW_MIN"]}
+        },
+        "additionalProperties": false
+      }
+    },
+    "playback_status": {"enum": ["READY", "BLOCKED"]},
+    "blockers": {"type": "array", "items": {"type": "string"}},
+    "contract_status": {"const": "CONTRACT_ONLY"},
+    "current_run_status": {"enum": ["READY", "BLOCKED"]},
+    "note": {"type": "string"}
+  },
+  "additionalProperties": false
+}

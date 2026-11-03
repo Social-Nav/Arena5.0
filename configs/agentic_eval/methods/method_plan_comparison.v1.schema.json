@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "arena.agentic.method_plan_comparison.v1",
+  "title": "Arena5 method plan comparison receipt",
+  "type": "object",
+  "required": [
+    "schema",
+    "common_contract_hash",
+    "common_hash_identical",
+    "private_hashes_distinct",
+    "ready_methods_blocked",
+    "conflict_blockers",
+    "conflict_warnings",
+    "methods",
+    "ok",
+    "deterministic"
+  ],
+  "properties": {
+    "schema": {"const": "arena.agentic.method_plan_comparison.v1"},
+    "common_contract_hash": {"type": ["string", "null"]},
+    "common_hash_identical": {"type": "boolean"},
+    "private_hashes_distinct": {"type": "boolean"},
+    "ready_methods_blocked": {"type": "array", "items": {"type": "string"}},
+    "conflict_blockers": {"type": "array", "items": {"type": "string"}},
+    "conflict_warnings": {"type": "array", "items": {"type": "string"}},
+    "methods": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "status",
+          "runtime_status",
+          "executable",
+          "common_contract_hash",
+          "method_private_hash",
+          "bundle_source_digest",
+          "current_profile_drift",
+          "common_case_blockers",
+          "blockers"
+        ],
+        "properties": {
+          "status": {"enum": ["READY", "BLOCKED"]},
+          "runtime_status": {"type": "string"},
+          "executable": {"type": "boolean"},
+          "common_contract_hash": {"type": ["string", "null"]},
+          "method_private_hash": {"type": ["string", "null"]},
+          "bundle_source_digest": {"type": ["string", "null"]},
+          "current_profile_drift": {"type": "boolean"},
+          "common_case_blockers": {"type": "array", "items": {"type": "string"}},
+          "blockers": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": false
+      }
+    },
+    "ok": {"type": "boolean"},
+    "deterministic": {"const": true}
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,58 @@
+{
+  "bag_path": "/home/ubuntu/arena_jazzy_ws/outputs/arena5_prox_isaac_a_20261102/qwen_diag_v2/20261102_182650_grscenes_20_v1_Ai2_Bot2_lisn_qwen3vl_fp8/recording/recording_0.db3",
+  "bag_present": true,
+  "bag_sha256": "8c29474ebc720f8b277b0989cc6fc993e6dfc49c5694c7f44c6703aecb627613",
+  "blockers": [
+    "RECORDING_TOPIC_MISSING:/task_generator_node/Ai2_Bot2/head_camera/camera_info",
+    "RECORDING_TOPIC_MISSING:/task_generator_node/Ai2_Bot2/head_camera/image",
+    "RECORDING_TOPIC_MISSING:/task_generator_node/Ai2_Bot2/laser_scan"
+  ],
+  "checks": [
+    {
+      "messages": 0,
+      "min_messages": 1,
+      "present": false,
+      "required_types": [
+        "sensor_msgs/msg/Image"
+      ],
+      "sensor": "rgb",
+      "status": "MISSING_TOPIC",
+      "topic": "/task_generator_node/Ai2_Bot2/head_camera/image",
+      "type": null
+    },
+    {
+      "messages": 0,
+      "min_messages": 1,
+      "present": false,
+      "required_types": [
+        "sensor_msgs/msg/CameraInfo"
+      ],
+      "sensor": "camera_info",
+      "status": "MISSING_TOPIC",
+      "topic": "/task_generator_node/Ai2_Bot2/head_camera/camera_info",
+      "type": null
+    },
+    {
+      "messages": 0,
+      "min_messages": 1,
+      "present": false,
+      "required_types": [
+        "sensor_msgs/msg/LaserScan"
+      ],
+      "sensor": "laser_scan",
+      "status": "MISSING_TOPIC",
+      "topic": "/task_generator_node/Ai2_Bot2/laser_scan",
+      "type": null
+    }
+  ],
+  "contract_schema": "arena.agentic.recording_contract.v1",
+  "contract_status": "CONTRACT_ONLY",
+  "current_run_status": "BLOCKED",
+  "note": "Preflight only; it never creates missing recording evidence.",
+  "open_mode": "ro",
+  "playback_status": "BLOCKED",
+  "run_dir": "/home/ubuntu/arena_jazzy_ws/outputs/arena5_prox_isaac_a_20261102/qwen_diag_v2/20261102_182650_grscenes_20_v1_Ai2_Bot2_lisn_qwen3vl_fp8",
+  "schema": "arena.agentic.recording_preflight.v1",
+  "sensor_profile": "rgb_lidar",
+  "track": "A"
+}

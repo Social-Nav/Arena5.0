@@ -1,0 +1,163 @@
+{
+  "action": "read",
+  "allowed_next_actions": [
+    "audit"
+  ],
+  "audit_manifest": null,
+  "blockers": [],
+  "cleanup": [
+    "write the inline provenance to provenance_path first",
+    "verify output_root is outside the source run",
+    "verify no source file changed",
+    "keep scientific FAIL as exit 1, never rewrite it as success"
+  ],
+  "commands": [
+    [
+      "python3",
+      "-m",
+      "arena_bringup.paper_pipeline",
+      "evidence-index",
+      "--run-dir",
+      "/home/ubuntu/arena_jazzy_ws/outputs/arena5_prox_isaac_a_20261102/qwen_diag_v2/20261102_182650_grscenes_20_v1_Ai2_Bot2_lisn_qwen3vl_fp8",
+      "--output",
+      "/home/ubuntu/arena_jazzy_ws/outputs/arena5_paper_pipeline_2108_examples/read/evidence_index.json",
+      "--sensor-profile",
+      "rgb_lidar",
+      "--provenance-file",
+      "/home/ubuntu/arena_jazzy_ws/outputs/arena5_paper_pipeline_2108_examples/read/provenance.json"
+    ],
+    [
+      "python3",
+      "-m",
+      "arena_bringup.paper_pipeline",
+      "evidence-verdict",
+      "--index",
+      "/home/ubuntu/arena_jazzy_ws/outputs/arena5_paper_pipeline_2108_examples/read/evidence_index.json",
+      "--output",
+      "/home/ubuntu/arena_jazzy_ws/outputs/arena5_paper_pipeline_2108_examples/read/evidence_verdict.json",
+      "--provenance-file",
+      "/home/ubuntu/arena_jazzy_ws/outputs/arena5_paper_pipeline_2108_examples/read/provenance.json"
+    ]
+  ],
+  "env": {
+    "ARENA_REPO_ROOT": "/home/ubuntu/arena_jazzy_ws/.trae/worktrees/vln-target-merged-20261013",
+    "PYTHONPATH": "/home/ubuntu/arena_jazzy_ws/src/Arena/arena_bringup"
+  },
+  "errors": [],
+  "executable": true,
+  "exit_taxonomy": {
+    "contract_or_evidence_blocked": 2,
+    "ok": 0,
+    "scientific_fail": 1
+  },
+  "expected_outputs": [
+    "provenance.json",
+    "evidence_index.json",
+    "evidence_verdict.json"
+  ],
+  "from_state": null,
+  "idempotency_key": "sha256:75d6f097f541067cf63b46792bf91b26b853a0e598ffe0b083e85e32197a338f",
+  "identity": {
+    "action_control": "common_follow_path",
+    "arena_dir": "/home/ubuntu/arena_jazzy_ws/src/Arena",
+    "audit_identity": {
+      "action_control": "common_follow_path",
+      "control_path": "nav2_follow_path_prox_mpc",
+      "controller": "prox_mpc",
+      "launchable": false,
+      "model": "Qwen/Qwen3-VL-8B-Instruct-FP8",
+      "model_backend": "lisn_qwen3vl_fp8",
+      "model_revision": "9cdc6310a8cb770ce18efaf4e9935334512aee45",
+      "note": "A is Qwen FP8 + RGB + real RTX LiDAR + common FollowPath + Prox. This contract is audit-only and never produces a launchable episode command.",
+      "run_profile_id": "internnav_follow_path_grscenes",
+      "run_profile_sha256": "f2ef7d2b506092a03fed3dbc9432468fef0ee537eb93d83a133b4bb6dcf32b89",
+      "schema": "arena.agentic.audit_identity.v1",
+      "sensor_profile": "rgb_lidar",
+      "status": "AUDIT_ONLY",
+      "track": "qwen_prox_a"
+    },
+    "hunav_config": "/home/ubuntu/arena_jazzy_ws/.trae/worktrees/vln-target-merged-20261013/arena_bringup/configs/hunav/default_sf60.yaml",
+    "hunav_config_sha256": "a834b6bb42e6c8f14ea4734aa5ab1fd03791a1897f9445d24c2fb7ccade9eeb1",
+    "model": "Qwen/Qwen3-VL-8B-Instruct-FP8",
+    "model_revision": "9cdc6310a8cb770ce18efaf4e9935334512aee45",
+    "profile_path": "/home/ubuntu/arena_jazzy_ws/.trae/worktrees/vln-target-merged-20261013/configs/agentic_eval/profiles/qwen_prox_a_audit_identity.v1.json",
+    "source_binding": "/home/ubuntu/arena_jazzy_ws/src/Arena",
+    "workspace_root": "/home/ubuntu/arena_jazzy_ws"
+  },
+  "output_root": "/home/ubuntu/arena_jazzy_ws/outputs/arena5_paper_pipeline_2108_examples/read",
+  "preconditions": [],
+  "provenance": {
+    "immutable": true,
+    "request_id": "qwen-prox-a-grscenes20-default2",
+    "run_dir": "/home/ubuntu/arena_jazzy_ws/outputs/arena5_prox_isaac_a_20261102/qwen_diag_v2/20261102_182650_grscenes_20_v1_Ai2_Bot2_lisn_qwen3vl_fp8",
+    "run_identity": {
+      "action_control": "common_follow_path",
+      "case": {
+        "robot": "Ai2_Bot2",
+        "scenario": "default_2",
+        "world": "grscenes_20_v1"
+      },
+      "control_path": "nav2_follow_path_prox_mpc",
+      "controller": "prox_mpc",
+      "episodes": 1,
+      "model": "Qwen/Qwen3-VL-8B-Instruct-FP8",
+      "model_backend": "lisn_qwen3vl_fp8",
+      "model_identity_known": true,
+      "model_identity_source": "model_backend",
+      "model_revision": "9cdc6310a8cb770ce18efaf4e9935334512aee45",
+      "profile_id": "internnav_follow_path_grscenes",
+      "profile_sha256": "f2ef7d2b506092a03fed3dbc9432468fef0ee537eb93d83a133b4bb6dcf32b89",
+      "rgb_topic": "head_camera/image",
+      "run_dir": "/home/ubuntu/arena_jazzy_ws/outputs/arena5_prox_isaac_a_20261102/qwen_diag_v2/20261102_182650_grscenes_20_v1_Ai2_Bot2_lisn_qwen3vl_fp8",
+      "run_name": "20261102_182650_grscenes_20_v1_Ai2_Bot2_lisn_qwen3vl_fp8",
+      "scan_topic": "/task_generator_node/Ai2_Bot2/scan",
+      "schema": "arena.agentic.run_identity.v1",
+      "seed": 0,
+      "sensor_profile": "rgb_lidar",
+      "timeout": 59,
+      "track": "qwen_prox_a"
+    },
+    "run_identity_digest": "sha256:b5ebf3d3a2bf9153049e82c2f1dcfb1b44237bf58b82737dc9f3713142b5f053",
+    "run_name": "20261102_182650_grscenes_20_v1_Ai2_Bot2_lisn_qwen3vl_fp8",
+    "schema": "arena.agentic.provenance.v1",
+    "source_file_set_digest": "sha256:4237e9aa28f2449317d3091b1973d6e1a83747ece7af1494c20312d37ca07e6e",
+    "source_tree_digest": "sha256:9b08498bab9c17428b104ba1f146b1c728ca4b06939b2afcda780af06605a807"
+  },
+  "provenance_path": "/home/ubuntu/arena_jazzy_ws/outputs/arena5_paper_pipeline_2108_examples/read/provenance.json",
+  "request_id": "qwen-prox-a-grscenes20-default2",
+  "request_valid": true,
+  "run_dir": "/home/ubuntu/arena_jazzy_ws/outputs/arena5_prox_isaac_a_20261102/qwen_diag_v2/20261102_182650_grscenes_20_v1_Ai2_Bot2_lisn_qwen3vl_fp8",
+  "run_identity": {
+    "action_control": "common_follow_path",
+    "case": {
+      "robot": "Ai2_Bot2",
+      "scenario": "default_2",
+      "world": "grscenes_20_v1"
+    },
+    "control_path": "nav2_follow_path_prox_mpc",
+    "controller": "prox_mpc",
+    "episodes": 1,
+    "model": "Qwen/Qwen3-VL-8B-Instruct-FP8",
+    "model_backend": "lisn_qwen3vl_fp8",
+    "model_identity_known": true,
+    "model_identity_source": "model_backend",
+    "model_revision": "9cdc6310a8cb770ce18efaf4e9935334512aee45",
+    "profile_id": "internnav_follow_path_grscenes",
+    "profile_sha256": "f2ef7d2b506092a03fed3dbc9432468fef0ee537eb93d83a133b4bb6dcf32b89",
+    "rgb_topic": "head_camera/image",
+    "run_dir": "/home/ubuntu/arena_jazzy_ws/outputs/arena5_prox_isaac_a_20261102/qwen_diag_v2/20261102_182650_grscenes_20_v1_Ai2_Bot2_lisn_qwen3vl_fp8",
+    "run_identity_digest": "sha256:b5ebf3d3a2bf9153049e82c2f1dcfb1b44237bf58b82737dc9f3713142b5f053",
+    "run_name": "20261102_182650_grscenes_20_v1_Ai2_Bot2_lisn_qwen3vl_fp8",
+    "scan_topic": "/task_generator_node/Ai2_Bot2/scan",
+    "schema": "arena.agentic.run_identity.v1",
+    "seed": 0,
+    "sensor_profile": "rgb_lidar",
+    "source_file_set_digest": "sha256:4237e9aa28f2449317d3091b1973d6e1a83747ece7af1494c20312d37ca07e6e",
+    "source_tree_digest": "sha256:9b08498bab9c17428b104ba1f146b1c728ca4b06939b2afcda780af06605a807",
+    "timeout": 59,
+    "track": "qwen_prox_a"
+  },
+  "schema": "arena.agentic.operator_lifecycle.v1",
+  "sensor_profile": "rgb_lidar",
+  "state": "read_ready"
+}

@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "arena.agentic.operator_request.v1",
+  "title": "Arena5 operator request",
+  "type": "object",
+  "required": [
+    "schema",
+    "request_id",
+    "mode",
+    "track",
+    "case",
+    "episodes",
+    "seed",
+    "timeout",
+    "profile",
+    "model",
+    "model_revision",
+    "action_control",
+    "expected_outputs"
+  ],
+  "properties": {
+    "schema": {"const": "arena.agentic.operator_request.v1"},
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "not": {"pattern": "\\.\\."}
+    },
+    "mode": {"enum": ["single_case", "full_eval", "audit"]},
+    "track": {"enum": ["generic_internnav", "strict_b", "oracle", "qwen_prox_a"]},
+    "case": {
+      "type": "object",
+      "required": ["world", "scenario", "robot"],
+      "properties": {
+        "world": {"type": "string", "minLength": 1},
+        "scenario": {"type": "string", "minLength": 1},
+        "robot": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "episodes": {"type": "integer", "minimum": 1, "maximum": 1},
+    "seed": {"type": "integer", "minimum": 0},
+    "timeout": {"type": "number", "minimum": 1},
+    "profile": {"type": "string", "minLength": 1, "not": {"pattern": "\\.\\."}},
+    "workspace_root": {"type": "string", "minLength": 1, "not": {"pattern": "\\.\\."}},
+    "arena_dir": {"type": "string", "minLength": 1, "not": {"pattern": "\\.\\."}},
+    "source_binding": {"type": "string", "minLength": 1, "not": {"pattern": "\\.\\."}},
+    "model": {"type": "string", "minLength": 1},
+    "model_revision": {"type": "string", "minLength": 1},
+    "action_control": {"enum": ["common_follow_path", "none"]},
+    "expected_outputs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1, "not": {"pattern": "\\.\\."}}
+    },
+    "producer_endpoint": {"type": "string"},
+    "hunav_config": {"type": "string", "not": {"pattern": "\\.\\."}},
+    "hunav_config_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "risk_threshold": {"type": "number", "exclusiveMinimum": 0},
+    "max_frame_gap_sec": {"type": "number", "exclusiveMinimum": 0},
+    "smoke_only": {"type": "boolean"},
+    "run_dir": {"type": "string", "minLength": 1},
+    "output_root": {"type": "string", "minLength": 1, "not": {"pattern": "\\.\\."}},
+    "sensor_profile": {"enum": ["rgb_lidar", "rgb_only", "none"]}
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "arena.agentic.common_contract.v1",
+  "title": "Arena5 method-independent common contract",
+  "type": "object",
+  "required": [
+    "schema",
+    "contract_id",
+    "case",
+    "seed",
+    "episodes",
+    "instruction",
+    "hunav",
+    "timeout",
+    "metrics",
+    "video",
+    "recording"
+  ],
+  "properties": {
+    "schema": {"const": "arena.agentic.common_contract.v1"},
+    "contract_id": {"type": "string", "minLength": 1},
+    "case": {
+      "type": "object",
+      "required": ["world", "scenario", "robot"],
+      "properties": {
+        "world": {"type": "string", "minLength": 1},
+        "scenario": {"type": "string", "minLength": 1},
+        "robot": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "seed": {"type": "integer", "minimum": 0},
+    "episodes": {"type": "integer", "const": 1},
+    "instruction": {
+      "type": "object",
+      "required": ["mode", "text"],
+      "properties": {
+        "mode": {"type": "string", "minLength": 1},
+        "text": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "hunav": {
+      "type": "object",
+      "required": ["backend", "config", "sha256"],
+      "properties": {
+        "backend": {"const": "hunav"},
+        "config": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "additionalProperties": false
+    },
+    "timeout": {
+      "type": "object",
+      "required": ["sim_sec", "wall_factor"],
+      "properties": {
+        "sim_sec": {"type": "number", "exclusiveMinimum": 0},
+        "wall_factor": {"type": "number", "exclusiveMinimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "metrics": {
+      "type": "object",
+      "required": ["social_eval", "require_artifact_validation"],
+      "properties": {
+        "social_eval": {"type": "boolean"},
+        "require_artifact_validation": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "video": {
+      "type": "object",
+      "required": ["enabled", "fps", "top_down_size_px"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "fps": {"type": "number", "exclusiveMinimum": 0},
+        "top_down_size_px": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "recording": {
+      "type": "object",
+      "required": ["enabled", "mode", "bag_path", "policy"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "mode": {"const": "ro"},
+        "bag_path": {"type": "string", "minLength": 1},
+        "policy": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

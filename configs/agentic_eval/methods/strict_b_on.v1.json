@@ -1,0 +1,82 @@
+{
+  "schema": "arena.agentic.method_bundle.v1",
+  "method_id": "strict_b_on",
+  "role": "strict_b",
+  "status": "BLOCKED",
+  "runtime_status": "EPISODE_NOT_FROZEN",
+  "launchable": false,
+  "blockers": [
+    "STRICT_B_EPISODE_NOT_FROZEN",
+    "QWEN_LISN_COMMON_METRIC_ACTION_BRIDGE_MISSING"
+  ],
+  "profile": {
+    "kind": "bfast_profile",
+    "path": "arena_bringup/configs/lisn/bfast_on_v1.json",
+    "id": "bfast_on_v1",
+    "sha256": "dc93cf1491f8cc842ec1c7d4ea37606ba5b53c4ce1383597da4dba0f4f39acf0"
+  },
+  "model": {
+    "image": "arena-qwen3vl-fp8",
+    "service": "vllm-openai",
+    "container": "arena-qwen3vl-fp8",
+    "entrypoint": "python3 -m vllm.entrypoints.openai.api_server",
+    "revision": "9cdc6310a8cb770ce18efaf4e9935334512aee45",
+    "checkpoint_source": "/mnt/bn/navigation-hl/mlx/users/chenjunting/arena_models/Qwen3-VL-8B-Instruct-FP8"
+  },
+  "sensors": {
+    "sensor_profile": "rgb_only",
+    "recording_contract": "configs/agentic_eval/recording/strict_b_rgb_only.json",
+    "allowed_topics": [
+      "/task_generator_node/Ai2_Bot2/head_camera/image",
+      "/task_generator_node/Ai2_Bot2/head_camera/camera_info"
+    ]
+  },
+  "adapter": {
+    "name": "qwen_lisn",
+    "action_mapping": "common_follow_path_stop_hold_error",
+    "common_executor": "arena_vln_models.model_adapter:ArenaModelExecutor"
+  },
+  "controller": {
+    "local_planner": "regulated_pure_pursuit",
+    "control_path": "nav2_follow_path_rpp"
+  },
+  "ros": {
+    "domain_id": 1,
+    "namespace": "/task_generator_node/Ai2_Bot2",
+    "topics": {
+      "status": "/task_generator_node/Ai2_Bot2/bfast/status",
+      "raw_cmd_vel": "/task_generator_node/Ai2_Bot2/bfast/raw_cmd_vel",
+      "model_output": "/task_generator_node/Ai2_Bot2/bfast/decision"
+    },
+    "ports": [
+      8000
+    ]
+  },
+  "output": {
+    "prefix": "strict_b_on_eval",
+    "run_root": "outputs/strict_b_on_eval"
+  },
+  "lock": {
+    "path": "/tmp/arena_jazzy_ws_isaac_gpu_runtime.lock",
+    "scope": "shared"
+  },
+  "cleanup": [
+    "stop Qwen service",
+    "verify LOCK_FREE",
+    "verify no model/Isaac/eval process remains"
+  ],
+  "private_fields": [
+    "profile",
+    "model",
+    "sensors",
+    "adapter",
+    "controller",
+    "ros",
+    "output",
+    "lock",
+    "cleanup",
+    "source_binding"
+  ],
+  "source_binding": "/home/ubuntu/arena_jazzy_ws/src/Arena",
+  "source_commit": "780ff3e"
+}

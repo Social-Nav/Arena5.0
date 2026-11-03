@@ -1,0 +1,80 @@
+{
+  "schema": "arena.agentic.method_bundle.v1",
+  "method_id": "socialmpc_oracle",
+  "role": "oracle",
+  "status": "BLOCKED",
+  "runtime_status": "ORACLE_NOT_OPERATOR_EXECUTABLE",
+  "launchable": false,
+  "blockers": [
+    "ORACLE_NOT_OPERATOR_EXECUTABLE",
+    "ORACLE_TEACHER_SOURCE_NOT_ELIGIBLE"
+  ],
+  "profile": {
+    "kind": "oracle",
+    "path": "",
+    "id": "socialmpc_oracle",
+    "sha256": ""
+  },
+  "model": {
+    "image": "",
+    "service": "socialmpc-oracle",
+    "container": "",
+    "entrypoint": "",
+    "revision": "",
+    "checkpoint_source": ""
+  },
+  "sensors": {
+    "sensor_profile": "rgb_lidar",
+    "recording_contract": "configs/agentic_eval/recording/a_rgb_lidar.json",
+    "allowed_topics": [
+      "/task_generator_node/Ai2_Bot2/head_camera/image",
+      "/task_generator_node/Ai2_Bot2/head_camera/camera_info",
+      "/task_generator_node/Ai2_Bot2/laser_scan"
+    ]
+  },
+  "adapter": {
+    "name": "socialmpc_oracle",
+    "action_mapping": "oracle_only",
+    "common_executor": "arena_vln_models.model_adapter:ArenaModelExecutor"
+  },
+  "controller": {
+    "local_planner": "social_mpc",
+    "control_path": "nav2_follow_path_social_mpc"
+  },
+  "ros": {
+    "domain_id": 1,
+    "namespace": "/task_generator_node/Ai2_Bot2",
+    "topics": {
+      "status": "/task_generator_node/Ai2_Bot2/socialmpc/status",
+      "raw_cmd_vel": "/task_generator_node/Ai2_Bot2/socialmpc/raw_cmd_vel",
+      "model_output": "/task_generator_node/Ai2_Bot2/socialmpc/model_output"
+    },
+    "ports": []
+  },
+  "output": {
+    "prefix": "socialmpc_oracle_eval",
+    "run_root": "outputs/socialmpc_oracle_eval"
+  },
+  "lock": {
+    "path": "/tmp/arena_jazzy_ws_isaac_gpu_runtime.lock",
+    "scope": "shared"
+  },
+  "cleanup": [
+    "verify LOCK_FREE",
+    "verify no model/Isaac/eval process remains"
+  ],
+  "private_fields": [
+    "profile",
+    "model",
+    "sensors",
+    "adapter",
+    "controller",
+    "ros",
+    "output",
+    "lock",
+    "cleanup",
+    "source_binding"
+  ],
+  "source_binding": "/home/ubuntu/arena_jazzy_ws/src/Arena",
+  "source_commit": "780ff3e"
+}

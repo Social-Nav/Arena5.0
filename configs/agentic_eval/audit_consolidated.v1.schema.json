@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "arena.agentic.audit_consolidated.v1",
+  "title": "Arena5 consolidated audit receipt",
+  "type": "object",
+  "required": [
+    "schema",
+    "request_id",
+    "track",
+    "verdict",
+    "exit_code",
+    "blockers",
+    "reasons",
+    "receipts",
+    "policy",
+    "deterministic"
+  ],
+  "properties": {
+    "schema": {"const": "arena.agentic.audit_consolidated.v1"},
+    "request_id": {"type": ["string", "null"]},
+    "track": {"type": ["string", "null"]},
+    "verdict": {
+      "enum": [
+        "artifact_complete",
+        "scientific_fail",
+        "playback_blocked",
+        "contract_blocked"
+      ]
+    },
+    "exit_code": {"enum": [0, 1, 2]},
+    "blockers": {"type": "array", "items": {"type": "string"}},
+    "reasons": {"type": "array", "items": {"type": "string"}},
+    "receipts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["present", "status", "path"],
+        "properties": {
+          "present": {"type": "boolean"},
+          "status": {"enum": ["OK", "MISSING", "UNPARSEABLE"]},
+          "path": {"type": ["string", "null"]},
+          "sha256": {"type": "string"},
+          "size": {"type": "integer"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "policy": {
+      "type": "object",
+      "required": ["version", "precedence", "unknown_never_pass"],
+      "properties": {
+        "version": {"const": 1},
+        "precedence": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "artifact_complete",
+              "scientific_fail",
+              "playback_blocked",
+              "contract_blocked"
+            ]
+          }
+        },
+        "unknown_never_pass": {"const": true}
+      },
+      "additionalProperties": false
+    },
+    "deterministic": {"const": true}
+  },
+  "additionalProperties": false
+}

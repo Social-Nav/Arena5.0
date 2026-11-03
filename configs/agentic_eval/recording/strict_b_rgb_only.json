@@ -1,0 +1,33 @@
+{
+  "schema": "arena.agentic.recording_contract.v1",
+  "track": "B",
+  "sensor_profile": "rgb_only",
+  "bag_path": "recording/recording_0.db3",
+  "recording_command": [
+    "ros2",
+    "bag",
+    "record",
+    "-o",
+    "recording/recording_0",
+    "/task_generator_node/Ai2_Bot2/head_camera/image",
+    "/task_generator_node/Ai2_Bot2/head_camera/camera_info",
+    "/task_generator_node/Ai2_Bot2/odom",
+    "/task_generator_node/Ai2_Bot2/cmd_vel"
+  ],
+  "open_mode": "ro",
+  "required_types": {
+    "rgb": ["sensor_msgs/msg/Image"],
+    "camera_info": ["sensor_msgs/msg/CameraInfo"]
+  },
+  "required_topics": {
+    "rgb": ["/task_generator_node/Ai2_Bot2/head_camera/image"],
+    "camera_info": ["/task_generator_node/Ai2_Bot2/head_camera/camera_info"]
+  },
+  "min_messages": {
+    "rgb": 1,
+    "camera_info": 1
+  },
+  "playback_policy": "BLOCKED_IF_REQUIRED_MISSING",
+  "status": "CONTRACT_ONLY",
+  "note": "Strict RGB-only B recordings must not include scan, depth, PointCloud, People, GT map, or eval goals."
+}

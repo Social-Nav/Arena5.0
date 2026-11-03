@@ -1,0 +1,16 @@
+{
+  "schema": "arena.agentic.audit_identity.v1",
+  "track": "qwen_prox_a",
+  "model": "Qwen/Qwen3-VL-8B-Instruct-FP8",
+  "model_revision": "9cdc6310a8cb770ce18efaf4e9935334512aee45",
+  "model_backend": "lisn_qwen3vl_fp8",
+  "action_control": "common_follow_path",
+  "sensor_profile": "rgb_lidar",
+  "controller": "prox_mpc",
+  "control_path": "nav2_follow_path_prox_mpc",
+  "run_profile_id": "internnav_follow_path_grscenes",
+  "run_profile_sha256": "f2ef7d2b506092a03fed3dbc9432468fef0ee537eb93d83a133b4bb6dcf32b89",
+  "launchable": false,
+  "status": "AUDIT_ONLY",
+  "note": "A is Qwen FP8 + RGB + real RTX LiDAR + common FollowPath + Prox. This contract is audit-only and never produces a launchable episode command."
+}
