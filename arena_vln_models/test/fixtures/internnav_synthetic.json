@@ -1,0 +1,15 @@
+{
+  "status": "internnav_command",
+  "discrete_action": 2,
+  "output_trajectory": [
+    [
+      0.25,
+      0.0,
+      0.2617993877991494
+    ]
+  ],
+  "debug": {
+    "trajectory_synthesized_from_discrete_action": true,
+    "trajectory_synthesis_reason": "model_returned_symbolic_action_without_output_trajectory"
+  }
+}

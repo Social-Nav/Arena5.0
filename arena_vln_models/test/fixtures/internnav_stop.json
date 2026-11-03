@@ -1,0 +1,7 @@
+{
+  "status": "internnav_command",
+  "discrete_action": 0,
+  "debug": {
+    "llm_output": "STOP"
+  }
+}

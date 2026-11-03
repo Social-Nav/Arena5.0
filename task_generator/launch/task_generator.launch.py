@@ -91,6 +91,18 @@ def generate_launch_description():
         name="vln_instruction_file",
         default_value="",
     )
+    execution_mode = LaunchArgument(
+        name="execution_mode",
+        default_value="navigation",
+    )
+    vln_rgb_topic = LaunchArgument(
+        name="vln_rgb_topic",
+        default_value="",
+    )
+    model_heartbeat_timeout_sec = LaunchArgument(
+        name="model_heartbeat_timeout_sec",
+        default_value="2.5",
+    )
     internnav_mode = LaunchArgument(
         name="internnav_mode",
         default_value="heuristic",
@@ -217,6 +229,21 @@ def generate_launch_description():
         default_value="internnav/model_output",
     )
     dual_vln_model_output_topic = declare_legacy_alias("dual_vln_model_output_topic", internnav_model_output_topic)
+    model_adapter = LaunchArgument(name="model_adapter", default_value="")
+    fast_guard_enabled = LaunchArgument(name="fast_guard_enabled", default_value="false")
+    fast_guard_veto_topic = LaunchArgument(name="fast_guard_veto_topic", default_value="")
+    fast_guard_required = LaunchArgument(name="fast_guard_required", default_value="false")
+    fast_guard_veto_timeout_sec = LaunchArgument(
+        name="fast_guard_veto_timeout_sec", default_value="1.0")
+    bfast_risk_threshold = LaunchArgument(name="bfast_risk_threshold", default_value="0.5")
+    bfast_max_frame_gap_sec = LaunchArgument(name="bfast_max_frame_gap_sec", default_value="1.0")
+    bfast_decision_topic = LaunchArgument(name="bfast_decision_topic", default_value="")
+    control_mode = LaunchArgument(name="control_mode", default_value="arena_follow_path")
+    model_server_url = LaunchArgument(name="model_server_url", default_value="")
+    model_params_json = LaunchArgument(name="model_params_json", default_value="{}")
+    model_inference_hz = LaunchArgument(name="model_inference_hz", default_value="4.0")
+    model_request_timeout_sec = LaunchArgument(name="model_request_timeout_sec", default_value="10.0")
+    model_trace_dir = LaunchArgument(name="model_trace_dir", default_value="")
     internnav_external_server = LaunchArgument(
         name="internnav_external_server",
         default_value="false",
@@ -400,6 +427,20 @@ def generate_launch_description():
                 **timeout_wall_sec.param(float),
                 **vln_instruction.str_param,
                 **vln_instruction_file.str_param,
+                **execution_mode.str_param,
+                **vln_rgb_topic.str_param,
+                **model_heartbeat_timeout_sec.param(float),
+                **model_adapter.str_param,
+                **fast_guard_enabled.str_param,
+                **fast_guard_veto_topic.str_param,
+                **fast_guard_required.str_param,
+                **fast_guard_veto_timeout_sec.param(float),
+                **bfast_risk_threshold.param(float),
+                **bfast_max_frame_gap_sec.param(float),
+                **bfast_decision_topic.str_param,
+                **control_mode.str_param,
+                **model_server_url.str_param,
+                **model_params_json.str_param,
                 'internnav_mode': dual_vln_mode.param_value(str),
                 'internnav_model_path': dual_vln_model_path.param_value(str),
                 'internnav_device': dual_vln_device.param_value(str),
@@ -490,6 +531,20 @@ def generate_launch_description():
                         'file': scenario_file.param_value(str),
                     },
                 },
+                **execution_mode.str_param,
+                **vln_rgb_topic.str_param,
+                **model_heartbeat_timeout_sec.param(float),
+                **model_adapter.str_param,
+                **fast_guard_enabled.str_param,
+                **fast_guard_veto_topic.str_param,
+                **fast_guard_required.str_param,
+                **fast_guard_veto_timeout_sec.param(float),
+                **bfast_risk_threshold.param(float),
+                **bfast_max_frame_gap_sec.param(float),
+                **bfast_decision_topic.str_param,
+                **control_mode.str_param,
+                **model_server_url.str_param,
+                **model_params_json.str_param,
                 'internnav_mode': dual_vln_mode.param_value(str),
                 'internnav_model_path': dual_vln_model_path.param_value(str),
                 'internnav_device': dual_vln_device.param_value(str),

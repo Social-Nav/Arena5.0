@@ -8,10 +8,90 @@ import numpy as np
 
 @runtime_checkable
 class ArenaVLNAdapter(Protocol):
-    """Protocol implemented by Arena VLN model adapters."""
+    """Legacy protocol implemented by Arena VLN model adapters.
+
+    New code should use :class:`arena_vln_models.model_adapter.ModelAdapter`,
+    which exposes ``reset``/``infer``/``to_prediction`` and never converts a
+    path to a velocity.  This protocol is retained so existing
+    ``adapter_target`` imports keep working.
+    """
 
     def compute(self, observation: Any) -> dict[str, Any]:
         """Return a mapping accepted by arena_vln_models' PythonAdapterBackend."""
+
+
+@dataclass(frozen=True)
+class Pose2D:
+    """Planar pose used by observations, predictions and legacy backends."""
+
+    x: float
+    y: float
+    yaw: float
+
+
+@dataclass
+class ModelObservation:
+    """One synchronized model observation.
+
+    ``stamp_ns`` is the capture timestamp used for TF lookup.  ``frame_id`` is
+    the fixed frame of ``pose`` (normally the robot odom frame).  Adapters may
+    accept duck-typed observations with the same attributes, but the executor
+    always builds this type.
+    """
+
+    pose: Pose2D
+    instruction: str = ''
+    rgb_image: Any = None
+    depth_image: Any = None
+    camera_intrinsics: Optional[tuple[float, ...]] = None
+    frame_id: str = ''
+    stamp_ns: int = 0
+    received_at: float = 0.0
+    look_down: bool = False
+    session_id: str = ''
+    episode: int = -1
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def rgb(self) -> Any:
+        return self.rgb_image
+
+    @property
+    def depth(self) -> Any:
+        return self.depth_image
+
+
+@dataclass
+class ModelPrediction:
+    """Canonical model output consumed by ArenaModelExecutor.
+
+    ``poses`` are fixed-odom ``(x, y, yaw)`` tuples in metres/radians.  A STOP
+    prediction has an empty ``poses`` list.  ``source`` records whether the
+    path came from the model itself (``native``), a wrapper synthesis
+    (``synthetic``) or an adapter primitive expansion (``primitive``).
+    """
+
+    adapter: str
+    poses: list[tuple[float, float, float]] = field(default_factory=list)
+    stop: bool = False
+    status: str = 'running'
+    source: str = 'native'
+    raw: Any = None
+    debug: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def terminal(self) -> bool:
+        return self.stop or self.status in {'stop', 'error'}
+
+    def to_manifest(self) -> dict[str, Any]:
+        return {
+            'adapter': self.adapter,
+            'source': self.source,
+            'stop': bool(self.stop),
+            'status': self.status,
+            'pose_count': len(self.poses),
+            'debug': sanitize_debug(self.debug),
+        }
 
 
 @dataclass(frozen=True)

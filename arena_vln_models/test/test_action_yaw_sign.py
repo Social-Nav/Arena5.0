@@ -205,6 +205,7 @@ class TestDualModeConsistency:
             'max_linear': 0.5,
             'max_angular': 0.5,
             'model_output_policy': policy,
+            'legacy_native_cmd_vel': True,
         }
         return backend
 

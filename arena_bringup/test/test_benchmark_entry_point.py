@@ -28,6 +28,13 @@ PLANNABLE_VERBS = [
     'run', 'full-eval', 'density-eval', 'build', 'runtime', 'up', 'serve', 'eval', 'stop', 'down',
 ]
 
+# density-eval stays a registered, documented verb, but its checked-in
+# density_eval_split_10.json was archived together with the legacy grscenes_*_v1
+# worlds, so its plan now rejects pre-docker until a density split is re-exported
+# against the frozen eval500 dataset. It is therefore excluded from the verbs
+# that must produce a successful zero-side-effect plan.
+PLANNABLE_VERBS_WITH_CURRENT_DATASET = [v for v in PLANNABLE_VERBS if v != 'density-eval']
+
 # The declared feature set, which must be visible in the script rather than
 # inherited from the untracked src/Arena/.installed.
 DECLARED_FEATURES = ['isaac', 'internnav']
@@ -151,7 +158,7 @@ def test_config_prints_profile_identity_and_effective_values():
     assert result.returncode == 0, result.stderr
     assert 'profile_id=internnav_grscenes' in result.stdout
     assert 'profile_sha256=' in result.stdout
-    assert 'world=grscenes_20_v1' in result.stdout
+    assert 'world=grscenes_1' in result.stdout
     assert 'precedence=CLI/case override > machine-local paths/device > benchmark profile > legacy code defaults' in result.stdout
 
 
@@ -171,7 +178,7 @@ def test_help_tells_a_newcomer_where_results_land():
 # plan purity -- the property that makes this reviewable without a GPU
 # --------------------------------------------------------------------------
 
-@pytest.mark.parametrize('verb', PLANNABLE_VERBS)
+@pytest.mark.parametrize('verb', PLANNABLE_VERBS_WITH_CURRENT_DATASET)
 def test_plan_never_invokes_docker(verb, tmp_path):
     result = _run(['plan', verb], env=_docker_free_env(tmp_path))
     assert 'PLAN MODE CALLED DOCKER' not in result.stderr, (
@@ -180,7 +187,7 @@ def test_plan_never_invokes_docker(verb, tmp_path):
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.parametrize('verb', PLANNABLE_VERBS)
+@pytest.mark.parametrize('verb', PLANNABLE_VERBS_WITH_CURRENT_DATASET)
 def test_plan_emits_numbered_steps(verb):
     out = _run(['plan', verb]).stdout
     assert '1.' in out, f'plan {verb} produced no steps:\n{out}'
@@ -211,13 +218,35 @@ def test_plan_rejects_an_unknown_verb():
 def test_run_plan_orders_containers_then_model_then_eval():
     out = _run(['plan', 'run']).stdout
     i_up = out.find('start containers')
+    i_source = out.find('verify exact runtime source binding')
     i_serve = out.find('start the model server')
     i_ready = out.find('report ready')
     i_eval = out.find('run the evaluation')
-    assert -1 not in (i_up, i_serve, i_ready, i_eval), out
-    assert i_up < i_serve < i_ready < i_eval, (
+    assert -1 not in (i_up, i_source, i_serve, i_ready, i_eval), out
+    assert i_up < i_source < i_serve < i_ready < i_eval, (
         'the model must be serving and ready before the evaluation starts'
     )
+
+
+def test_source_gate_is_wired_before_model_isaac_ros_start():
+    source = SCRIPT.read_text(encoding='utf-8')
+    runtime_start = source.index('check_runtime_preconditions(){')
+    runtime_end = source.index('abort_on_check_failures(){', runtime_start)
+    runtime_checks = source[runtime_start:runtime_end]
+    assert runtime_checks.index('check_container_source_binding') < runtime_checks.index(
+        'check_model_runtime'
+    )
+    run_body = source.split('do_run(){', 1)[1].split('load_full_eval_cases(){', 1)[0]
+    assert run_body.index('check_runtime_preconditions') < run_body.index(
+        'start_server_background'
+    )
+    assert 'python3 "$module" --contract "$contract" --output "$output"' in source
+
+
+def test_source_binding_override_is_included_for_explicit_source_root():
+    source = SCRIPT.read_text(encoding='utf-8')
+    assert 'docker-compose.source-binding.yaml' in source
+    assert 'ARENA_BENCHMARK_SOURCE_ROOT' in source
 
 
 def test_run_plan_checks_preconditions_first():
@@ -352,6 +381,28 @@ def test_eval_runs_in_the_arena_container():
     assert 'arena-testproj-arena-1' in out
 
 
+def test_eval_can_source_an_isolated_overlay_without_changing_production_install():
+    result = _run(
+        ['plan', 'eval'],
+        env={
+            'ARENA_BENCHMARK_OVERLAY_SETUP': '/tmp/e0-overlay/install/setup.bash',
+            'ARENA_BENCHMARK_SOURCE_ROOT': '/workspace/e0-worktree',
+        },
+    )
+    assert result.returncode == 0, result.stderr
+    assert 'source /tmp/e0-overlay/install/setup.bash' in result.stdout
+
+
+def test_real_eval_captures_all_three_container_image_revisions():
+    source = SCRIPT.read_text(encoding='utf-8')
+    assert 'for service in arena isaac internnav' in source
+    assert 'env_prefix="ARENA_EVAL_${service^^}_CONTAINER_"' in source
+    assert "docker inspect -f '{{.Id}}'" in source
+    assert "docker inspect -f '{{.Image}}'" in source
+    assert "docker inspect -f '{{.Config.Image}}'" in source
+    assert 'ARENA_EVAL_REQUIRE_QUALIFICATION_EVIDENCE=1' in source
+
+
 def test_extra_arguments_are_appended_to_the_driver():
     out = _run(['plan', 'eval', '--', '--output-prefix', 'review']).stdout
     assert '--output-prefix review' in out
@@ -369,8 +420,8 @@ def test_default_eval_uses_the_current_strict_benchmark_contract():
     out = _run(['plan', 'eval']).stdout
     assert '--benchmark-profile ' in out
     assert 'internnav_grscenes.yaml' in out
-    assert '--world grscenes_20_v1' in out
-    assert '--scenario-file default_2' in out
+    assert '--world grscenes_1' in out
+    assert '--scenario-file eval_1' in out
     assert '--timeout 300' in out
     assert '--internnav-device cuda:0' in out
 
@@ -379,6 +430,7 @@ def test_density_arguments_reach_the_eval_driver():
     config = '/opt/arena_ws/src/Arena/arena_bringup/configs/benchmark/density/task_generator_n05.yaml'
     out = _run([
         'plan', 'eval',
+        '--tm-obstacles', 'random',
         '--task-generator-parameter-file', config,
         '--expected-human-count', '5',
         '--pedestrian-seed', '20260923',
@@ -391,39 +443,67 @@ def test_density_arguments_reach_the_eval_driver():
     assert '--pedestrian-pool-size 10' in out
 
 
+@pytest.mark.parametrize('count', [0, 5])
+def test_density_scenario_consumer_is_rejected_before_docker(count, tmp_path):
+    config = REPO_ROOT / 'arena_bringup/configs/benchmark/density' / f'task_generator_n{count:02d}.yaml'
+    result = _run([
+        'plan', 'eval',
+        '--tm-obstacles', 'scenario',
+        '--task-generator-parameter-file', str(config),
+        '--expected-human-count', str(count),
+    ], env=_docker_free_env(tmp_path))
+
+    assert result.returncode != 0
+    assert 'density/task-generator contract rejected before containers, model, or Isaac' in result.stderr
+    assert 'density_consumer_must_be_random' in result.stderr
+    assert 'PLAN MODE CALLED DOCKER' not in result.stderr
+
+
+@pytest.mark.parametrize('count', [0, 5])
+def test_density_random_consumer_is_accepted_by_plan(count, tmp_path):
+    config = REPO_ROOT / 'arena_bringup/configs/benchmark/density' / f'task_generator_n{count:02d}.yaml'
+    result = _run([
+        'plan', 'eval',
+        '--tm-obstacles', 'random',
+        '--task-generator-parameter-file', str(config),
+        '--expected-human-count', str(count),
+    ], env=_docker_free_env(tmp_path))
+
+    assert result.returncode == 0, result.stderr
+    assert 'density contract accepted:' in result.stdout
+    assert '--tm-obstacles random' in result.stdout
+    assert 'PLAN MODE CALLED DOCKER' not in result.stderr
+
+
 def test_full_eval_uses_only_the_checked_in_test_split():
     out = _run(['plan', 'full-eval']).stdout
 
-    assert 'selected=133 discovered=150 skipped=17' in out
-    assert 'grscenes_1_v1/default' in out
-    assert 'grscenes_30_v1/default_3' in out
-    assert 'grscenes_19_v1/default' not in out
-    assert 'grscenes_23_v1/default_4' not in out
-    assert 'grscenes_26_v1/default_2' not in out
-    assert 'grscenes_27_v1/default_4' not in out
-    assert 'grscenes_29_v1/default_4' not in out
-    assert 'grscenes_30_v1/default_4' not in out
-    assert 'grscenes_4_v1/default_4' not in out
+    assert 'selected=500 discovered=500 skipped=0' in out
+    assert 'grscenes_9/eval_4' in out
+    assert 'grscenes_1/eval_1' in out
+    # The frozen eval500 export uses no _v1 world suffix and eval_N scenarios.
+    assert '_v1/' not in out
+    assert '/default' not in out
 
 
 def test_full_eval_honours_a_custom_relative_path_allowlist(tmp_path):
     split = tmp_path / 'test_split.json'
     split.write_text(
-        '["worlds/grscenes_1_v1/scenarios/default/episode_metadata.json", '
-        '"worlds/grscenes_30_v1/scenarios/default_3/episode_metadata.json"]\n',
+        '["worlds/grscenes_1/scenarios/eval_1/episode_metadata.json", '
+        '"worlds/grscenes_9/scenarios/eval_4/episode_metadata.json"]\n',
         encoding='utf-8',
     )
 
     result = _run(['plan', 'full-eval', '--test-split', str(split)])
 
     assert result.returncode == 0, result.stderr
-    assert 'selected=2 discovered=150 skipped=148' in result.stdout
+    assert 'selected=2 discovered=500 skipped=498' in result.stdout
     selected = [
         line.strip()[2:]
         for line in result.stdout.splitlines()
         if line.startswith('  - ')
     ]
-    assert selected == ['grscenes_1_v1/default', 'grscenes_30_v1/default_3']
+    assert selected == ['grscenes_1/eval_1', 'grscenes_9/eval_4']
 
 
 def test_full_eval_rejects_invalid_split_before_docker(tmp_path):
@@ -485,17 +565,20 @@ def test_full_eval_requires_a_fresh_result_for_each_case():
     assert 'latest_case_result "$case_started_at"' in source
 
 
-def test_density_eval_is_a_three_arm_ten_episode_paired_plan():
-    out = _run(['plan', 'density-eval']).stdout
+def test_density_eval_is_blocked_pre_docker_after_its_legacy_split_was_archived(tmp_path):
+    # The density_eval_split_10.json allowlist moved to backup/ together with the
+    # legacy grscenes_*_v1 worlds. The verb skeleton (three density arms/configs)
+    # stays in the script, but planning must now fail loudly before Docker until a
+    # density split is re-exported against the frozen eval500 dataset.
+    result = _run(['plan', 'density-eval'], env=_docker_free_env(tmp_path))
 
-    assert out.count('selected=10 discovered=150 skipped=140') == 1
-    assert 'output_prefix=full_eval/n00' in out
-    assert 'output_prefix=full_eval/n05' in out
-    assert 'output_prefix=full_eval/n10' in out
-    assert 'human=hunav tm_obstacles=random traversal=reciprocate' in out
-    assert 'task_generator_n00.yaml' in SCRIPT.read_text(encoding='utf-8')
-    assert 'task_generator_n05.yaml' in SCRIPT.read_text(encoding='utf-8')
-    assert 'task_generator_n10.yaml' in SCRIPT.read_text(encoding='utf-8')
+    assert result.returncode != 0
+    assert 'density_eval_split_10.json' in result.stderr
+    assert 'PLAN MODE CALLED DOCKER' not in result.stderr
+    script = SCRIPT.read_text(encoding='utf-8')
+    assert 'task_generator_n00.yaml' in script
+    assert 'task_generator_n05.yaml' in script
+    assert 'task_generator_n10.yaml' in script
 
 
 def test_density_eval_rejects_a_non_base_model():

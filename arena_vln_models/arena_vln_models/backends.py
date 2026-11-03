@@ -810,12 +810,50 @@ class PythonAdapterBackend(ModelSimBackend):
 
             output_policy = _model_output_policy(self._params)
             debug.setdefault('model_output_policy', output_policy)
+            legacy_native_cmd_vel = bool(self._params.get('legacy_native_cmd_vel', False))
+            debug.setdefault('legacy_native_cmd_vel', legacy_native_cmd_vel)
 
             trajectory = output.get('output_trajectory', output.get('trajectory'))
+            path = output.get('poses', output.get('path'))
             if trajectory is not None:
                 debug.setdefault('trajectory_preview', trajectory)
+            if path is not None:
+                debug.setdefault('path_preview', path)
 
             discrete_action = output.get('discrete_action', output.get('output_action', output.get('action')))
+
+            # A unified ModelAdapter emits a path and the ArenaModelExecutor is
+            # the only FollowPath sender.  Legacy path-to-velocity conversion
+            # must never happen implicitly; it is an explicit compatibility
+            # branch for the old direct-cmd_vel eval only.
+            if not legacy_native_cmd_vel and (
+                path is not None or trajectory is not None or discrete_action is not None
+            ) and 'linear_x' not in output and 'angular_z' not in output:
+                debug.setdefault('selected_output_mode', 'path')
+                debug.setdefault('path_requires_executor', True)
+                debug.setdefault(
+                    'path_requires_executor_reason',
+                    'ModelAdapter output is a path/action; send it through '
+                    'ArenaModelExecutor FollowPath, or set '
+                    'legacy_native_cmd_vel=true for the deprecated direct path.',
+                )
+                return ModelSimDecision(
+                    linear_x=0.0,
+                    angular_z=0.0,
+                    status='path_requires_executor',
+                    degraded=True,
+                    debug=debug,
+                )
+
+            if not legacy_native_cmd_vel and ('linear_x' in output or 'angular_z' in output):
+                debug.setdefault('selected_output_mode', 'cmd_vel')
+                return ModelSimDecision(
+                    linear_x=float(output.get('linear_x', 0.0)),
+                    angular_z=float(output.get('angular_z', 0.0)),
+                    status=str(output.get('status', 'adapter_command')),
+                    degraded=bool(output.get('degraded', False)),
+                    debug=debug,
+                )
 
             def _trajectory_decision() -> Optional[ModelSimDecision]:
                 if trajectory is None:

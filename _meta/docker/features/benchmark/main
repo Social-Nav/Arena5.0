@@ -20,6 +20,54 @@
 name="benchmark"
 
 # ---------------------------------------------------------------------------
+# Method routing plan mode.
+#
+# `benchmark/main plan --method <id> --common <json> [--output <fresh-json>]`
+# is a single, copy-able entry point that returns a machine-readable method
+# plan.  It never starts a container, model, Isaac, or episode.  The method
+# bundle binds method-private fields; the common contract is hashed once and
+# must stay identical across method switches.
+# ---------------------------------------------------------------------------
+method_mode=0
+for method_arg in "$@"; do
+    case "$method_arg" in
+        --method|--method=*) method_mode=1 ;;
+    esac
+done
+if [ "$method_mode" = "1" ]; then
+    method_feature_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+    method_arena_dir="$(cd "$method_feature_dir/../../../.." && pwd)"
+    export PYTHONPATH="$method_arena_dir/arena_bringup:$method_arena_dir/arena_vln_models${PYTHONPATH:+:$PYTHONPATH}"
+    method_id=""
+    method_common=""
+    method_bundle_override=0
+    method_output=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            plan|method-plan) shift ;;
+            --method) method_id="${2:-}"; shift 2 ;;
+            --method=*) method_id="${1#--method=}"; shift ;;
+            --common) method_common="${2:-}"; shift 2 ;;
+            --common=*) method_common="${1#--common=}"; shift ;;
+            --bundle|--bundle=*) method_bundle_override=1; shift ;;
+            --output) method_output="${2:-}"; shift 2 ;;
+            --output=*) method_output="${1#--output=}"; shift ;;
+            *) shift ;;
+        esac
+    done
+    [ -n "$method_id" ] || { echo "[benchmark] FATAL: --method is required" >&2; exit 2; }
+    [ -n "$method_common" ] || { echo "[benchmark] FATAL: --common is required" >&2; exit 2; }
+    if [ "$method_bundle_override" = "1" ]; then
+        printf '%s\n' '{"schema":"arena.agentic.method_plan.v1","method_id":null,"status":"BLOCKED","executable":false,"plan_only":true,"commands":[],"future_launch_command":[],"blockers":["BUNDLE_OVERRIDE_NOT_ALLOWED"],"errors":[]}'
+        exit 2
+    fi
+    method_extra=()
+    [ -n "$method_output" ] && method_extra+=(--output "$method_output")
+    exec python3 -m arena_bringup.paper_pipeline method-plan \
+        --method "$method_id" --common "$method_common" "${method_extra[@]}"
+fi
+
+# ---------------------------------------------------------------------------
 # Declared topology.  This is tracked, on purpose.
 #
 # `_meta/docker/source` derives the compose file list from `src/Arena/.installed`,
@@ -75,6 +123,12 @@ benchmark_test_split_package_root(){
 }
 benchmark_test_split_module(){
     echo "$(benchmark_script_arena_dir)/arena_bringup/arena_bringup/test_split.py"
+}
+benchmark_density_contract_module(){
+    echo "$(benchmark_script_arena_dir)/arena_bringup/arena_bringup/density_contract.py"
+}
+benchmark_container_source_gate_module(){
+    echo "$(benchmark_script_arena_dir)/arena_bringup/arena_bringup/container_source_gate.py"
 }
 
 # Read --profile before parsing the rest of the command.  The loader validates
@@ -155,6 +209,11 @@ if ! declare -F arena_docker_compose >/dev/null 2>&1; then
                 compose_args+=(-f "$arena_dir/_meta/docker/features/$feature/docker-compose.yaml")
             fi
         done
+        if [ -n "${ARENA_BENCHMARK_SOURCE_ROOT:-}" ]; then
+            compose_args+=(
+                -f "$arena_dir/_meta/docker/features/benchmark/docker-compose.source-binding.yaml"
+            )
+        fi
         env \
             ARENA_PROJECT_NAME="$project" \
             ARENA_IMAGE="${ARENA_IMAGE:-arena:dev}" \
@@ -268,6 +327,10 @@ check_compose_files(){
     for feature in $BENCHMARK_FEATURES; do
         if [ ! -d "$arena_dir/_meta/docker/features/$feature" ]; then missing=1; fi
     done
+    if [ -n "${ARENA_BENCHMARK_SOURCE_ROOT:-}" ] \
+        && [ ! -f "$arena_dir/_meta/docker/features/benchmark/docker-compose.source-binding.yaml" ]; then
+        missing=1
+    fi
     if [ "$missing" = "0" ]; then
         check_report PASS "compose files present for declared features: $BENCHMARK_FEATURES"
     else
@@ -478,6 +541,51 @@ check_model_runtime(){
     fi
 }
 
+check_container_source_binding(){
+    local contract output module result_summary
+    if [ -z "${ARENA_BENCHMARK_SOURCE_ROOT:-}" ]; then
+        check_report SKIP "runtime source-binding Gate0 not requested" \
+            "qualified runs must set ARENA_BENCHMARK_SOURCE_ROOT plus a frozen contract/output"
+        return 0
+    fi
+    contract="${ARENA_CONTAINER_SOURCE_GATE_CONTRACT:-}"
+    output="${ARENA_CONTAINER_SOURCE_GATE_OUTPUT:-}"
+    module="$(benchmark_container_source_gate_module)"
+    if [ -z "$contract" ] || [ -z "$output" ]; then
+        check_report FAIL "runtime source-binding Gate0 contract/output missing" \
+            "ARENA_CONTAINER_SOURCE_GATE_CONTRACT and ARENA_CONTAINER_SOURCE_GATE_OUTPUT are required"
+        return 0
+    fi
+    if [ ! -f "$contract" ] || [ ! -f "$module" ]; then
+        check_report FAIL "runtime source-binding Gate0 input missing" \
+            "contract=$contract" "module=$module"
+        return 0
+    fi
+    if [ -e "$output" ]; then
+        check_report FAIL "runtime source-binding Gate0 output must be new" \
+            "refusing to overwrite $output"
+        return 0
+    fi
+    if python3 "$module" --contract "$contract" --output "$output"; then
+        check_report PASS "runtime source-binding Gate0 passed before model/Isaac/ROS" \
+            "evidence=$output"
+        return 0
+    fi
+    result_summary="$({ python3 - "$output" <<'PY'
+import json
+import sys
+
+try:
+    value = json.load(open(sys.argv[1], encoding='utf-8'))
+    print('; '.join(item.get('check', '?') for item in value.get('failures', [])))
+except Exception as exc:
+    print(f'unreadable evidence: {type(exc).__name__}:{exc}')
+PY
+    } 2>&1)"
+    check_report FAIL "runtime source-binding Gate0 rejected actual containers" \
+        "evidence=$output" "failures=$result_summary"
+}
+
 check_static_preconditions(){
     echo "host and tooling"
     check_docker_cli
@@ -498,6 +606,9 @@ check_static_preconditions(){
 check_runtime_preconditions(){
     echo "containers and runtime"
     check_containers
+    # Load-bearing order: this inspects the already-created idle containers,
+    # before any model server, Isaac process, ROS launch or episode can start.
+    check_container_source_binding
     check_arena_built
     check_arena_venv
     check_gpu_devices
@@ -601,6 +712,8 @@ TASK_GENERATOR_PARAMETER_FILE="${ARENA_BENCHMARK_TASK_GENERATOR_PARAMETER_FILE:-
 EXPECTED_HUMAN_COUNT="${ARENA_BENCHMARK_EXPECTED_HUMAN_COUNT:--1}"
 PEDESTRIAN_SEED="${ARENA_BENCHMARK_PEDESTRIAN_SEED:--1}"
 PEDESTRIAN_POOL_SIZE="${ARENA_BENCHMARK_PEDESTRIAN_POOL_SIZE:--1}"
+EVAL_OVERLAY_SETUP="${ARENA_BENCHMARK_OVERLAY_SETUP:-}"
+EVAL_SOURCE_ROOT="${ARENA_BENCHMARK_SOURCE_ROOT:-}"
 FULL_EVAL_MODE=0
 EPISODES="$PROFILE_EVALUATION_EPISODES"
 TIMEOUT="$PROFILE_EVALUATION_TIMEOUT_SEC"
@@ -631,8 +744,24 @@ validate_eval_extra(){
     done
 }
 
+validate_density_binding(){
+    local config_path="$1" expected_count="$2" output rc
+    rc=0
+    output="$(
+        python3 "$(benchmark_density_contract_module)" \
+            --config "$config_path" \
+            --requested-consumer "$TM_OBSTACLES" \
+            --resolved-consumer "$TM_OBSTACLES" \
+            --expected-count "$expected_count" 2>&1
+    )" || rc=$?
+    [ "$rc" = "0" ] \
+        || die "density/task-generator contract rejected before containers, model, or Isaac" \
+            "$output"
+    log "density contract accepted: config=$config_path consumer=$TM_OBSTACLES expected=$expected_count"
+}
+
 validate_density_contract(){
-    local config_root expected_config actual_sha expected_sha
+    local config_root expected_config expected_count
     [ "$MODEL_PATH" = "$PROFILE_SERVER_MODEL_PATH" ] \
         || die "density-eval is the base-model experiment" \
             "expected model: $PROFILE_SERVER_MODEL_PATH" \
@@ -644,6 +773,10 @@ validate_density_contract(){
     for expected_config in task_generator_n00.yaml task_generator_n05.yaml task_generator_n10.yaml; do
         [ -s "$config_root/$expected_config" ] \
             || die "missing density task-generator config" "$config_root/$expected_config"
+        expected_count="${expected_config#task_generator_n}"
+        expected_count="${expected_count%.yaml}"
+        expected_count=$((10#$expected_count))
+        validate_density_binding "$config_root/$expected_config" "$expected_count"
     done
     [ "$HUMAN" = "hunav" ] || die "density-eval requires HuNav for all arms"
     [ "$TM_OBSTACLES" = "random" ] || die "density-eval requires tm_obstacles=random"
@@ -732,7 +865,7 @@ start_server_background(){
 # Built as an argv array rather than a shell string so there is no nested
 # quoting to get wrong, and so the plan output is readable.
 eval_inner_command(){
-    local quoted
+    local quoted overlay_source=""
     local -a eval_args=(
         ros2 run arena_bringup internnav_eval
         --benchmark-profile "$PROFILE_PATH"
@@ -765,11 +898,43 @@ eval_inner_command(){
     fi
     eval_args+=("${EVAL_EXTRA[@]}")
     printf -v quoted '%q ' "${eval_args[@]}"
-    printf '%s' "source /opt/ros/jazzy/setup.bash && source install/setup.bash && ARENA_INTERNNAV_EXTERNAL_SERVER=1 ${quoted% }"
+    if [ -n "$EVAL_OVERLAY_SETUP" ]; then
+        printf -v overlay_source ' && source %q' "$EVAL_OVERLAY_SETUP"
+    fi
+    printf '%s' "source /opt/ros/jazzy/setup.bash && source install/setup.bash${overlay_source} && ARENA_INTERNNAV_EXTERNAL_SERVER=1 ${quoted% }"
 }
 
 eval_docker_command(){
+    local service container_name container_id image_id image_ref env_prefix
+    local -a provenance_env=() source_env=()
+    for service in arena isaac internnav; do
+        container_name="$(benchmark_container "$service")"
+        container_id="$(docker inspect -f '{{.Id}}' "$container_name")" \
+            || die "cannot inspect $service container id" "$container_name"
+        image_id="$(docker inspect -f '{{.Image}}' "$container_name")" \
+            || die "cannot inspect $service image id" "$container_name"
+        image_ref="$(docker inspect -f '{{.Config.Image}}' "$container_name")" \
+            || die "cannot inspect $service image reference" "$container_name"
+        env_prefix="ARENA_EVAL_${service^^}_CONTAINER_"
+        provenance_env+=(
+            -e "${env_prefix}ID=$container_id"
+            -e "${env_prefix}IMAGE_ID=$image_id"
+            -e "${env_prefix}IMAGE_REF=$image_ref"
+        )
+    done
+    if [ -n "$EVAL_SOURCE_ROOT" ]; then
+        source_env=(-e "ARENA_EVAL_SOURCE_ROOT=$EVAL_SOURCE_ROOT")
+    fi
+    if [ -n "${ARENA_HUNAV_CONFIG:-}" ]; then
+        source_env+=(
+            -e "ARENA_HUNAV_CONFIG=$ARENA_HUNAV_CONFIG"
+            -e "ARENA_HUNAV_CONFIG_SHA256=${ARENA_HUNAV_CONFIG_SHA256:-}"
+        )
+    fi
     docker exec \
+            "${provenance_env[@]}" \
+            "${source_env[@]}" \
+            -e "ARENA_EVAL_REQUIRE_QUALIFICATION_EVIDENCE=1" \
             -e "ROS_DOMAIN_ID=$ROS_DOMAIN_ID" \
             -e "RMW_IMPLEMENTATION=$RMW_IMPLEMENTATION" \
             -e "FASTDDS_BUILTIN_TRANSPORTS=$FASTDDS_BUILTIN_TRANSPORTS" \
@@ -784,8 +949,9 @@ do_eval(){
     # Keep the complete argv visible in plan mode.  Besides making the plan
     # useful to operators, this proves which container and ROS/DDS contract
     # the single-case evaluator will use without contacting Docker.
-    run_step "run the evaluation in arena-1" \
-        docker exec \
+    if [ "$DRY_RUN" = "1" ]; then
+        run_step "run the evaluation in arena-1" \
+            docker exec \
             -e "ROS_DOMAIN_ID=$ROS_DOMAIN_ID" \
             -e "RMW_IMPLEMENTATION=$RMW_IMPLEMENTATION" \
             -e "FASTDDS_BUILTIN_TRANSPORTS=$FASTDDS_BUILTIN_TRANSPORTS" \
@@ -794,6 +960,9 @@ do_eval(){
             -w /opt/arena_ws \
             "$(benchmark_container arena)" \
             bash -lc "$(eval_inner_command)"
+        return 0
+    fi
+    run_step "run the evaluation in arena-1" eval_docker_command
 }
 
 wait_for_model(){
@@ -814,6 +983,8 @@ do_run(){
         run_step "start containers ($BENCHMARK_SERVICES) without building" \
             arena_docker_compose up -d --remove-orphans --no-build $BENCHMARK_SERVICES
         run_step_sh "wait for the arena workspace build marker /.built" "<poll docker exec ... test -f /.built>"
+        run_step_sh "verify exact runtime source binding before model/Isaac/ROS" \
+            "python3 $(benchmark_container_source_gate_module) --contract <frozen contract> --output <new evidence>"
         run_step_sh "verify container build, model runtime, and GPU device access" \
             "<docker exec ... test /.built and /opt/internnav_venv, then open /dev/nvidia0 and run nvidia-smi -L>"
         if [ -n "$SYSTEM2_MODEL_PATH" ]; then
@@ -1173,6 +1344,8 @@ do_config(){
     echo "expected_human_count=$EXPECTED_HUMAN_COUNT"
     echo "pedestrian_seed=$PEDESTRIAN_SEED"
     echo "pedestrian_pool_size=$PEDESTRIAN_POOL_SIZE"
+    echo "hunav_config=${ARENA_HUNAV_CONFIG:-<default>}"
+    echo "hunav_config_sha256=${ARENA_HUNAV_CONFIG_SHA256:-<unset>}"
     echo "simulator=$PROFILE_EVALUATION_SIMULATOR"
     echo "external_server=$PROFILE_INTERNNAV_EXTERNAL_SERVER"
     echo "direct_cmd_vel=$PROFILE_INTERNNAV_DIRECT_CMD_VEL"
@@ -1332,6 +1505,9 @@ case "$VERB:${PLAN_TARGET:-}" in
         ;;
 esac
 validate_eval_extra
+if [ -n "$TASK_GENERATOR_PARAMETER_FILE" ]; then
+    validate_density_binding "$TASK_GENERATOR_PARAMETER_FILE" "$EXPECTED_HUMAN_COUNT"
+fi
 if { [ "$VERB" = "full-eval" ] || { [ "$VERB" = "plan" ] && [ "$PLAN_TARGET" = "full-eval" ]; }; } \
     && [ "$SINGLE_CASE_OVERRIDE" = "1" ]; then
     die "full-eval case selection comes only from --test-split" \

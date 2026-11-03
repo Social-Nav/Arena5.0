@@ -26,6 +26,7 @@ services:
       - "$HOST_ARENA_WS_DIR/install:/opt/arena_ws/install:ro"
       - "$HOST_ARENA_WS_DIR/build:/opt/arena_ws/build:ro"
       - "$HOST_ARENA_WS_DIR/deps:/opt/arena_ws/deps:ro"
+      - "${HOST_ARENA_MODELS_DIR:-${HOST_ARENA_WS_DIR}/deps/models}:/opt/arena_ws/deps/models:ro"
       - "$HOST_ARENA_WS_DIR/outputs:/opt/arena_ws/outputs"
       - "$HOST_ARENA_WS_DIR/.env:/opt/arena_ws/.env:ro"
       - "internnav_venv:/opt/internnav_venv"

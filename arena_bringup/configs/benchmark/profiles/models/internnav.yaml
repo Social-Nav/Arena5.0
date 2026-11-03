@@ -1,0 +1,13 @@
+id: internnav_follow_path_grscenes
+description: InternNav experiment using the unified model executor and Arena RPP FollowPath.
+model: internnav
+evaluation:
+  output_prefix: internnav_eval
+adapter:
+  name: internnav
+  server_url: http://127.0.0.1:5801/eval_dual
+  request_timeout_sec: 10.0
+  inference_hz: 4.0
+  control_mode: arena_follow_path
+  checkpoint: /opt/arena_ws/deps/models/InternVLA-N1-DualVLN
+  notes: InternVLA-N1 DualVLN realworld HTTP /eval_dual.

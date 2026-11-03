@@ -1,0 +1,13 @@
+services:
+  arena:
+    volumes:
+      - type: bind
+        source: ${ARENA_BENCHMARK_SOURCE_ROOT:?set ARENA_BENCHMARK_SOURCE_ROOT to the reviewed superproject worktree}
+        target: /opt/arena_ws/src/Arena
+        read_only: true
+  isaac:
+    volumes:
+      - type: bind
+        source: ${ARENA_BENCHMARK_SOURCE_ROOT:?set ARENA_BENCHMARK_SOURCE_ROOT to the reviewed superproject worktree}
+        target: /opt/arena_ws/src/Arena
+        read_only: true

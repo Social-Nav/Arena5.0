@@ -1,0 +1,17 @@
+{
+  "action": "next",
+  "data": {
+    "rc": 0,
+    "seq": 2,
+    "stop": false,
+    "actions": {
+      "actions": [
+        [
+          0.5,
+          0.0,
+          0.0
+        ]
+      ]
+    }
+  }
+}

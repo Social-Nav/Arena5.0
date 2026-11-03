@@ -67,6 +67,11 @@ setup(
             'benchmark_failure_report = arena_bringup.benchmark_failure_report:main',
             'benchmark_profile = arena_bringup.benchmark_profile:main',
             'benchmark_test_split = arena_bringup.test_split:main',
+            'density_contract = arena_bringup.density_contract:main',
+            'container_source_gate = arena_bringup.container_source_gate:main',
+            'paper_pipeline = arena_bringup.paper_pipeline:main',
+            'bfast_guard = arena_bringup.bfast_guard_node:main',
+            'lisn_slow_loop_bridge = arena_bringup.lisn_slow_loop_ros:main',
         ],
         'launch_ros.node_action': [
             'NodeLogLevelExtension = arena_bringup.extensions.NodeLogLevelExtension:NodeLogLevelExtension',

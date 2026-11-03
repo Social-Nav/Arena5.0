@@ -183,6 +183,7 @@ class RobotManager(NodeInterface):
         self._direct_dual_vln_last_status_twist: geometry_msgs.msg.Twist | None = None
         self._direct_dual_vln_map_bounds: tuple[float, float, float, float] | None = None
         self._direct_dual_vln_bounds_warning_emitted = False
+        self._waypoint_lifecycle = None
 
         self._publish_goal_task: typing.Optional[asyncio.Task] = None
 
@@ -216,16 +217,18 @@ class RobotManager(NodeInterface):
             goal_qos,
         )
 
-        self._cmd_vel_pub = self.node.create_publisher(
-            geometry_msgs.msg.Twist,
-            self.namespace('cmd_vel'),
-            1,
-        )
+        # In FollowPath mode the velocity smoother is the sole final publisher.
+        if not self._uses_waypoints():
+            self._cmd_vel_pub = self.node.create_publisher(
+                geometry_msgs.msg.Twist,
+                self.namespace('cmd_vel'),
+                1,
+            )
 
-        self._stop_vel_timer = self.node.create_timer(
-            0.1,
-            self._stop_vel_timer_cb,
-        )
+            self._stop_vel_timer = self.node.create_timer(
+                0.1,
+                self._stop_vel_timer_cb,
+            )
 
         self.node.create_subscription(
             nav_msgs.Odometry,
@@ -234,19 +237,37 @@ class RobotManager(NodeInterface):
             10
         )
 
-        self.node.create_subscription(
-            action_msgs.msg.GoalStatusArray,
-            self.namespace('navigate_to_pose', '_action', 'status'),
-            self._goal_status_callback,
-            1
-        )
+        if not self._uses_waypoints():
+            self.node.create_subscription(
+                action_msgs.msg.GoalStatusArray,
+                self.namespace('navigate_to_pose', '_action', 'status'),
+                self._goal_status_callback,
+                1
+            )
 
         self._setup_camera_readiness_subscriptions()
-        self._ensure_dual_vln_status_subscription()
+        if self._uses_waypoints():
+            from arena_vln_models.lifecycle import WaypointLifecycle
+
+            self._waypoint_lifecycle = WaypointLifecycle(
+                self.node,
+                self.namespace,
+                heartbeat_timeout=self.node.rosparam[float].get(
+                    'model_heartbeat_timeout_sec', 2.5
+                ),
+                record_dir=self._robot.record_data_dir or '',
+            )
+        else:
+            self._ensure_dual_vln_status_subscription()
 
         await self._launch_robot(node_names)
+        if self._waypoint_lifecycle is not None:
+            await self._waypoint_lifecycle.begin(
+                self.node._vln_session_id,
+                self.node._number_of_resets,
+            )
 
-        if self._internnav_direct_cmd_vel_enabled():
+        if self._uses_waypoints() or self._internnav_direct_cmd_vel_enabled():
             self._navigate_to_pose_client = None
         else:
             self._navigate_to_pose_client = rclpy.action.ActionClient(
@@ -317,6 +338,29 @@ class RobotManager(NodeInterface):
         Returns:
             bool: True if the goal is reached, False otherwise.
         """
+        waypoint_lifecycle = getattr(self, '_waypoint_lifecycle', None)
+        if waypoint_lifecycle is not None and waypoint_lifecycle.session.released:
+            try:
+                if waypoint_lifecycle.session.terminal:
+                    self.node._publish_eval_ready(
+                        'episode', False, reason='model_terminal'
+                    )
+                    waypoint_lifecycle.session.released = False
+                reason = await waypoint_lifecycle.poll()
+            except Exception as exc:
+                waypoint_lifecycle.error = str(exc)
+                reason = 'control_error'
+            if reason:
+                outcome_reason = (
+                    reason
+                    if reason in {'model_stop', 'model_error', 'control_error'}
+                    else 'control_error'
+                )
+                self._model_declared_stop = True
+                self._model_declared_stop_payload = {
+                    'reason': outcome_reason,
+                    'detail': waypoint_lifecycle.session.reason or reason,
+                }
         return self._is_goal_reached or self._model_declared_stop
 
     @property
@@ -324,7 +368,7 @@ class RobotManager(NodeInterface):
         if self._is_goal_reached:
             return 'goal_reached'
         if self._model_declared_stop:
-            return 'model_stop'
+            return self._model_declared_stop_payload.get('reason', 'model_stop')
         return 'running'
 
     async def move_robot_to_pos(self, pose: Pose):
@@ -411,6 +455,9 @@ class RobotManager(NodeInterface):
         Returns:
             bool: True if the costmap was cleared successfully, False otherwise.
         """
+        if self._uses_waypoints():
+            # The tracking costmap has no obstacle layers and is reset by lifecycle.
+            return True
         if self._internnav_direct_cmd_vel_enabled():
             self._logger.debug(
                 'InternNav direct cmd_vel mode is active; skipping local costmap clear because Nav2 is not launched.'
@@ -460,6 +507,8 @@ class RobotManager(NodeInterface):
 
     async def _clear_global_costmap(self) -> bool:
         """Clear the entire global costmap (removes dynamic obstacle marks from previous episode)."""
+        if self._uses_waypoints():
+            return True
         node_name = self.node.service_namespace(self.name, 'global_costmap/global_costmap')
         srv_name = os.path.abspath(node_name('../clear_entirely_global_costmap'))
         return await self._clear_costmap(node_name, srv_name)
@@ -554,7 +603,7 @@ class RobotManager(NodeInterface):
         preset takes effect immediately without a relaunch.
         No-op when attributes is falsy (caller resolves the default profile).
         """
-        if not attributes:
+        if not attributes or self._uses_waypoints():
             return True
         by_node = self._load_social_attributes(attributes)
         if not by_node:
@@ -580,7 +629,7 @@ class RobotManager(NodeInterface):
 
         No-op when vel is None (field absent -> the profile's value stands).
         """
-        if vel is None:
+        if vel is None or self._uses_waypoints():
             return True
 
         if vel <= 0.0:
@@ -826,7 +875,8 @@ class RobotManager(NodeInterface):
                 raise RuntimeError('Odometry did not reach reset start pose before goal publish.')
 
         self._reset_navigation_readiness_state()
-        self._ensure_dual_vln_status_subscription()
+        if not self._uses_waypoints():
+            self._ensure_dual_vln_status_subscription()
         camera_ready_timeout_s = float(
             self.node.rosparam[float].get(
                 'camera_ready_before_navigation_timeout_sec',
@@ -835,6 +885,10 @@ class RobotManager(NodeInterface):
         )
         if not await self._wait_for_camera_ready_before_navigation(timeout_s=camera_ready_timeout_s):
             raise RuntimeError('Timed out waiting for real camera topics before publishing VLN navigation goal.')
+        if self._waypoint_lifecycle is not None:
+            await self._waypoint_lifecycle.activate()
+            self._goal_start_time = self.node.sim_time
+            return
         if not self._internnav_direct_cmd_vel_enabled():
             if not await self._wait_for_dual_vln_status_before_navigation(timeout_s=120.0):
                 raise RuntimeError('Timed out waiting for InternNav backend_ready status with fresh real inputs.')
@@ -883,7 +937,7 @@ class RobotManager(NodeInterface):
                 self._logger.warn(f'Ignoring goal republish timer {action_name} failure during reset: {exc}')
 
     def _default_camera_topics_for_readiness(self) -> dict[str, str] | None:
-        if not self._is_dual_vln_robot():
+        if not self._uses_waypoints() and not self._is_dual_vln_robot():
             return None
 
         model_name = str(self.model_name or '').strip().lower()
@@ -910,7 +964,26 @@ class RobotManager(NodeInterface):
             return True
         return self._get_compat_rosparam(bool, 'internnav_direct_cmd_vel', 'dual_vln_direct_cmd_vel', False)
 
+    def _uses_waypoints(self) -> bool:
+        return (
+            self.node.rosparam[str].get('execution_mode', '')
+            == 'nav2_follow_path'
+        )
+
     def _configured_camera_topics_for_readiness(self) -> dict[str, str] | None:
+        if self._uses_waypoints():
+            defaults = self._default_camera_topics_for_readiness() or {}
+            configured = (
+                self.node.rosparam[str].get('vln_rgb_topic', '')
+                or defaults.get('rgb', '')
+            )
+            return {
+                'rgb': (
+                    configured
+                    if configured.startswith('/')
+                    else str(self.namespace(configured))
+                )
+            }
         if not self._is_dual_vln_robot():
             return None
 
@@ -972,6 +1045,8 @@ class RobotManager(NodeInterface):
             lambda _msg: self._mark_camera_ready('rgb'),
             sensor_qos,
         )
+        if self._uses_waypoints():
+            return
         self.node.create_subscription(
             sensor_msgs.Image,
             self._camera_ready_topics['depth'],
@@ -1557,6 +1632,11 @@ class RobotManager(NodeInterface):
         return future.result()
 
     async def _send_navigation_goal(self, goal_msg: geometry_msgs.msg.PoseStamped) -> None:
+        if self._uses_waypoints():
+            self._logger.info(
+                'FollowPath mode is active; the external model client owns path goals'
+            )
+            return
         if self._internnav_direct_cmd_vel_enabled():
             self._logger.info('InternNav direct cmd_vel mode is active; skipping Nav2 navigate_to_pose goal')
             return
@@ -1630,6 +1710,98 @@ class RobotManager(NodeInterface):
             launch_description = launch.LaunchDescription()
             current_log_level = rclpy.logging.get_logger_effective_level(self.node.get_logger().name).name.lower()
             launch_description.add_action(SetGlobalLogLevelAction(current_log_level))
+
+            if self._uses_waypoints():
+                model_adapter = str(self.node.rosparam[str].get('model_adapter', '') or '').strip()
+                control_mode = str(
+                    self.node.rosparam[str].get('control_mode', 'arena_follow_path') or 'arena_follow_path'
+                ).strip()
+                model_server_url = str(self.node.rosparam[str].get('model_server_url', '') or '').strip()
+                model_params_json = str(self.node.rosparam[str].get('model_params_json', '{}') or '{}')
+                model_inference_hz = float(self.node.rosparam[float].get('model_inference_hz', 4.0))
+                model_request_timeout_sec = float(
+                    self.node.rosparam[float].get('model_request_timeout_sec', 10.0)
+                )
+                rgb_topic = self._get_compat_rosparam(
+                    str, 'internnav_rgb_topic', 'dual_vln_rgb_topic', 'head_camera/image',
+                    empty_is_missing=True,
+                )
+                depth_topic = self._get_compat_rosparam(
+                    str, 'internnav_depth_topic', 'dual_vln_depth_topic', 'head_camera/depth',
+                    empty_is_missing=True,
+                )
+                camera_info_topic = self._get_compat_rosparam(
+                    str, 'internnav_camera_info_topic', 'dual_vln_camera_info_topic',
+                    'head_camera/camera_info', empty_is_missing=True,
+                )
+                odom_topic = str(self.node.rosparam[str].get('internnav_odom_topic', 'odom') or 'odom')
+                trace_dir = str(self._robot.record_data_dir or '')
+                launch_arguments = {
+                    'robot': self.model_name,
+                    'task_generator_node': os.path.join(
+                        self.node.get_namespace(), self.node.get_name()
+                    ),
+                    'namespace': str(self.namespace),
+                    'frame': f'{self._robot.frame}/',
+                    'record_data_dir': str(self._robot.record_data_dir or ''),
+                    'agent_name': str(self._robot.agent),
+                    # Native FollowPath tracking selects its controller plugin
+                    # from this argument. Without it the tracking config silently
+                    # kept RPP even when the eval declared social_mpc.
+                    'local_planner': (
+                        str(self.node.rosparam[str].get('local_planner', '') or '').strip()
+                        or self._robot.local_planner
+                    ),
+                    'model_adapter': model_adapter,
+                    'control_mode': control_mode,
+                    'model_server_url': model_server_url,
+                    'model_params_json': model_params_json,
+                    'rgb_topic': rgb_topic,
+                    'depth_topic': depth_topic,
+                    'camera_info_topic': camera_info_topic,
+                    'odom_topic': odom_topic,
+                    'odom_frame': self.frame(self._config.model_params.odom_frame),
+                    'base_frame': self.frame(self._config.model_params.base_frame),
+                    # A-track ProxMPC: relative name resolves inside the robot
+                    # namespace to /task_generator_node/<robot>/laser_scan.
+                    # The Ai2_Bot2 Isaac RTX bridge publishes there (verified
+                    # live: 1600 beams, finite ranges), not on <ns>/scan.
+                    'scan_topic': 'laser_scan',
+                    'use_tf_exact_stamp': 'true',
+                    'model_trace_dir': trace_dir,
+                    'inference_hz': str(model_inference_hz),
+                    'request_timeout_sec': str(model_request_timeout_sec),
+                    'fast_guard_enabled': str(
+                        self.node.rosparam[str].get('fast_guard_enabled', 'false') or 'false'),
+                    'fast_guard_veto_topic': str(
+                        self.node.rosparam[str].get('fast_guard_veto_topic', '') or ''),
+                    'fast_guard_required': str(
+                        self.node.rosparam[str].get('fast_guard_required', 'false') or 'false'),
+                    'fast_guard_veto_timeout_sec': str(
+                        self.node.rosparam[float].get('fast_guard_veto_timeout_sec', 1.0)),
+                    'bfast_risk_threshold': str(
+                        self.node.rosparam[float].get('bfast_risk_threshold', 0.5)),
+                    'bfast_max_frame_gap_sec': str(
+                        self.node.rosparam[float].get('bfast_max_frame_gap_sec', 1.0)),
+                    'bfast_decision_topic': str(
+                        self.node.rosparam[str].get('bfast_decision_topic', '') or ''),
+                }
+                launch_description.add_action(
+                    launch.actions.IncludeLaunchDescription(
+                        launch.launch_description_sources.PythonLaunchDescriptionSource(
+                            os.path.join(
+                                ament_index_python.packages.get_package_share_directory(
+                                    'arena_vln_models'
+                                ),
+                                'launch',
+                                'follow_path.launch.py',
+                            )
+                        ),
+                        launch_arguments=launch_arguments.items(),
+                    )
+                )
+                await self.node.do_launch(launch_description)
+                return
 
             internnav_mode = self._get_compat_rosparam(str, 'internnav_mode', 'dual_vln_mode', 'heuristic')
             internnav_model_path = self._get_compat_rosparam(
@@ -1770,7 +1942,10 @@ class RobotManager(NodeInterface):
                 'frame': f'{self._robot.frame}/',
                 'inter_planner': self._robot.inter_planner,
                 'global_planner': self._robot.global_planner,
-                'local_planner': self._robot.local_planner,
+                'local_planner': (
+                    str(self.node.rosparam[str].get('local_planner', '') or '').strip()
+                    or self._robot.local_planner
+                ),
                 # 'complexity': self.node.declare_parameter('complexity', 1).value,
                 'train_mode': str(self.node._train_mode).lower(),
                 'agent_name': self._robot.agent,
@@ -2028,6 +2203,11 @@ class RobotManager(NodeInterface):
         """Destroy robot and remove from simulation and navigation stack.
         """
         self._destroy_goal_republish_timer()
+        waypoint_lifecycle = getattr(self, '_waypoint_lifecycle', None)
+        if waypoint_lifecycle is not None:
+            await waypoint_lifecycle.stop()
+            waypoint_lifecycle.destroy()
+            self._waypoint_lifecycle = None
         self._stop_direct_dual_vln_command_bridge()
         if self._direct_dual_vln_client is not None:
             try:

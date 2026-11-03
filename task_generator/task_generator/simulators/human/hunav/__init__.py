@@ -416,6 +416,7 @@ class HunavDynamicObstacle:
 
 def _load_config(filename: str = "default.yaml") -> "HunavDynamicObstacle":
     """Load config from YAML file in arena_bringup configs."""
+    filename = os.environ.get('ARENA_HUNAV_CONFIG', filename) or filename
 
     # second priority: Install space
     config_path = os.path.join(

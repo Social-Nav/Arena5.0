@@ -17,6 +17,7 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 
 from arena_bringup.benchmark_result import generate_benchmark_result
+from arena_bringup.density_contract import resolve_density_contract
 from arena_bringup.benchmark_profile import (
     BenchmarkProfileError,
     default_profile_path,
@@ -43,6 +44,21 @@ GENERIC_VLN_INSTRUCTIONS = {'', 'navigate', 'go', 'start', 'default', 'none', 'n
 SCENARIO_INSTRUCTION_SCHEMA_VERSION = 1
 SCENARIO_INSTRUCTION_FIELD = 'parsed_result.instruction'
 SYSTEM2_CHECKPOINT_REVISION_FILE = '.arena_system2_revision.json'
+BASE_CHECKPOINT_REVISION_FILE = '.arena_checkpoint_revision.json'
+CHECKPOINT_FINGERPRINT_SCHEMA = 'arena.checkpoint_fingerprint.v1'
+TOKENIZER_RUNTIME_FILES = (
+    'tokenizer.json',
+    'tokenizer_config.json',
+    'special_tokens_map.json',
+    'added_tokens.json',
+    'vocab.json',
+    'merges.txt',
+    'chat_template.json',
+)
+AUXILIARY_RUNTIME_CONFIG_FILES = (
+    'generation_config.json',
+    'preprocessor_config.json',
+)
 
 
 def _write_yaml(path: str, data) -> None:
@@ -55,7 +71,20 @@ def _write_text(path: str, data: str) -> None:
         f.write(data)
 
 
-def _system2_checkpoint_provenance(path: str) -> dict | None:
+def _sha256_file(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, 'rb') as stream:
+        for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _checkpoint_provenance(
+    path: str,
+    *,
+    revision_file: str = BASE_CHECKPOINT_REVISION_FILE,
+    require_runtime_assets: bool = True,
+) -> dict | None:
     raw_path = str(path or '').strip()
     if not raw_path:
         return None
@@ -65,9 +94,19 @@ def _system2_checkpoint_provenance(path: str) -> dict | None:
         'path': checkpoint,
         'index_path': index_path,
         'index_sha256': None,
+        'tensor_count': None,
+        'weight_shard_count': None,
+        'weight_shards': [],
+        'declared_total_size_bytes': None,
+        'fingerprint_schema': CHECKPOINT_FINGERPRINT_SCHEMA,
+        'fingerprint_algorithm': 'sha256',
+        'fingerprint_manifest_sha256': None,
+        'fingerprint_complete': False,
+        'fingerprint_errors': [],
+        'fingerprinted_files': [],
         'revision': None,
     }
-    candidate_paths = [index_path, os.path.join(checkpoint, SYSTEM2_CHECKPOINT_REVISION_FILE)]
+    candidate_paths = [index_path, os.path.join(checkpoint, revision_file)]
     if not any(os.path.exists(candidate) for candidate in candidate_paths):
         workspace_root = _workspace_root_from_runtime()
         container_prefix = os.path.join(os.sep, 'opt', 'arena_ws', 'deps', 'models')
@@ -75,18 +114,112 @@ def _system2_checkpoint_provenance(path: str) -> dict | None:
             relative = os.path.relpath(checkpoint, container_prefix)
             host_checkpoint = os.path.join(workspace_root, 'deps', 'models', relative)
             index_path = os.path.join(host_checkpoint, 'model.safetensors.index.json')
-            revision_path = os.path.join(host_checkpoint, SYSTEM2_CHECKPOINT_REVISION_FILE)
+            revision_path = os.path.join(host_checkpoint, revision_file)
             record['host_path'] = host_checkpoint
         else:
-            revision_path = os.path.join(checkpoint, SYSTEM2_CHECKPOINT_REVISION_FILE)
+            revision_path = os.path.join(checkpoint, revision_file)
     else:
-        revision_path = os.path.join(checkpoint, SYSTEM2_CHECKPOINT_REVISION_FILE)
+        revision_path = os.path.join(checkpoint, revision_file)
     record['index_path'] = index_path
+    checkpoint_dir = os.path.dirname(index_path)
+    index_payload = None
     try:
-        with open(index_path, 'rb') as stream:
-            record['index_sha256'] = hashlib.sha256(stream.read()).hexdigest()
-    except OSError:
-        pass
+        with open(index_path, encoding='utf-8') as stream:
+            index_payload = json.load(stream)
+        weight_map = index_payload.get('weight_map') or {}
+        shard_names = sorted({str(value) for value in weight_map.values() if value})
+        record['tensor_count'] = len(weight_map)
+        record['weight_shard_count'] = len(shard_names)
+        record['declared_total_size_bytes'] = (
+            (index_payload.get('metadata') or {}).get('total_size')
+        )
+        record['weight_shards'] = [
+            {
+                'name': name,
+                'size_bytes': (
+                    os.path.getsize(os.path.join(checkpoint_dir, name))
+                    if os.path.isfile(os.path.join(checkpoint_dir, name))
+                    else None
+                ),
+            }
+            for name in shard_names
+        ]
+    except (OSError, ValueError, TypeError):
+        shard_names = []
+
+    fingerprint_specs = [('model.safetensors.index.json', 'weight_index')]
+    if require_runtime_assets:
+        fingerprint_specs.append(('config.json', 'model_config'))
+        fingerprint_specs.extend(
+            (name, 'tokenizer')
+            for name in TOKENIZER_RUNTIME_FILES
+            if os.path.isfile(os.path.join(checkpoint_dir, name))
+        )
+        fingerprint_specs.extend(
+            (name, 'runtime_config')
+            for name in AUXILIARY_RUNTIME_CONFIG_FILES
+            if os.path.isfile(os.path.join(checkpoint_dir, name))
+        )
+    fingerprint_specs.extend((name, 'weight_shard') for name in shard_names)
+    if os.path.isfile(revision_path):
+        fingerprint_specs.append((revision_file, 'revision_metadata'))
+
+    errors = []
+    files = []
+    seen_names = set()
+    for name, role in fingerprint_specs:
+        if name in seen_names:
+            continue
+        seen_names.add(name)
+        file_path = os.path.join(checkpoint_dir, name)
+        if not os.path.isfile(file_path):
+            errors.append(f'missing:{name}')
+            continue
+        try:
+            files.append({
+                'name': name,
+                'role': role,
+                'size_bytes': os.path.getsize(file_path),
+                'sha256': _sha256_file(file_path),
+            })
+        except OSError as exc:
+            errors.append(f'unreadable:{name}:{exc.__class__.__name__}')
+
+    file_by_name = {item['name']: item for item in files}
+    if 'model.safetensors.index.json' not in file_by_name:
+        errors.append('weight_index_not_fingerprinted')
+    if not isinstance(index_payload, dict) or not shard_names:
+        errors.append('weight_index_has_no_shards')
+    if any(name not in file_by_name for name in shard_names):
+        errors.append('weight_shard_fingerprint_incomplete')
+    if require_runtime_assets:
+        if 'config.json' not in file_by_name:
+            errors.append('model_config_not_fingerprinted')
+        if 'tokenizer_config.json' not in file_by_name:
+            errors.append('tokenizer_config_not_fingerprinted')
+        tokenizer_vocabulary_complete = (
+            'tokenizer.json' in file_by_name
+            or {'vocab.json', 'merges.txt'}.issubset(file_by_name)
+        )
+        if not tokenizer_vocabulary_complete:
+            errors.append('tokenizer_vocabulary_not_fingerprinted')
+
+    files.sort(key=lambda item: (item['role'], item['name']))
+    fingerprint_manifest = {
+        'schema': CHECKPOINT_FINGERPRINT_SCHEMA,
+        'files': files,
+    }
+    manifest_bytes = json.dumps(
+        fingerprint_manifest,
+        sort_keys=True,
+        separators=(',', ':'),
+    ).encode('utf-8')
+    record['fingerprinted_files'] = files
+    record['fingerprint_manifest_sha256'] = hashlib.sha256(manifest_bytes).hexdigest()
+    record['fingerprint_errors'] = sorted(set(errors))
+    record['fingerprint_complete'] = not record['fingerprint_errors']
+    index_record = file_by_name.get('model.safetensors.index.json') or {}
+    record['index_sha256'] = index_record.get('sha256')
     try:
         with open(revision_path, encoding='utf-8') as stream:
             revision = json.load(stream)
@@ -97,9 +230,67 @@ def _system2_checkpoint_provenance(path: str) -> dict | None:
     return record
 
 
+def _system2_checkpoint_provenance(path: str) -> dict | None:
+    return _checkpoint_provenance(
+        path,
+        revision_file=SYSTEM2_CHECKPOINT_REVISION_FILE,
+        require_runtime_assets=False,
+    )
+
+
+def _runtime_container_provenance() -> dict[str, dict[str, str]]:
+    result = {}
+    for service in ('arena', 'isaac', 'internnav'):
+        prefix = f'ARENA_EVAL_{service.upper()}_CONTAINER_'
+        record = {
+            'container_id': os.environ.get(f'{prefix}ID', '').strip(),
+            'image_id': os.environ.get(f'{prefix}IMAGE_ID', '').strip(),
+            'image_ref': os.environ.get(f'{prefix}IMAGE_REF', '').strip(),
+        }
+        if any(record.values()):
+            result[service] = record
+    return result
+
+
+def _overlay_provenance_from_env() -> dict | None:
+    """Read the overlay identity supplied by the unified runner.
+
+    The base runtime keeps its own ``provenance`` block; this overlay record is
+    stored beside it so a run never has to pretend the base checkout was the
+    code that executed.
+    """
+    raw = str(os.environ.get('ARENA_EVAL_OVERLAY_PROVENANCE_JSON', '') or '').strip()
+    if raw:
+        try:
+            record = json.loads(raw)
+        except ValueError:
+            return None
+        return record if isinstance(record, dict) and record.get('source_commit') else None
+    commit = str(os.environ.get('ARENA_EVAL_OVERLAY_SOURCE_COMMIT', '') or '').strip()
+    worktree = str(os.environ.get('ARENA_EVAL_OVERLAY_SOURCE_WORKTREE', '') or '').strip()
+    if not (commit or worktree):
+        return None
+    return {
+        'schema': 'arena.vln.overlay_provenance.v1',
+        'source_worktree': worktree,
+        'source_commit': commit,
+    }
+
+
 def _git_source_provenance(workspace_root: str) -> dict:
     workspace_root = os.path.abspath(workspace_root)
-    candidates = (os.path.join(workspace_root, 'src', 'Arena'), workspace_root)
+    explicit_source_root = str(
+        os.environ.get('ARENA_EVAL_SOURCE_ROOT', '') or ''
+    ).strip()
+    candidates = tuple(
+        candidate
+        for candidate in (
+            os.path.abspath(explicit_source_root) if explicit_source_root else '',
+            os.path.join(workspace_root, 'src', 'Arena'),
+            workspace_root,
+        )
+        if candidate
+    )
     repo_dir = next(
         (candidate for candidate in candidates if os.path.exists(os.path.join(candidate, '.git'))),
         candidates[0],
@@ -377,7 +568,9 @@ def _start_status_watcher(
     python_bin = _eval_python_executable(env)
     watcher_code = r'''
 import json
+import os
 import sys
+import time
 import rclpy
 from pathlib import Path
 from rclpy.node import Node
@@ -418,6 +611,9 @@ def _cb(msg):
             event_type = str(parsed.get('status'))
         record = {
             'wall_time': node.get_clock().now().nanoseconds / 1e9,
+            'monotonic_time_ns': time.monotonic_ns(),
+            'monotonic_clock': 'python.time.monotonic_ns',
+            'recorder_pid': os.getpid(),
             'topic': topic,
             'event_type': event_type,
             'raw': msg.data,
@@ -2267,6 +2463,24 @@ def _yaw_from_quat(x, y, z, w):
     return math.atan2(siny_cosp, cosy_cosp)
 
 
+def _message_stamp_ns(msg):
+    """Sim-time stamp in nanoseconds from a ROS message header, or None.
+
+    Isaac publishes image/odom headers on the simulated clock.  A zero or
+    missing stamp means the sim clock is unavailable for that message, and the
+    recorder must fall back to a wall clock instead of stalling.
+    """
+    header = getattr(msg, 'header', None)
+    stamp = getattr(header, 'stamp', None) if header is not None else None
+    if stamp is None:
+        return None
+    try:
+        value = int(getattr(stamp, 'sec', 0)) * 1_000_000_000 + int(getattr(stamp, 'nanosec', 0))
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
 def _normalize_scan_ranges(scan: LaserScan):
     points = []
     angle = float(scan.angle_min)
@@ -2309,6 +2523,31 @@ class EvalVideoRecorder(Node):
         self.debug_overlay_writer = None
         self.sim_top_down_writer = None
         self.last_frame_time = 0.0
+        # Task34: sample on the simulated clock instead of the wall clock.
+        # Isaac's image/odom header stamps carry sim time, so gating on them
+        # gives a stable frames-per-simulated-second count instead of one that
+        # drifts with RTF (the old 10 fps wall clock produced 14.7 frames per
+        # sim second when sim/wall was 0.679).
+        self.last_frame_sim_ns = None
+        self.latest_ego_stamp_ns = None
+        self.latest_odom_stamp_ns = None
+        self.episode_start_sim_ns = None
+        self.sim_clock_source = None
+        self.sim_clock_backwards_count = 0
+        self.sim_clock_fallback_count = 0
+        self.sim_frame_period_ns = int(round(1e9 / self.fps))
+        # map_top_down_follow.mp4 is written only when its inputs change, so a
+        # stationary robot cannot pad the video with duplicated frames.
+        # LISN sets ARENA_VIDEO_MAP_NEW_DATA_ONLY=0 to write one map frame per
+        # unique ego sim stamp even when the rendered image is unchanged.
+        self.map_view_new_data_only = (
+            str(os.environ.get('ARENA_VIDEO_MAP_NEW_DATA_ONLY', '1') or '1')
+            .strip().lower() not in {'0', 'false', 'no', 'off'}
+        )
+        self.map_input_generation = 0
+        self.last_map_signature = None
+        self.map_top_down_skipped_duplicate = 0
+        self.frame_pts = {}
         self.reset_generation = 0
         self.latest_rgb = None
         self.latest_rgb_generation = -1
@@ -2521,6 +2760,47 @@ class EvalVideoRecorder(Node):
         self._episode_finalization_state = 'closing'
         self._last_close_ok = False
         episode_info = self.current_episode_info
+        # Task34: persist the sim-time timebase next to the videos.  The MP4 is
+        # encoded at a constant nominal fps, so the true per-frame sim PTS lives
+        # in this sidecar; the top-right xN annotation on each frame is derived
+        # from the same numbers.
+        episode_info['sim_clock_source'] = getattr(self, 'sim_clock_source', None)
+        episode_info['sim_clock_backwards_count'] = getattr(self, 'sim_clock_backwards_count', 0)
+        episode_info['sim_clock_fallback_count'] = getattr(self, 'sim_clock_fallback_count', 0)
+        episode_info['map_top_down_skipped_duplicate'] = getattr(self, 'map_top_down_skipped_duplicate', 0)
+        episode_start_sim_ns = getattr(self, 'episode_start_sim_ns', None)
+        last_frame_sim_ns = getattr(self, 'last_frame_sim_ns', None)
+        if episode_start_sim_ns is not None and last_frame_sim_ns is not None:
+            sim_elapsed = max((last_frame_sim_ns - episode_start_sim_ns) / 1e9, 0.0)
+            ego_frames = int(episode_info.get('ego_frames', 0) or 0)
+            episode_info['sim_elapsed_sec'] = round(sim_elapsed, 6)
+            episode_info['ego_frames_per_sim_sec'] = (
+                round(ego_frames / sim_elapsed, 3) if sim_elapsed > 0 else 0.0
+            )
+        frame_pts = {view: list(entries) for view, entries in getattr(self, 'frame_pts', {}).items()}
+        try:
+            pts_path = Path(episode_info['directory']) / 'video_frame_pts.json'
+            pts_path.write_text(
+                json.dumps(
+                    {
+                        'schema': 'arena.eval.video_frame_pts.v1',
+                        'sim_time_sampling': True,
+                        'sim_fps': getattr(self, 'fps', 0.0),
+                        'sim_frame_period_sec': getattr(self, 'frame_period', 0.0),
+                        'sim_clock_source': getattr(self, 'sim_clock_source', None),
+                        'episode_start_sim_ns': episode_start_sim_ns,
+                        'last_frame_sim_ns': last_frame_sim_ns,
+                        'views': frame_pts,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding='utf-8',
+            )
+            episode_info['video_frame_pts_present'] = pts_path.is_file()
+        except Exception as exc:
+            episode_info['video_frame_pts_present'] = False
+            episode_info['video_frame_pts_error'] = f'{type(exc).__name__}: {exc}'
         writers = (
             ('ego', self.ego_writer),
             ('top_down', self.top_writer),
@@ -2582,6 +2862,17 @@ class EvalVideoRecorder(Node):
 
     def _reset_episode_stream_state(self):
         self.last_frame_time = 0.0
+        self.last_frame_sim_ns = None
+        self.latest_ego_stamp_ns = None
+        self.latest_odom_stamp_ns = None
+        self.episode_start_sim_ns = None
+        self.sim_clock_source = None
+        self.sim_clock_backwards_count = 0
+        self.sim_clock_fallback_count = 0
+        self.map_input_generation = 0
+        self.last_map_signature = None
+        self.map_top_down_skipped_duplicate = 0
+        self.frame_pts = {}
         self.latest_rgb = None
         self.latest_rgb_generation = -1
         self.depth_ready = False
@@ -2682,6 +2973,17 @@ class EvalVideoRecorder(Node):
             'top_down_frames': 0,
             'debug_overlay_frames': 0,
             'sim_top_down_frames': 0,
+            # Task34 sim-time sampling and map-view dedup provenance.
+            'sim_time_sampling': True,
+            'sim_fps': self.fps,
+            'sim_frame_period_sec': self.frame_period,
+            'sim_clock_source': None,
+            'sim_elapsed_sec': 0.0,
+            'ego_frames_per_sim_sec': 0.0,
+            'map_view_new_data_only': bool(self.map_view_new_data_only),
+            'map_top_down_skipped_duplicate': 0,
+            'video_frame_pts': 'video_frame_pts.json',
+            'video_frame_pts_present': False,
             'sim_top_down_skipped_frames': 0,
             'sim_top_down_corrupt_skipped_frames': 0,
             'sim_top_down_warmup_sec': self.sim_top_down_warmup_sec,
@@ -3036,8 +3338,16 @@ class EvalVideoRecorder(Node):
         if self.latest_rgb is None or not self._ensure_episode():
             return
         now = time.monotonic()
-        if (now - self.last_frame_time) < self.frame_period:
-            return
+        sim_ns, sim_source = self._sample_sim_clock_ns()
+        if self.last_frame_sim_ns is not None:
+            delta_ns = sim_ns - self.last_frame_sim_ns
+            if delta_ns < 0:
+                # A backwards sim clock means a new episode or an Isaac clock
+                # reset; drop the stale anchor instead of stalling for a period.
+                self.sim_clock_backwards_count += 1
+                self.last_frame_sim_ns = None
+            elif delta_ns < self.sim_frame_period_ns:
+                return
         ego_frame = np.asarray(self.latest_rgb, dtype=np.uint8)
         if _is_static_fallback_gradient(ego_frame):
             self._record_error(f'skipped synthetic fallback gradient frame from {self.ego_topic}; waiting for real Isaac camera frames')
@@ -3047,20 +3357,56 @@ class EvalVideoRecorder(Node):
         self.ego_stream_open = True
         if self._hold_frame_for_episode_start(now):
             return
-        top_frame = self._render_top_down()
+        if self.episode_start_sim_ns is None:
+            self.episode_start_sim_ns = sim_ns
+        self.sim_clock_source = sim_source
+        sim_elapsed_sec = max((sim_ns - self.episode_start_sim_ns) / 1e9, 0.0)
+        self.last_frame_sim_ns = sim_ns
+
+        # map_top_down_follow.mp4 is only written when the map inputs changed;
+        # otherwise the same rendered frame would be duplicated to pad time.
+        map_signature = self._map_signature()
+        write_map = (
+            True if not self.map_view_new_data_only
+            else map_signature != self.last_map_signature
+        )
+
+        ego_index = int(self.current_episode_info['ego_frames'])
+        ego_pts = ego_index / self.fps
+        ego_ratio = sim_elapsed_sec / ego_pts if ego_pts > 0 else 0.0
+        ego_frame = self._annotate_timebase(ego_frame, sim_elapsed_sec, ego_pts, ego_ratio)
         self.ego_writer.write(ego_frame)
-        self.top_writer.write(top_frame)
+        self._record_frame_pts('ego', ego_index, sim_elapsed_sec, ego_pts, ego_ratio)
         self._clear_transient_error()
         self.current_episode_info['ego_frames'] += 1
-        self.current_episode_info['top_down_frames'] += 1
         self.current_episode_info['ego_video_codec'] = getattr(self.ego_writer, 'codec', None)
-        self.current_episode_info['top_down_video_codec'] = getattr(self.top_writer, 'codec', None)
+
+        if write_map:
+            top_frame = self._render_top_down()
+            top_index = int(self.current_episode_info['top_down_frames'])
+            top_pts = top_index / self.fps
+            top_ratio = sim_elapsed_sec / top_pts if top_pts > 0 else 0.0
+            top_frame = self._annotate_timebase(top_frame, sim_elapsed_sec, top_pts, top_ratio)
+            self.top_writer.write(top_frame)
+            self._record_frame_pts('top_down', top_index, sim_elapsed_sec, top_pts, top_ratio)
+            self.current_episode_info['top_down_frames'] += 1
+            self.current_episode_info['top_down_video_codec'] = getattr(self.top_writer, 'codec', None)
+            self.last_map_signature = map_signature
+        else:
+            self.map_top_down_skipped_duplicate += 1
+            self.current_episode_info['map_top_down_skipped_duplicate'] = self.map_top_down_skipped_duplicate
+
         if self.debug_overlay_writer is not None:
             wrote_model_overlay = False
             if self.latest_debug_overlay is not None and self.latest_debug_overlay_generation == self.reset_generation:
                 debug_overlay_frame = np.asarray(self.latest_debug_overlay, dtype=np.uint8)
                 if not _is_static_fallback_gradient(debug_overlay_frame):
+                    dbg_index = int(self.current_episode_info['debug_overlay_frames'])
+                    dbg_pts = dbg_index / self.fps
+                    dbg_ratio = sim_elapsed_sec / dbg_pts if dbg_pts > 0 else 0.0
+                    debug_overlay_frame = self._annotate_timebase(debug_overlay_frame, sim_elapsed_sec, dbg_pts, dbg_ratio)
                     self.debug_overlay_writer.write(debug_overlay_frame)
+                    self._record_frame_pts('debug_overlay', dbg_index, sim_elapsed_sec, dbg_pts, dbg_ratio)
                     self.debug_overlay_model_frame_count += 1
                     self.current_episode_info['debug_overlay_frames'] += 1
                     self.current_episode_info['debug_overlay_video_codec'] = getattr(self.debug_overlay_writer, 'codec', None)
@@ -3073,7 +3419,14 @@ class EvalVideoRecorder(Node):
                 draw.rectangle((8, 8, min(fallback_overlay.width - 8, 430), 58), fill=(0, 0, 0), outline=(255, 180, 0), width=2)
                 draw.text((16, 18), 'InternNav debug overlay unavailable', fill=(255, 220, 80))
                 draw.text((16, 36), 'showing ego camera fallback', fill=(255, 255, 255))
-                self.debug_overlay_writer.write(np.asarray(fallback_overlay, dtype=np.uint8))
+                dbg_index = int(self.current_episode_info['debug_overlay_frames'])
+                dbg_pts = dbg_index / self.fps
+                dbg_ratio = sim_elapsed_sec / dbg_pts if dbg_pts > 0 else 0.0
+                fallback_frame = self._annotate_timebase(
+                    np.asarray(fallback_overlay, dtype=np.uint8), sim_elapsed_sec, dbg_pts, dbg_ratio
+                )
+                self.debug_overlay_writer.write(fallback_frame)
+                self._record_frame_pts('debug_overlay', dbg_index, sim_elapsed_sec, dbg_pts, dbg_ratio)
                 self.debug_overlay_fallback_frame_count += 1
                 self.current_episode_info['debug_overlay_frames'] += 1
                 self.current_episode_info['debug_overlay_video_codec'] = getattr(self.debug_overlay_writer, 'codec', None)
@@ -3090,11 +3443,72 @@ class EvalVideoRecorder(Node):
                 self.last_frame_time = now
                 self._write_index()
                 return
+            std_index = int(self.current_episode_info['sim_top_down_frames'])
+            std_pts = std_index / self.fps
+            std_ratio = sim_elapsed_sec / std_pts if std_pts > 0 else 0.0
+            sim_top_down_frame = self._annotate_timebase(sim_top_down_frame, sim_elapsed_sec, std_pts, std_ratio)
             self.sim_top_down_writer.write(sim_top_down_frame)
+            self._record_frame_pts('sim_top_down', std_index, sim_elapsed_sec, std_pts, std_ratio)
             self.current_episode_info['sim_top_down_frames'] += 1
         self.current_episode_info['last_frame_wall_time'] = time.time()
         self.last_frame_time = now
         self._write_index()
+
+    def _sample_sim_clock_ns(self):
+        """Return (clock_ns, source) for the recorder's sampling gate.
+
+        The ego image stamp is the primary sim clock; odom is the fallback when
+        the camera stream is briefly silent.  Only when neither carries a stamp
+        does the recorder fall back to ``time.monotonic_ns`` so a run can never
+        stall on a missing clock.
+        """
+        for value, source in (
+            (self.latest_ego_stamp_ns, 'ego_header_stamp'),
+            (self.latest_odom_stamp_ns, 'odom_header_stamp'),
+        ):
+            if value is not None and value > 0:
+                return int(value), source
+        self.sim_clock_fallback_count += 1
+        return time.monotonic_ns(), 'wall_monotonic_fallback'
+
+    def _map_signature(self):
+        """Content signature of the map inputs; equal means no new data."""
+        pose = self.latest_pose or {}
+        goal = self.latest_goal or {}
+        scan = self.latest_scan or []
+        return (
+            round(float(pose.get('x', 0.0)), 3),
+            round(float(pose.get('y', 0.0)), 3),
+            round(float(pose.get('yaw', 0.0)), 4),
+            len(scan),
+            tuple((round(float(r), 3), round(float(a), 4)) for r, a in scan[:720]),
+            round(float(goal.get('x', 0.0)), 2),
+            round(float(goal.get('y', 0.0)), 2),
+        )
+
+    @staticmethod
+    def _annotate_timebase(frame, sim_elapsed_sec, video_pts_sec, x_ratio):
+        """Stamp the sim/video timebase ratio in the top-right corner."""
+        image = PILImage.fromarray(np.asarray(frame, dtype=np.uint8)).convert('RGB')
+        draw = ImageDraw.Draw(image)
+        text = f'sim {sim_elapsed_sec:.2f}s | pts {video_pts_sec:.2f}s | x{x_ratio:.2f}'
+        try:
+            width = int(draw.textlength(text))
+        except Exception:
+            width = 8 * len(text)
+        x0 = max(4, image.width - width - 12)
+        draw.rectangle((x0 - 4, 4, image.width - 4, 24), fill=(0, 0, 0))
+        draw.text((x0, 6), text, fill=(255, 255, 0))
+        return np.asarray(image, dtype=np.uint8)
+
+    def _record_frame_pts(self, view, frame_index, sim_elapsed_sec, video_pts_sec, x_ratio):
+        self.frame_pts.setdefault(view, []).append({
+            'frame': int(frame_index),
+            'sim_elapsed_sec': round(float(sim_elapsed_sec), 6),
+            'video_pts_sec': round(float(video_pts_sec), 6),
+            'xN': round(float(x_ratio), 6),
+        })
+
 
     def _sim_top_down_gate(self):
         """Run the sim_top_down warm-up/discard/content gates for one frame.
@@ -3177,6 +3591,7 @@ class EvalVideoRecorder(Node):
         if image is None:
             return
         self.latest_rgb = image
+        self.latest_ego_stamp_ns = _message_stamp_ns(msg)
         self.latest_rgb_generation = self.reset_generation if self.reset_seen else -1
         self._maybe_write_frame()
 
@@ -3211,6 +3626,8 @@ class EvalVideoRecorder(Node):
     def _on_odom(self, msg: Odometry):
         pose = msg.pose.pose
         quat = pose.orientation
+        self.latest_odom_stamp_ns = _message_stamp_ns(msg)
+        self.map_input_generation += 1
         self.latest_pose = {
             'x': float(pose.position.x),
             'y': float(pose.position.y),
@@ -3229,12 +3646,14 @@ class EvalVideoRecorder(Node):
         self._maybe_write_frame()
 
     def _on_goal(self, msg: PoseStamped):
+        self.map_input_generation += 1
         self.latest_goal = {
             'x': float(msg.pose.position.x),
             'y': float(msg.pose.position.y),
         }
 
     def _on_scan(self, msg: LaserScan):
+        self.map_input_generation += 1
         self.latest_scan = _normalize_scan_ranges(msg)
 
 
@@ -3452,6 +3871,36 @@ def _apply_runtime_defaults(args) -> dict:
             else:
                 adjustments['vln_instruction_manifest_not_found'] = manifest_attempts
 
+    if getattr(args, 'execution_mode', '') == 'nav2_follow_path':
+        original_status_topic = args.model_status_topic
+        args.model_status_topic = _robot_topic(
+            args.task_reset_topic,
+            args.robot,
+            args.model_status_topic or 'model/status',
+        )
+        if args.model_status_topic != original_status_topic:
+            adjustments['model_status_topic'] = args.model_status_topic
+        topics = _default_vision_topics(args.robot)
+        if topics:
+            if not args.vln_rgb_topic:
+                args.vln_rgb_topic = topics[0]
+            if not args.vln_depth_topic:
+                args.vln_depth_topic = topics[1]
+            if not args.vln_camera_info_topic:
+                args.vln_camera_info_topic = topics[2]
+        if not args.eval_video_sim_top_down_topic:
+            args.eval_video_sim_top_down_topic = _default_eval_video_sim_top_down_topic(
+                args.robot
+            )
+        # Keep the mature recorder plumbing while giving the generic path its own
+        # profile vocabulary.
+        args.dual_vln_rgb_topic = args.vln_rgb_topic
+        args.dual_vln_depth_topic = args.vln_depth_topic
+        args.dual_vln_camera_info_topic = args.vln_camera_info_topic
+        args.dual_vln_status_topic = args.model_status_topic
+        args.dual_vln_enable_visualization = False
+        return adjustments
+
     env_python, env_python_name = _first_env_value(
         'ARENA_VLN_MODEL_PYTHON',
         'ARENA_INTERNNAV_PYTHON',
@@ -3617,7 +4066,10 @@ def _classify_end_reason(
 ):
     if finished_observed and isinstance(episode_outcome, dict):
         reason = str(episode_outcome.get('reason') or '').strip()
-        if reason in {'goal_reached', 'model_stop', 'sim_timeout', 'wall_timeout', 'force_reset'}:
+        if reason in {
+            'goal_reached', 'model_stop', 'sim_timeout', 'wall_timeout',
+            'force_reset', 'model_error', 'control_error',
+        }:
             return f'episode_{reason}'
 
     if finished_observed and not timed_out and launch_returncode in (None, 0):
@@ -3630,6 +4082,8 @@ def _classify_end_reason(
         return 'finished'
     if isinstance(internnav_status, dict):
         status = str(internnav_status.get('status', ''))
+        if status == 'error':
+            return 'model_error'
         degraded = bool(internnav_status.get('degraded', False))
         debug = internnav_status.get('debug', {}) if isinstance(internnav_status.get('debug'), dict) else {}
         missing_inputs = debug.get('missing_inputs') if isinstance(debug.get('missing_inputs'), list) else []
@@ -3873,13 +4327,27 @@ def _profile_bootstrap(argv: list[str] | None = None) -> tuple[list[str], dict, 
         else str(default_profile_path(bringup_share))
     )
     try:
-        profile = load_profile(profile_path)
-        machine = validate_machine_environment(profile)
-    except BenchmarkProfileError as exc:
+        with open(profile_path, encoding='utf-8') as stream:
+            schema_version = (yaml.safe_load(stream) or {}).get('schema_version')
+        if schema_version == 3:
+            from arena_vln_models.profile import (
+                load_profile as load_follow_path_profile,
+                profile_metadata as follow_path_profile_metadata,
+                validate_machine_environment as validate_follow_path_environment,
+            )
+
+            profile = load_follow_path_profile(profile_path)
+            validate_follow_path_environment(profile)
+            metadata = follow_path_profile_metadata(profile_path, profile)
+        else:
+            profile = load_profile(profile_path)
+            machine = validate_machine_environment(profile)
+            # Device selection is deliberately the one machine-local runtime override.
+            # The profile metadata/hash still describes the immutable source file.
+            profile['runtime']['device'] = machine['device']
+            metadata = profile_metadata(profile_path, profile)
+    except (BenchmarkProfileError, OSError, yaml.YAMLError, ValueError) as exc:
         bootstrap.error(str(exc))
-    # Device selection is deliberately the one machine-local runtime override.
-    # The profile metadata/hash still describes the immutable source file.
-    profile['runtime']['device'] = machine['device']
     runtime = profile['runtime']
     for name, value in {
         'ROS_DOMAIN_ID': runtime['ros_domain_id'],
@@ -3889,11 +4357,11 @@ def _profile_bootstrap(argv: list[str] | None = None) -> tuple[list[str], dict, 
         'ROS_AUTOMATIC_DISCOVERY_RANGE': runtime['ros_automatic_discovery_range'],
     }.items():
         os.environ.setdefault(name, str(value))
-    return raw_argv, profile, profile_metadata(profile_path, profile)
+    return raw_argv, profile, metadata
 
 
 def _resolved_profile_parameters(args) -> dict:
-    return {
+    resolved = {
         'sim': args.sim,
         'human': args.human,
         'world': args.world,
@@ -3916,15 +4384,23 @@ def _resolved_profile_parameters(args) -> dict:
         'social_eval': args.social_eval,
         'save_eval_video': args.save_eval_video,
         'output_prefix': args.output_prefix,
+        'bfast_profile': getattr(args, 'bfast_identity', None),
     }
+    resolved.update({
+        'model_backend': getattr(args, 'model_backend', 'internnav'),
+        'execution_mode': getattr(args, 'execution_mode', 'navigation'),
+        'control_path': getattr(args, 'control_path', 'vln_direct_cmd_vel'),
+        'model_status_topic': getattr(args, 'model_status_topic', ''),
+    })
+    return resolved
 
 
 def main(argv: list[str] | None = None) -> int:
     raw_argv, benchmark_profile, benchmark_profile_metadata = _profile_bootstrap(argv)
     parser = argparse.ArgumentParser(
         description=(
-            'Run a reproducible Arena InternNav eval from arena-1. '
-            'Real InternNav model inference is always external and must be served by internnav-1.'
+            'Run a reproducible Arena VLN eval from arena-1. Direct InternNav '
+            'and external native FollowPath clients use separate profiles.'
         )
     )
     parser.add_argument(
@@ -3960,6 +4436,40 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--inter-planner', default='navigate_to_pose_w_replanning_and_recovery')
     parser.add_argument('--global-planner', default='navfn')
     parser.add_argument('--episodes', type=int, default=2)
+    parser.add_argument('--model-backend', default='internnav', help='Experiment label; does not select a controller')
+    parser.add_argument(
+        '--model-adapter',
+        default='',
+        help='Unified ModelAdapter name (internnav|navila|lightnav); empty keeps the external-client flow.',
+    )
+    parser.add_argument(
+        '--control-mode',
+        default='arena_follow_path',
+        help='Unified control mode; only arena_follow_path is supported by ArenaModelExecutor.',
+    )
+    parser.add_argument(
+        '--model-server-url',
+        default='',
+        help='Unified adapter server URL; empty uses the adapter default.',
+    )
+    parser.add_argument(
+        '--model-params-json',
+        default='{}',
+        help='Unified adapter parameter JSON; bounded, no credentials or checkpoints.',
+    )
+    parser.add_argument('--model-inference-hz', type=float, default=4.0)
+    parser.add_argument('--model-request-timeout-sec', type=float, default=10.0)
+    parser.add_argument('--model-trace-dir', default='')
+    parser.add_argument(
+        '--execution-mode',
+        choices=['navigation', 'nav2_follow_path'],
+        default='navigation',
+    )
+    parser.add_argument('--vln-rgb-topic', default='')
+    parser.add_argument('--vln-depth-topic', default='')
+    parser.add_argument('--vln-camera-info-topic', default='')
+    parser.add_argument('--model-status-topic', default='model/status')
+    parser.add_argument('--model-heartbeat-timeout-sec', type=float, default=2.5)
     parser.add_argument('--timeout', type=int, default=120)
     parser.add_argument(
         '--timeout-wall-factor',
@@ -4163,16 +4673,74 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument('--skip-metrics', action='store_true')
+    parser.add_argument('--bfast-profile', default='',
+                        help='Explicit B off/on identity JSON; validated before launch.')
+    parser.add_argument('--bfast-guard-enabled', default=None)
+    parser.add_argument('--bfast-veto-topic', default='')
+    parser.add_argument('--bfast-guard-required', default=None)
+    parser.add_argument('--bfast-guard-timeout-sec', type=float, default=1.0)
+    parser.add_argument('--bfast-risk-threshold', type=float, default=None)
+    parser.add_argument('--bfast-max-frame-gap-sec', type=float, default=None)
+    parser.add_argument('--bfast-decision-topic', default='')
     parser.add_argument('extra_launch_args', nargs='*', help='Additional KEY:=VALUE launch arguments')
     # Apply the profile after declaring all arguments: explicit ``default=``
     # values on add_argument would otherwise replace parser-level defaults.
-    parser.set_defaults(**evaluation_defaults(benchmark_profile))
+    if benchmark_profile.get('schema_version') == 3:
+        from arena_vln_models.profile import evaluation_defaults as follow_path_defaults
+
+        parser.set_defaults(**follow_path_defaults(benchmark_profile))
+    else:
+        parser.set_defaults(**evaluation_defaults(benchmark_profile))
     args = parser.parse_args(raw_argv)
+    args.bfast_identity = None
+    if args.bfast_profile:
+        from arena_bringup.paper_pipeline import build_bfast_plan
+        profile_payload = json.loads(Path(args.bfast_profile).read_text(encoding='utf-8'))
+        plan = build_bfast_plan(
+            profile_payload,
+            risk_threshold=args.bfast_risk_threshold,
+            max_frame_gap_sec=args.bfast_max_frame_gap_sec,
+            profile_path=args.bfast_profile,
+        )
+        if not plan['valid']:
+            parser.error('bfast profile invalid: ' + '; '.join(plan['errors']))
+        identity = plan['identity']
+        if (args.bfast_guard_enabled is not None
+                and str(args.bfast_guard_enabled).lower() != str(identity['guard_enabled']).lower()):
+            parser.error('--bfast-guard-enabled conflicts with the profile')
+        if args.bfast_veto_topic and args.bfast_veto_topic != identity['veto_topic']:
+            parser.error('--bfast-veto-topic conflicts with the profile')
+        if (args.bfast_guard_required is not None
+                and str(args.bfast_guard_required).lower() != str(identity['guard_required']).lower()):
+            parser.error('--bfast-guard-required conflicts with the profile')
+        args.bfast_identity = identity
+        args.bfast_guard_enabled = str(identity['guard_enabled']).lower()
+        args.bfast_veto_topic = identity['veto_topic']
+        args.bfast_guard_required = str(identity['guard_required']).lower()
+        args.bfast_guard_timeout_sec = float(identity['guard_timeout_sec'])
+        args.bfast_risk_threshold = identity['risk_threshold']
+        args.bfast_max_frame_gap_sec = identity['max_frame_gap_sec']
+    follow_path_mode = args.execution_mode == 'nav2_follow_path'
+    social_mpc_mode = follow_path_mode and args.local_planner == 'social_mpc'
+    prox_mpc_mode = follow_path_mode and args.local_planner == 'prox_mpc'
+    args.control_path = (
+        'nav2_follow_path_prox_mpc' if prox_mpc_mode
+        else 'nav2_follow_path_social_mpc' if social_mpc_mode
+        else 'nav2_follow_path_rpp' if follow_path_mode
+        else 'vln_direct_cmd_vel'
+    )
+    if follow_path_mode:
+        args.internnav_direct_cmd_vel = False
+        args.internnav_external_server = False
+        args.skip_external_server_preflight = True
+        args.dual_vln_require_real_backend = False
+        args.dual_vln_strict_device = False
     if args.expected_human_count < -1:
         parser.error('--expected-human-count must be -1 or non-negative')
     if args.pedestrian_pool_size != -1 and args.pedestrian_pool_size < args.expected_human_count:
         parser.error('--pedestrian-pool-size must be -1 or at least --expected-human-count')
     runtime_adjustments = _apply_runtime_defaults(args)
+    requested_tm_obstacles = str(args.tm_obstacles)
     if args.internnav_direct_cmd_vel:
         args.internnav_external_server = True
         args.skip_external_server_preflight = True
@@ -4190,6 +4758,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.tm_robots == 'random':
             args.tm_robots = 'scenario'
         if args.tm_obstacles == 'random' and not explicit_tm_obstacles:
+            runtime_adjustments['tm_obstacles'] = {
+                'source': 'social_eval_default_adjustment',
+                'input': args.tm_obstacles,
+                'value': 'scenario',
+            }
             args.tm_obstacles = 'scenario'
         if not args.scenario_file:
             args.scenario_file = 'normal'
@@ -4202,11 +4775,27 @@ def main(argv: list[str] | None = None) -> int:
                 'value': normalized_scenario_file,
             }
             args.scenario_file = normalized_scenario_file
+    density_contract = resolve_density_contract(
+        args.task_generator_parameter_file,
+        requested_consumer=requested_tm_obstacles,
+        resolved_consumer=args.tm_obstacles,
+        expected_human_count=args.expected_human_count,
+    )
+    if density_contract['applicable'] and not density_contract['valid']:
+        parser.error(
+            'density/task-generator contract rejected before launch: '
+            + ','.join(density_contract['failure_reasons'])
+        )
     if args.print_effective_config:
         print(json.dumps({
             'benchmark_profile': benchmark_profile_metadata,
-            'precedence': 'cli_or_case > machine_local_paths_or_device > benchmark_profile > legacy_code_defaults',
+            'precedence': (
+                'cli_or_case > benchmark_profile > code_defaults'
+                if follow_path_mode
+                else 'cli_or_case > machine_local_paths_or_device > benchmark_profile > legacy_code_defaults'
+            ),
             'resolved_parameters': _resolved_profile_parameters(args),
+            'density_contract': density_contract,
             'runtime_environment': {
                 name: os.environ.get(name)
                 for name in (
@@ -4234,15 +4823,27 @@ def main(argv: list[str] | None = None) -> int:
     sim_setup_share = get_package_share_directory('arena_simulation_setup')
 
     timestamp = os.environ.get('ARENA_EVAL_FIXED_TIMESTAMP') or datetime.now().strftime('%Y%m%d_%H%M%S')
-    run_name = f'{timestamp}_{args.world}_{args.robot}_{args.dual_vln_mode}'
+    run_label = args.model_backend if follow_path_mode else args.dual_vln_mode
+    run_name = f'{timestamp}_{args.world}_{args.robot}_{run_label}'
     relative_dir = os.path.join(args.output_prefix, run_name)
     output_root = _resolve_output_root(args.output_root, arena_eval_share)
     output_dir = os.path.join(output_root, relative_dir)
     snapshots_dir = os.path.join(output_dir, 'snapshots')
     os.makedirs(snapshots_dir, exist_ok=True)
-    dual_vln_status_path = os.path.join(output_dir, 'internnav_status.json')
-    internnav_trace_path = os.path.join(output_dir, 'internnav_trace.jsonl')
-    internnav_diagnostic_summary_path = os.path.join(output_dir, 'internnav_diagnostic_summary.json')
+    dual_vln_status_path = os.path.join(
+        output_dir,
+        'model_status.json' if follow_path_mode else 'internnav_status.json',
+    )
+    internnav_trace_path = os.path.join(
+        output_dir,
+        'model_trace.jsonl' if follow_path_mode else 'internnav_trace.jsonl',
+    )
+    internnav_diagnostic_summary_path = os.path.join(
+        output_dir,
+        'model_diagnostic_summary.json'
+        if follow_path_mode
+        else 'internnav_diagnostic_summary.json',
+    )
     episode_outcome_path = os.path.join(output_dir, 'episode_outcome.json')
     postprocess_commands_path = os.path.join(output_dir, 'postprocess_commands.txt')
     videos_dir = os.path.join(output_dir, 'videos')
@@ -4254,7 +4855,9 @@ def main(argv: list[str] | None = None) -> int:
         env['ARENA_SCENARIO_FILE'] = str(args.scenario_file)
     if str(args.world or '').startswith('grscenes_'):
         env.setdefault('ARENA_ISAAC_LOAD_USD_TIMEOUT_SEC', '1800.0')
-    resolved_ros_env = _normalize_external_ros_env(env) if args.internnav_external_server else {
+    resolved_ros_env = _normalize_external_ros_env(env) if (
+        args.internnav_external_server or follow_path_mode
+    ) else {
         key: {'value': str(env.get(key, '')).strip(), 'source': 'environment' if str(env.get(key, '')).strip() else 'unset'}
         for key in ('ROS_DOMAIN_ID', 'RMW_IMPLEMENTATION', 'ROS_LOCALHOST_ONLY')
     }
@@ -4273,7 +4876,11 @@ def main(argv: list[str] | None = None) -> int:
     robot_raw_cmd_vel_topic = _robot_topic(args.task_reset_topic, args.robot, args.dual_vln_raw_cmd_vel_topic)
     robot_sim_top_down_topic = _robot_topic(args.task_reset_topic, args.robot, args.eval_video_sim_top_down_topic)
     robot_odom_topic = _robot_topic(args.task_reset_topic, args.robot, 'odom')
-    robot_goal_topic = _robot_topic(args.task_reset_topic, args.robot, 'episode_goal_pose')
+    robot_goal_topic = _robot_topic(
+        args.task_reset_topic,
+        args.robot,
+        'episode_goal_pose_metadata' if follow_path_mode else 'episode_goal_pose',
+    )
     robot_scan_topic = _robot_topic(args.task_reset_topic, args.robot, 'scan')
     robot_command_service = str(args.dual_vln_command_service or '').strip() or _robot_topic(args.task_reset_topic, args.robot, 'get_command')
     robot_scenario_reset_topic = _scenario_reset_topic(args.task_reset_topic, args.robot)
@@ -4285,11 +4892,17 @@ def main(argv: list[str] | None = None) -> int:
         or os.path.join(bringup_share, 'configs', 'task_generator.yaml')
     )
     snapshot_files = {}
-    for label, src in {
+    snapshot_sources = {
         'task_generator': effective_task_generator_file,
         'internnav_controller': os.path.join(sim_setup_share, 'configs', 'nav2', 'controllers', 'dual_vln', 'controller_config.yaml'),
         'benchmark_profile': benchmark_profile_metadata['path'],
-    }.items():
+    }
+    if follow_path_mode:
+        snapshot_sources['tracking_config'] = os.path.join(
+            get_package_share_directory('arena_vln_models'),
+            'tracking_config.py',
+        )
+    for label, src in snapshot_sources.items():
         copied = _copy_if_exists(src, os.path.join(snapshots_dir, _snapshot_name(label, src)))
         if copied is not None:
             snapshot_files[label] = copied
@@ -4347,6 +4960,35 @@ def main(argv: list[str] | None = None) -> int:
         f'internnav_raw_cmd_vel_topic:={args.dual_vln_raw_cmd_vel_topic}',
         f'dual_vln_raw_cmd_vel_topic:={args.dual_vln_raw_cmd_vel_topic}',
     ]
+    if follow_path_mode:
+        launch_cmd.extend([
+            'execution_mode:=nav2_follow_path',
+            f'vln_rgb_topic:={args.vln_rgb_topic}',
+            f'model_heartbeat_timeout_sec:={args.model_heartbeat_timeout_sec}',
+            f'control_mode:={args.control_mode}',
+        ])
+        if args.model_adapter:
+            launch_cmd.append(f'model_adapter:={args.model_adapter}')
+        if args.model_server_url:
+            launch_cmd.append(f'model_server_url:={args.model_server_url}')
+        if args.model_params_json and args.model_params_json != '{}':
+            launch_cmd.append(f'model_params_json:={args.model_params_json}')
+        launch_cmd.extend([
+            f'model_inference_hz:={args.model_inference_hz}',
+            f'model_request_timeout_sec:={args.model_request_timeout_sec}',
+            f'model_trace_dir:={args.model_trace_dir or os.path.join(output_dir, "model_runtime")}',
+        ])
+        if args.bfast_identity:
+            launch_cmd.append(f'fast_guard_enabled:={args.bfast_guard_enabled}')
+            launch_cmd.append(f'fast_guard_required:={args.bfast_guard_required}')
+            if args.bfast_veto_topic:
+                launch_cmd.append(f'fast_guard_veto_topic:={args.bfast_veto_topic}')
+            if args.bfast_identity.get('arm') == 'on':
+                launch_cmd.extend([
+                    f'fast_guard_veto_timeout_sec:={args.bfast_guard_timeout_sec}',
+                    f'bfast_risk_threshold:={args.bfast_risk_threshold}',
+                    f'bfast_max_frame_gap_sec:={args.bfast_max_frame_gap_sec}',
+                ])
     if args.local_planner == 'dual_vln':
         launch_cmd.append('enable_collision_monitor:=false')
     # Only forwarded when a mode was actually requested.  An empty value means
@@ -4412,8 +5054,66 @@ def main(argv: list[str] | None = None) -> int:
     postprocess_commands.append(shlex.join(benchmark_result_cmd))
     _write_text(postprocess_commands_path, '\n'.join(postprocess_commands) + '\n')
 
+    base_checkpoint_provenance = _checkpoint_provenance(args.dual_vln_model_path)
+    system2_checkpoint_provenance = _system2_checkpoint_provenance(
+        args.dual_vln_system2_model_path
+    )
+    container_provenance = _runtime_container_provenance()
+    source_provenance = _git_source_provenance(_workspace_root_from_runtime())
+    overlay_provenance = _overlay_provenance_from_env()
+    overlay_manifest_record = None
+    if overlay_provenance:
+        overlay_sidecar = os.path.join(output_dir, 'overlay_provenance.json')
+        try:
+            with open(overlay_sidecar, 'w', encoding='utf-8') as stream:
+                json.dump(overlay_provenance, stream, sort_keys=True, indent=2)
+                stream.write('\n')
+            overlay_keys = (
+                'schema', 'source_worktree', 'source_branch', 'source_commit',
+                'source_dirty', 'validator_source_commit', 'install_root',
+                'install_present', 'install_entry_count', 'install_file_count',
+                'install_symlink_count', 'install_inventory_sha256', 'collected_at',
+            )
+            overlay_manifest_record = {
+                **{key: overlay_provenance.get(key) for key in overlay_keys if key in overlay_provenance},
+                'sidecar': 'overlay_provenance.json',
+                'sidecar_sha256': _sha256_file(overlay_sidecar),
+            }
+        except OSError as exc:
+            print(f'overlay provenance sidecar write failed: {exc}', file=sys.stderr)
+    qualification_required = str(
+        os.environ.get('ARENA_EVAL_REQUIRE_QUALIFICATION_EVIDENCE', '')
+    ).strip().lower() in {'1', 'true', 'yes', 'on'}
+    qualification_preflight_failures = []
+    if qualification_required:
+        if not overlay_manifest_record:
+            qualification_preflight_failures.append('overlay_source_missing')
+        if not (base_checkpoint_provenance or {}).get('fingerprint_complete'):
+            qualification_preflight_failures.append(
+                'base_checkpoint_fingerprint_incomplete'
+            )
+        for service in ('arena', 'isaac', 'internnav'):
+            if not str(
+                (container_provenance.get(service) or {}).get('image_id') or ''
+            ).startswith('sha256:'):
+                qualification_preflight_failures.append(
+                    f'{service}_container_image_digest_missing'
+                )
+        if not str(source_provenance.get('git_commit') or '').strip():
+            qualification_preflight_failures.append('git_commit_missing')
+        if not str(source_provenance.get('git_submodules') or '').strip():
+            qualification_preflight_failures.append('recursive_submodule_shas_missing')
+        if source_provenance.get('git_dirty') is not False:
+            qualification_preflight_failures.append('repository_not_clean')
+
+    if follow_path_mode:
+        from arena_vln_models.profile import manifest_record as profile_manifest_record
+    else:
+        profile_manifest_record = benchmark_profile_manifest_record
+
     manifest = {
         'schema_version': 2,
+        'model_backend': args.model_backend,
         'timestamp': timestamp,
         'result_dir_relative': relative_dir,
         'result_dir_absolute': output_dir,
@@ -4421,7 +5121,8 @@ def main(argv: list[str] | None = None) -> int:
         'launch_command': launch_cmd,
         'metrics_command': None if args.skip_metrics else metrics_cmd,
         'postprocess_commands_file': postprocess_commands_path,
-        'benchmark_profile': benchmark_profile_manifest_record(
+        'density_contract': density_contract,
+        'benchmark_profile': profile_manifest_record(
             benchmark_profile_metadata,
             _resolved_profile_parameters(args),
             snapshot_path=snapshot_files.get('benchmark_profile'),
@@ -4443,6 +5144,18 @@ def main(argv: list[str] | None = None) -> int:
             ),
             'world': args.world,
             'robot': args.robot,
+            'model_backend': args.model_backend,
+            'execution_mode': args.execution_mode,
+            'control_path': args.control_path,
+            'controller': (
+                'prox_mpc' if prox_mpc_mode
+                else 'social_mpc' if social_mpc_mode
+                else 'regulated_pure_pursuit' if follow_path_mode
+                else args.local_planner
+            ),
+            'model_status_topic': args.model_status_topic,
+            'model_heartbeat_timeout_sec': args.model_heartbeat_timeout_sec,
+            'vln_rgb_topic': args.vln_rgb_topic,
             'local_planner': args.local_planner,
             'inter_planner': args.inter_planner,
             'global_planner': args.global_planner,
@@ -4459,6 +5172,7 @@ def main(argv: list[str] | None = None) -> int:
             'pedestrian_seed': args.pedestrian_seed,
             'pedestrian_pool_size': args.pedestrian_pool_size,
             'task_generator_parameter_file': effective_task_generator_file,
+            'density_contract': density_contract,
             'social_eval': args.social_eval,
             'social_eval_expectations': {
                 'world': args.world,
@@ -4469,7 +5183,11 @@ def main(argv: list[str] | None = None) -> int:
                 'expected_human_count': args.expected_human_count,
                 'required_videos': [
                     'ego_observation',
-                    'ego_debug_overlay',
+                    *(
+                        ['ego_debug_overlay']
+                        if args.eval_video_debug_overlay_topic
+                        else []
+                    ),
                     'sim_top_down',
                     'map_top_down_follow',
                 ],
@@ -4548,23 +5266,48 @@ def main(argv: list[str] | None = None) -> int:
         'runtime_adjustments': runtime_adjustments,
         'runtime_environment': {
             'ros_discovery': resolved_ros_env,
+            'containers': container_provenance,
         },
         'model_provenance': {
-            'base_model_path': args.dual_vln_model_path,
-            'system2_checkpoint': _system2_checkpoint_provenance(
-                args.dual_vln_system2_model_path
+            'model': args.model_backend,
+            'interface': (
+                'nav2_msgs/action/FollowPath' if follow_path_mode else 'cmd_vel'
             ),
+            'base_model_path': args.dual_vln_model_path,
+            'base_checkpoint': base_checkpoint_provenance,
+            'system2_checkpoint': system2_checkpoint_provenance,
         },
-        'provenance': _git_source_provenance(_workspace_root_from_runtime()),
+        'provenance': source_provenance,
+        'provenance_overlay': overlay_manifest_record,
+        'qualification_preflight': {
+            'required': qualification_required,
+            'pass': not qualification_preflight_failures,
+            'failure_reasons': qualification_preflight_failures,
+        },
         'snapshots': snapshot_files,
         'artifacts': {
             'snapshots_dir': snapshots_dir,
             'dual_vln_status_path': dual_vln_status_path,
             'internnav_trace_path': internnav_trace_path,
             'internnav_diagnostic_summary_path': internnav_diagnostic_summary_path,
+            'model_status_path': dual_vln_status_path if follow_path_mode else None,
+            'model_trace_path': internnav_trace_path if follow_path_mode else None,
+            'model_diagnostic_summary_path': (
+                internnav_diagnostic_summary_path if follow_path_mode else None
+            ),
+            'path_execution_trace_path': (
+                os.path.join(output_dir, 'path_execution.jsonl')
+                if follow_path_mode
+                else None
+            ),
             'episode_outcome_path': episode_outcome_path,
             'internnav_timing_trace_path': os.path.join(output_dir, 'internnav_timing_trace.jsonl'),
             'internnav_timing_summary_path': os.path.join(output_dir, 'internnav_timing_summary.json'),
+            'timing_summary_path': (
+                os.path.join(output_dir, 'timing_summary.json')
+                if follow_path_mode
+                else None
+            ),
             'rtf_csv_path': os.path.join(output_dir, 'rtf.csv'),
             'social_metrics_path': os.path.join(output_dir, 'social_metrics.json') if args.social_eval else None,
             'vln_task_metrics_path': os.path.join(output_dir, 'vln_task_metrics.json') if args.social_eval else None,
@@ -4592,6 +5335,19 @@ def main(argv: list[str] | None = None) -> int:
 
     manifest_path = os.path.join(output_dir, 'run_manifest.yaml')
     _write_yaml(manifest_path, manifest)
+    if qualification_required and qualification_preflight_failures:
+        manifest['result'].update({
+            'evaluator_returncode': 2,
+            'timed_out': False,
+            'end_reason': 'qualification_preflight_failed',
+        })
+        _write_yaml(manifest_path, manifest)
+        print(
+            'qualification evidence preflight failed: '
+            + ', '.join(qualification_preflight_failures),
+            file=sys.stderr,
+        )
+        return 2
     if manifest_binding_failure:
         manifest['result'].update(
             {
@@ -4851,7 +5607,9 @@ def main(argv: list[str] | None = None) -> int:
             internnav_trace_path,
             task_reset_topic=args.task_reset_topic,
             scenario_reset_topic=robot_scenario_reset_topic,
-            require_reset_for_history=bool(args.internnav_direct_cmd_vel),
+            require_reset_for_history=bool(
+                args.internnav_direct_cmd_vel or follow_path_mode
+            ),
         )
         launch_proc = subprocess.Popen(
             launch_cmd,
@@ -4989,10 +5747,18 @@ def main(argv: list[str] | None = None) -> int:
 
     dual_vln_status = _read_json_if_exists(dual_vln_status_path)
     episode_outcome = _read_json_if_exists(episode_outcome_path)
-    internnav_diagnostic_summary = _write_internnav_diagnostic_summary(
-        internnav_trace_path,
-        internnav_diagnostic_summary_path,
-    )
+    if follow_path_mode:
+        from arena_vln_models.diagnostics import summarize_status
+
+        internnav_diagnostic_summary = summarize_status(
+            internnav_trace_path,
+            internnav_diagnostic_summary_path,
+        )
+    else:
+        internnav_diagnostic_summary = _write_internnav_diagnostic_summary(
+            internnav_trace_path,
+            internnav_diagnostic_summary_path,
+        )
     video_index = _read_json_if_exists(video_index_path) if args.save_eval_video else None
     video_error = _read_text_if_exists(video_error_path) if args.save_eval_video else None
     video_artifacts_complete = None
@@ -5007,7 +5773,10 @@ def main(argv: list[str] | None = None) -> int:
             for episode in episodes:
                 if not isinstance(episode, dict):
                     continue
-                for field in ('ego_frames', 'debug_overlay_frames', 'top_down_frames'):
+                required_frame_fields = ['ego_frames', 'top_down_frames']
+                if args.eval_video_debug_overlay_topic:
+                    required_frame_fields.append('debug_overlay_frames')
+                for field in required_frame_fields:
                     if int(episode.get(field, 0) or 0) <= 0:
                         video_artifacts_complete = False
                         video_artifact_issues.append(f'{field}_empty')
@@ -5036,6 +5805,12 @@ def main(argv: list[str] | None = None) -> int:
     manifest['artifacts']['internnav_status_present'] = dual_vln_status is not None
     manifest['artifacts']['internnav_trace_present'] = os.path.exists(internnav_trace_path)
     manifest['artifacts']['internnav_diagnostic_summary_present'] = internnav_diagnostic_summary is not None
+    if follow_path_mode:
+        manifest['artifacts']['model_status_present'] = dual_vln_status is not None
+        manifest['artifacts']['model_trace_present'] = os.path.exists(internnav_trace_path)
+        manifest['artifacts']['model_diagnostic_summary_present'] = (
+            internnav_diagnostic_summary is not None
+        )
     manifest['artifacts']['episode_outcome_present'] = episode_outcome is not None
     manifest['artifacts']['snapshot_files'] = sorted(snapshot_files.values())
     manifest['artifacts']['video_index_present'] = video_index is not None
@@ -5074,6 +5849,12 @@ def main(argv: list[str] | None = None) -> int:
         evaluator_returncode = 124 if launch_returncode == 0 else launch_returncode
         manifest['result']['launch_returncode'] = launch_returncode
         return _finalize_run_result(output_dir, manifest_path, manifest, evaluator_returncode)
+
+    if end_reason in {
+        'episode_model_error', 'episode_control_error', 'model_error'
+    }:
+        run_social_postprocess()
+        return _finalize_run_result(output_dir, manifest_path, manifest, 2)
 
     if launch_returncode != 0:
         run_social_postprocess()

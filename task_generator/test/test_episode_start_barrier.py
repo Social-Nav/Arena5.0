@@ -986,3 +986,82 @@ def test_barrier_arming_lines_are_logged_at_warn_not_info():
             f'{marker!r} must be logged at warn so it is observable under '
             f'--log-level warn; found get_logger().{call[:12]}'
         )
+
+
+def test_external_model_status_topic_arms_required_channel_without_robot_manager():
+    """An explicit external client topic must arm the barrier by itself."""
+    from types import SimpleNamespace
+
+    events = []
+    node = _task_generator_stub(events)
+    node._robots_manager = SimpleNamespace(robots={})
+    node._external_model_status_topic = '/task_generator_node/Ai2_Bot2/model/status'
+    node._external_model_status_wall_time = 0.0
+    model = next(
+        c for c in node._episode_start_barrier_conditions() if c.name == 'model_reachable'
+    )
+    assert model.required is True
+    assert model.evaluate() is False, 'no external client status sample yet'
+    node._external_model_status_callback(SimpleNamespace(data='{"status":"running"}'))
+    assert model.evaluate() is True
+
+
+def test_external_model_status_absent_does_not_block_non_vln_case():
+    from types import SimpleNamespace
+
+    node = _task_generator_stub([])
+    node._robots_manager = SimpleNamespace(robots={})
+    node._external_model_status_topic = ''
+    node._external_model_status_wall_time = 0.0
+    model = next(
+        c for c in node._episode_start_barrier_conditions() if c.name == 'model_reachable'
+    )
+    assert model.required is False
+
+
+def test_gate_ready_condition_is_required_and_holds_until_true():
+    """model_reachable can be true while the camera gate still holds t=0."""
+    from types import SimpleNamespace
+
+    node = _task_generator_stub([])
+    node._robots_manager = SimpleNamespace(robots={})
+    node._external_model_status_topic = '/task_generator_node/Ai2_Bot2/model/status'
+    node._external_model_status_wall_time = 1.0
+    node._pre_episode_gate_ready_topic = '/task_generator_node/pre_episode_gate_ready'
+    node._pre_episode_gate_ready = False
+    conditions = node._episode_start_barrier_conditions()
+    model = next(c for c in conditions if c.name == 'model_reachable')
+    gate = next(c for c in conditions if c.name == 'pre_episode_gate_ready')
+    assert model.required is True
+    assert gate.required is True
+    assert model.evaluate() is True
+    assert gate.evaluate() is False
+    node._pre_episode_gate_ready_callback(SimpleNamespace(data=True))
+    assert gate.evaluate() is True
+
+
+def test_gate_ready_not_required_without_external_status_topic():
+    from types import SimpleNamespace
+
+    node = _task_generator_stub([])
+    node._robots_manager = SimpleNamespace(robots={})
+    node._external_model_status_topic = ''
+    node._pre_episode_gate_ready_topic = ''
+    node._pre_episode_gate_ready = False
+    gate = next(
+        c for c in node._episode_start_barrier_conditions()
+        if c.name == 'pre_episode_gate_ready'
+    )
+    assert gate.required is False
+
+
+def test_external_status_subscription_is_volatile_to_match_client():
+    from pathlib import Path
+    import task_generator.node as node_module
+
+    source = Path(node_module.__file__).read_text()
+    marker = 'self._external_model_status_callback'
+    start = source.find(marker)
+    assert start >= 0
+    block = source[start:start + 700]
+    assert 'DurabilityPolicy.VOLATILE' in block

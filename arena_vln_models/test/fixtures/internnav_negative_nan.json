@@ -1,0 +1,13 @@
+{
+  "status": "internnav_command",
+  "output_trajectory": [
+    [
+      0.5,
+      0.0
+    ],
+    [
+      NaN,
+      0.0
+    ]
+  ]
+}

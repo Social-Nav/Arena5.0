@@ -1,0 +1,11 @@
+{
+  "status": "internnav_command",
+  "discrete_action": [
+    1,
+    2,
+    1
+  ],
+  "debug": {
+    "llm_output": "\u2191\u2190\u2191"
+  }
+}

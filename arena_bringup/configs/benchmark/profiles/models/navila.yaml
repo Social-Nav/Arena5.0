@@ -1,0 +1,13 @@
+id: navila_grscenes
+description: NaVILA experiment using the unified model executor and Arena RPP FollowPath.
+model: navila
+evaluation:
+  output_prefix: navila_eval
+adapter:
+  name: navila
+  server_url: tcp://127.0.0.1:54321
+  request_timeout_sec: 10.0
+  inference_hz: 4.0
+  control_mode: arena_follow_path
+  checkpoint: ''
+  notes: NaVILA eight-frame TCP service; legal hold, fixture/plan-qualified only.

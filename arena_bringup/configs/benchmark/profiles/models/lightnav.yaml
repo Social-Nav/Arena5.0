@@ -1,0 +1,13 @@
+id: lightnav_grscenes
+description: LightNav experiment using the unified model executor and Arena RPP FollowPath.
+model: lightnav
+evaluation:
+  output_prefix: lightnav_eval
+adapter:
+  name: lightnav
+  server_url: ws://127.0.0.1:8050
+  request_timeout_sec: 10.0
+  inference_hz: 4.0
+  control_mode: arena_follow_path
+  checkpoint: ''
+  notes: LightNav WebSocket cumulative waypoint service.

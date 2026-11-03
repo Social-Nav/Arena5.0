@@ -20,6 +20,27 @@
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-pil</exec_depend>
   <exec_depend>python3-requests</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <!-- LightNav's default WebSocket transport; the approved arena:dev image
+       provides websockets 15.x.  Fixture tests inject a transport. -->
+  <exec_depend>python3-websockets</exec_depend>
+
+  <exec_depend>action_msgs</exec_depend>
+  <exec_depend>lifecycle_msgs</exec_depend>
+  <exec_depend>rosgraph_msgs</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>nav2_costmap_2d</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+  <exec_depend>nav2_controller</exec_depend>
+  <exec_depend>nav2_regulated_pure_pursuit_controller</exec_depend>
+  <exec_depend>nav2_velocity_smoother</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
+  <exec_depend>arena_bringup</exec_depend>
+  <exec_depend>arena_evaluation</exec_depend>
+  <exec_depend>arena_robots</exec_depend>
+  <exec_depend>arena_simulation_setup</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

@@ -209,6 +209,7 @@ def test_internvla_realworld_http_adapter_posts_arena_observation(monkeypatch):
         'internnav_http_url': 'http://internnav:5801/eval_dual',
         'internnav_http_timeout_sec': 3.0,
         'model_output_policy': 'trajectory',
+        'legacy_native_cmd_vel': True,
     })
 
     result = adapter.compute(_observation())
@@ -372,6 +373,7 @@ def test_python_adapter_backend_loads_canonical_target_only():
         'goal_tolerance': 0.35,
         'angle_tolerance': 0.25,
         'inference_timeout_sec': 30.0,
+        'legacy_native_cmd_vel': True,
     }
     backend = PythonAdapterBackend(None, params)
     decision = backend.compute(DualVLNObservation(
@@ -401,7 +403,7 @@ def test_discrete_turn_mapping_preserves_native_labels():
 
 def test_trajectory_output_uses_internnav_continuous_subgoal_interface():
     backend = PythonAdapterBackend.__new__(PythonAdapterBackend)
-    backend._params = {'max_linear': 0.5, 'max_angular': 0.5}
+    backend._params = {'max_linear': 0.5, 'max_angular': 0.5, 'legacy_native_cmd_vel': True}
 
     decision = backend._coerce_output({
         'output_trajectory': [
@@ -425,6 +427,7 @@ def test_trajectory_policy_prefers_trajectory_when_action_is_also_present():
         'max_linear': 0.5,
         'max_angular': 0.5,
         'model_output_policy': 'trajectory',
+        'legacy_native_cmd_vel': True,
     }
 
     decision = backend._coerce_output({
@@ -446,6 +449,7 @@ def test_python_adapter_backend_promotes_top_level_llm_trace_fields():
         'max_linear': 0.5,
         'max_angular': 0.5,
         'model_output_policy': 'auto',
+        'legacy_native_cmd_vel': True,
     }
 
     decision = backend._coerce_output({
@@ -469,6 +473,7 @@ def test_discrete_policy_forces_action_mapping_for_ablation():
         'max_linear': 0.5,
         'max_angular': 0.5,
         'model_output_policy': 'discrete',
+        'legacy_native_cmd_vel': True,
     }
 
     decision = backend._coerce_output({
@@ -490,6 +495,7 @@ def test_trajectory_policy_symbolic_official_discrete_uses_bounded_primitive():
         'max_linear': 0.6,
         'max_angular': 1.5,
         'model_output_policy': 'trajectory',
+        'legacy_native_cmd_vel': True,
         'internnav_symbolic_fallback_policy': 'official_discrete',
         'official_discrete_forward_speed': 0.2,
         'official_discrete_turn_speed': 0.4,
@@ -519,6 +525,7 @@ def test_trajectory_policy_goal_guided_synthetic_trajectory_not_official_primiti
         'max_linear': 0.6,
         'max_angular': 1.5,
         'model_output_policy': 'trajectory',
+        'legacy_native_cmd_vel': True,
         'internnav_symbolic_fallback_policy': 'goal_guided',
     }
 

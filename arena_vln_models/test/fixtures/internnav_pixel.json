@@ -1,0 +1,10 @@
+{
+  "status": "internnav_command",
+  "output_pixel": [
+    320,
+    240
+  ],
+  "debug": {
+    "llm_output": "240 320"
+  }
+}

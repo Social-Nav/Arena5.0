@@ -1,0 +1,24 @@
+# Unified VLN model executor defaults.
+#
+# This is the one shared config. Select the model with:
+#   ros2 launch arena_vln_models follow_path.launch.py model_adapter:=navila
+# or through the unified runner:
+#   python3 -m arena_vln_models.runner plan run --model navila
+#
+# The executor only sends nav2_msgs/action/FollowPath goals. It never publishes
+# cmd_vel; the velocity smoother in follow_path.launch.py is the sole final
+# velocity publisher.
+model_adapter: internnav
+control_mode: arena_follow_path
+inference_hz: 4.0
+request_timeout_sec: 10.0
+observation_max_age_sec: 2.0
+model_server_url: ''
+model_params_json: '{}'
+rgb_topic: head_camera/image
+depth_topic: head_camera/depth
+camera_info_topic: head_camera/camera_info
+odom_topic: odom
+model_status_topic: model/status
+follow_path_action: follow_path
+model_trace_dir: ''

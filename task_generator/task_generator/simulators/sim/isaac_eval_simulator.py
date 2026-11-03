@@ -801,7 +801,31 @@ class IsaacEvalSimulator(IsaacSimulator):
                 'male_adult_medical_01': 'original_male_adult_medical_01',
                 'male_adult_police_04': 'original_male_adult_police_04',
             }
-            model_name = pedestrian.model.name if pedestrian.model.name in available_models else random.choice(tuple(available_models.keys()))
+            requested_model = pedestrian.model.name
+            if requested_model in available_models:
+                model_name = requested_model
+            else:
+                # Unknown scenario model names (e.g. the eval500 semantic labels
+                # pedestrian/doctor/construction_worker/police) keep the run alive via
+                # the historic random-character fallback, but the missing asset must be
+                # surfaced explicitly: warn once per missing model name so the logs name
+                # both the requested model and the random replacement actually spawned.
+                model_name = random.choice(tuple(available_models.keys()))
+                warned = getattr(self, '_warned_missing_pedestrian_models', None)
+                if warned is None:
+                    warned = set()
+                    self._warned_missing_pedestrian_models = warned
+                if requested_model not in warned:
+                    warned.add(requested_model)
+                    self._logger.warning(
+                        f"pedestrian scenario model {requested_model!r} has no matching Isaac "
+                        f"character asset under People/Characters; falling back to random "
+                        f"character {model_name!r} (asset folder "
+                        f"{available_models[model_name]!r}) for pedestrian "
+                        f"{pedestrian.sim_path!r}. Warning logged once per missing model name; "
+                        f"subsequent pedestrians requesting {requested_model!r} use the same random "
+                        f"fallback without repeating this message."
+                    )
             ped = Pedestrian()
             ped.name = self._NS_PEDESTRIAN(pedestrian.sim_path)
             ped.character_name = available_models[model_name]

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Compatibility entry point; model runtime and adapters live in model repositories.
+if [ "${1:-}" = source ]; then return 0 2>/dev/null || exit 0; fi
+set -euo pipefail
+feature_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+arena_dir=$(cd "$feature_dir/../../../.." && pwd)
+export PYTHONPATH="$arena_dir/arena_vln_models:$arena_dir/arena_bringup${PYTHONPATH:+:$PYTHONPATH}"
+# Unified runner thin wrapper. Preserve explicit --profile overrides; the
+# runner validates that an explicit profile agrees with --model.
+case " $* " in *" --profile "*|*" --profile="*) ;; *)
+    set -- --model lightnav "$@" ;;
+esac
+exec /usr/bin/python3 -m arena_vln_models.runner "$@"

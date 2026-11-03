@@ -15,6 +15,7 @@ from arena_bringup.actions import IsolatedGroupAction
 from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
 from arena_bringup.future import IfElseSubstitution, PythonExpression
 from arena_bringup.substitutions import LaunchArgument
+from arena_bringup.lisn_slow_loop_ros import bridge_cli_argv
 
 
 def generate_launch_description():
@@ -121,6 +122,21 @@ def generate_launch_description():
         name='vln_instruction_file',
         default_value='',
         description='Optional file containing the instruction text to publish'
+    )
+    execution_mode = LaunchArgument(
+        name='execution_mode',
+        default_value='navigation',
+        description='Robot control path: navigation or nav2_follow_path',
+    )
+    vln_rgb_topic = LaunchArgument(
+        name='vln_rgb_topic',
+        default_value='',
+        description='RGB topic used by an external FollowPath client',
+    )
+    model_heartbeat_timeout_sec = LaunchArgument(
+        name='model_heartbeat_timeout_sec',
+        default_value='2.5',
+        description='Maximum age of the external FollowPath client heartbeat',
     )
     internnav_mode = LaunchArgument(
         name='internnav_mode',
@@ -330,6 +346,14 @@ def generate_launch_description():
         default_value='robot.launch.py',
         description='Robot-level launch file in arena_simulation_setup/launch for the selected run case'
     )
+    fast_guard_enabled = LaunchArgument(name='fast_guard_enabled', default_value='false')
+    fast_guard_veto_topic = LaunchArgument(name='fast_guard_veto_topic', default_value='')
+    fast_guard_required = LaunchArgument(name='fast_guard_required', default_value='false')
+    fast_guard_veto_timeout_sec = LaunchArgument(
+        name='fast_guard_veto_timeout_sec', default_value='1.0')
+    bfast_risk_threshold = LaunchArgument(name='bfast_risk_threshold', default_value='0.5')
+    bfast_max_frame_gap_sec = LaunchArgument(name='bfast_max_frame_gap_sec', default_value='1.0')
+    bfast_decision_topic = LaunchArgument(name='bfast_decision_topic', default_value='')
     tm_robots = LaunchArgument(
         name='tm_robots',
         default_value='explore'
@@ -574,6 +598,9 @@ def generate_launch_description():
                     **timeout_wall_sec.dict,
                     **vln_instruction.dict,
                     **vln_instruction_file.dict,
+                    **execution_mode.dict,
+                    **vln_rgb_topic.dict,
+                    **model_heartbeat_timeout_sec.dict,
                     **dual_vln_mode.dict,
                     **dual_vln_model_path.dict,
                     **dual_vln_device.dict,
@@ -607,6 +634,13 @@ def generate_launch_description():
                     **dual_vln_raw_cmd_vel_topic.dict,
                     **enable_collision_monitor.dict,
                     **robot_launch_file.dict,
+                    **fast_guard_enabled.dict,
+                    **fast_guard_veto_topic.dict,
+                    **fast_guard_required.dict,
+                    **fast_guard_veto_timeout_sec.dict,
+                    **bfast_risk_threshold.dict,
+                    **bfast_max_frame_gap_sec.dict,
+                    **bfast_decision_topic.dict,
                     **debug.dict,
                     **save_data.dict,
                     **social_yielding.dict,
@@ -654,6 +688,172 @@ def generate_launch_description():
         output='screen',
     )
 
+    # Optional LISN slow-loop sidecar.  Off by default; the runner enables it
+    # explicitly with --lisn-slow-loop, which also selects the separate
+    # social_mpc identity.  It never replaces the fast FollowPath chain.
+    lisn_slow_loop = LaunchArgument(
+        name='lisn_slow_loop',
+        default_value='false',
+        description='Enable the LISN slow-loop sidecar (separate social_mpc identity).',
+    )
+    lisn_slow_loop_policy = LaunchArgument(
+        name='lisn_slow_loop_policy',
+        default_value=os.path.join(bringup_dir, 'configs/lisn/slow_loop_engineering_v1.json'),
+    )
+    lisn_slow_loop_evidence = LaunchArgument(
+        name='lisn_slow_loop_evidence',
+        default_value='/tmp/lisn_slow_loop/evidence.jsonl',
+    )
+    lisn_slow_loop_controller_node = LaunchArgument(
+        name='lisn_slow_loop_controller_node',
+        default_value='/task_generator_node/Ai2_Bot2/controller_server',
+    )
+    lisn_slow_loop_proposal_topic = LaunchArgument(
+        name='lisn_slow_loop_proposal_topic',
+        default_value='/task_generator_node/Ai2_Bot2/lisn_slow_loop/proposal',
+    )
+    lisn_slow_loop_target_frame = LaunchArgument(
+        name='lisn_slow_loop_target_frame',
+        default_value='map',
+    )
+    lisn_slow_loop_episode_id = LaunchArgument(
+        name='lisn_slow_loop_episode_id',
+        default_value='lisn-episode',
+    )
+    lisn_slow_loop_producer_endpoint = LaunchArgument(
+        name='lisn_slow_loop_producer_endpoint',
+        default_value='',
+    )
+    lisn_slow_loop_wiring_live = LaunchArgument(
+        name='lisn_slow_loop_wiring_live',
+        default_value='false',
+    )
+    lisn_slow_loop_rgb_topic = LaunchArgument(
+        name='lisn_slow_loop_rgb_topic',
+        default_value=vln_rgb_topic.substitution,
+    )
+    lisn_slow_loop_instruction_topic = LaunchArgument(
+        name='lisn_slow_loop_instruction_topic',
+        default_value='/task_generator_node/vln_instruction',
+    )
+    lisn_slow_loop_model_status_topic = LaunchArgument(
+        name='lisn_slow_loop_model_status_topic',
+        default_value='/task_generator_node/Ai2_Bot2/model/status',
+    )
+    lisn_slow_loop_eval_ready_topic = LaunchArgument(
+        name='lisn_slow_loop_eval_ready_topic',
+        default_value='/task_generator_node/eval_ready_status',
+    )
+    lisn_slow_loop_status_heartbeat_sec = LaunchArgument(
+        name='lisn_slow_loop_status_heartbeat_sec',
+        default_value='1.0',
+    )
+    lisn_slow_loop_producer_timeout_sec = LaunchArgument(
+        name='lisn_slow_loop_producer_timeout_sec',
+        default_value='120.0',
+        description='Explicit bounded HTTP timeout for the LISN VLM producer.',
+    )
+    lisn_slow_loop_producer_deadline_sec = LaunchArgument(
+        name='lisn_slow_loop_producer_deadline_sec',
+        default_value='120.0',
+        description='Global monotonic per-request deadline; aborts the owned child.',
+    )
+    lisn_slow_loop_grounding_live = LaunchArgument(
+        name='lisn_slow_loop_grounding_live',
+        default_value='false',
+        description='Enable same-stamp RGB/depth/CameraInfo/TF grounding.',
+    )
+    lisn_slow_loop_grounding_scan = LaunchArgument(
+        name='lisn_slow_loop_grounding_scan',
+        default_value='false',
+        description='A-track: RGB bearing + same-source real LaserScan range (no depth).',
+    )
+    lisn_slow_loop_scan_topic = LaunchArgument(
+        name='lisn_slow_loop_scan_topic',
+        default_value='/task_generator_node/Ai2_Bot2/laser_scan',
+    )
+    lisn_slow_loop_scan_max_age_sec = LaunchArgument(
+        name='lisn_slow_loop_scan_max_age_sec',
+        default_value='0.6',
+    )
+    lisn_slow_loop_max_scan_range_m = LaunchArgument(
+        name='lisn_slow_loop_max_scan_range_m',
+        default_value='5.0',
+    )
+    lisn_slow_loop_depth_topic = LaunchArgument(
+        name='lisn_slow_loop_depth_topic',
+        default_value='/task_generator_node/Ai2_Bot2/head_camera/depth',
+    )
+    lisn_slow_loop_camera_info_topic = LaunchArgument(
+        name='lisn_slow_loop_camera_info_topic',
+        default_value='/task_generator_node/Ai2_Bot2/head_camera/camera_info',
+    )
+    lisn_slow_loop_grounded_goal_topic = LaunchArgument(
+        name='lisn_slow_loop_grounded_goal_topic',
+        default_value='/task_generator_node/Ai2_Bot2/lisn_slow_loop/grounded_goal',
+    )
+    lisn_slow_loop_min_confidence = LaunchArgument(
+        name='lisn_slow_loop_min_confidence',
+        default_value='0.5',
+    )
+    lisn_slow_loop_semantic_cost_topic = LaunchArgument(
+        name='lisn_slow_loop_semantic_cost_topic',
+        default_value='/task_generator_node/Ai2_Bot2/lisn_semantic_cost',
+    )
+    lisn_slow_loop_semantic_cost_frame = LaunchArgument(
+        name='lisn_slow_loop_semantic_cost_frame',
+        default_value='Ai2_Bot2/odom',
+    )
+    lisn_slow_loop_semantic_ttl_sec = LaunchArgument(
+        name='lisn_slow_loop_semantic_ttl_sec',
+        default_value='12.0',
+    )
+    lisn_slow_loop_semantic_status_topic = LaunchArgument(
+        name='lisn_slow_loop_semantic_status_topic',
+        default_value='/lisn_semantic_layer_status',
+    )
+    lisn_slow_loop_node = launch_ros.actions.Node(
+        package='arena_bringup',
+        executable='lisn_slow_loop_bridge',
+        name='lisn_slow_loop_bridge',
+        output='screen',
+        # The contract compares host generation time with the source ROS stamp.
+        # Both must be sim time; wall-clock generation would make every valid
+        # observation look decades old.
+        parameters=[{'use_sim_time': True}],
+        condition=launch.conditions.IfCondition(lisn_slow_loop.substitution),
+        arguments=bridge_cli_argv(
+            policy=lisn_slow_loop_policy.substitution,
+            evidence=lisn_slow_loop_evidence.substitution,
+            controller_node=lisn_slow_loop_controller_node.substitution,
+            proposal_topic=lisn_slow_loop_proposal_topic.substitution,
+            target_frame=lisn_slow_loop_target_frame.substitution,
+            episode_id=lisn_slow_loop_episode_id.substitution,
+            producer_endpoint=lisn_slow_loop_producer_endpoint.substitution,
+            rgb_topic=lisn_slow_loop_rgb_topic.substitution,
+            instruction_topic=lisn_slow_loop_instruction_topic.substitution,
+            wiring_live=lisn_slow_loop_wiring_live.substitution,
+            model_status_topic=lisn_slow_loop_model_status_topic.substitution,
+            eval_ready_topic=lisn_slow_loop_eval_ready_topic.substitution,
+            status_heartbeat_sec=lisn_slow_loop_status_heartbeat_sec.substitution,
+            producer_timeout_sec=lisn_slow_loop_producer_timeout_sec.substitution,
+            producer_deadline_sec=lisn_slow_loop_producer_deadline_sec.substitution,
+            grounding_live=lisn_slow_loop_grounding_live.substitution,
+            grounding_scan=lisn_slow_loop_grounding_scan.substitution,
+            scan_topic=lisn_slow_loop_scan_topic.substitution,
+            scan_max_age_sec=lisn_slow_loop_scan_max_age_sec.substitution,
+            max_scan_range_m=lisn_slow_loop_max_scan_range_m.substitution,
+            depth_topic=lisn_slow_loop_depth_topic.substitution,
+            camera_info_topic=lisn_slow_loop_camera_info_topic.substitution,
+            grounded_goal_topic=lisn_slow_loop_grounded_goal_topic.substitution,
+            semantic_cost_topic=lisn_slow_loop_semantic_cost_topic.substitution,
+            semantic_cost_frame=lisn_slow_loop_semantic_cost_frame.substitution,
+            semantic_ttl_sec=lisn_slow_loop_semantic_ttl_sec.substitution,
+            semantic_status_topic=lisn_slow_loop_semantic_status_topic.substitution,
+            min_confidence=lisn_slow_loop_min_confidence.substitution,
+        ),
+    )
+
     ld = launch.LaunchDescription([
         *ld_items,
         LogInfo(
@@ -667,6 +867,7 @@ def generate_launch_description():
         launch_task_generators,
         IsolatedGroupAction([launch_simulator]),
         world_generator_node,
+        lisn_slow_loop_node,
         launch.actions.ExecuteProcess(
             cmd=['ros2', 'run', 'arena_training', 'train_agent.py',
                  '--config', train_config.substitution],

@@ -1,0 +1,53 @@
+schema_version: 3
+id: base_follow_path_grscenes_task34
+description: Task34 shared FollowPath profile; 0.8 m/s RPP ceiling and 20 fps video capture. Select a model overlay with --model.
+model: base
+runtime:
+  ros_domain_id: 1
+  rmw_implementation: rmw_fastrtps_cpp
+  fastdds_builtin_transports: UDPv4
+  ros_localhost_only: 0
+  ros_automatic_discovery_range: SUBNET
+evaluation:
+  simulator: isaac_eval
+  human_simulator: hunav
+  world: grscenes_20_v1
+  scenario: default_2
+  robot: Ai2_Bot2
+  local_planner: regulated_pure_pursuit
+  inter_planner: none
+  global_planner: none
+  episodes: 1
+  timeout_sec: 300
+  timeout_wall_factor: 5.0
+  timeout_wall_sec: 1800.0
+  task_generator_robots: scenario
+  task_generator_obstacles: scenario
+  headless: '2'
+  log_level: warn
+  vln_instruction: navigate
+  social_eval: true
+  launch_timeout_sec: 2400.0
+  shutdown_grace_period_sec: 20.0
+  output_prefix: vln_eval
+video:
+  enabled: true
+  fps: 20.0
+  top_down_size_px: 640
+  top_down_window_m: 10.0
+  sim_top_down_topic: top_down_camera/image
+  debug_overlay_topic: ''
+execution:
+  mode: nav2_follow_path
+  rgb_topic: head_camera/image
+  heartbeat_timeout_sec: 2.5
+external:
+  command: []
+adapter:
+  name: internnav
+  server_url: http://127.0.0.1:5801/eval_dual
+  request_timeout_sec: 10.0
+  inference_hz: 4.0
+  control_mode: arena_follow_path
+  checkpoint: ''
+  notes: Base overlay default; model overlays replace adapter fields.

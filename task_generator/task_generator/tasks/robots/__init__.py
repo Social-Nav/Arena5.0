@@ -120,7 +120,22 @@ class TM_Robots(TaskMode):
             self._last_done_reason = DONE_REASON_RUNNING
             return False
         robot_managers = list(self._PROPS.robots.values())
-        if not all(await asyncio.gather(*(robot_manager.is_done for robot_manager in robot_managers))):
+        completed = await asyncio.gather(
+            *(robot_manager.is_done for robot_manager in robot_managers)
+        )
+        failure_reason = next(
+            (
+                str(getattr(manager, 'done_reason', ''))
+                for manager in robot_managers
+                if str(getattr(manager, 'done_reason', ''))
+                in {'model_error', 'control_error'}
+            ),
+            '',
+        )
+        if failure_reason:
+            self._last_done_reason = failure_reason
+            return True
+        if not all(completed):
             self._last_done_reason = DONE_REASON_RUNNING
             return False
         done_reasons = [str(getattr(manager, 'done_reason', DONE_REASON_GOAL_REACHED)) for manager in robot_managers]
