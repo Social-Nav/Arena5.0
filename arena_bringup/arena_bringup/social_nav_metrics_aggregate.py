@@ -16,6 +16,9 @@ import yaml
 
 BENCHMARK_RESULT_SCHEMA = 'arena.benchmark_result'
 BENCHMARK_RESULT_SCHEMA_VERSION = 1
+CONTROL_PATH_DIRECT = 'vln_direct_cmd_vel'
+CONTROL_PATH_FOLLOW_PATH = 'nav2_follow_path_rpp'
+CONTROL_PATHS = frozenset({CONTROL_PATH_DIRECT, CONTROL_PATH_FOLLOW_PATH})
 
 SUMMARY_FIELDS = [
     'schema_version',
@@ -29,6 +32,7 @@ SUMMARY_FIELDS = [
     'world',
     'robot',
     'planner',
+    'control_path',
     'human',
     'scenario_file',
     'expected_human_count',
@@ -112,6 +116,7 @@ SUMMARY_FIELDS = [
     'model_control_pass',
     'model_trace_record_count',
     'model_control_event_count',
+    'path_count',
     'planning_request_count',
     'trajectory_event_count',
     'discrete_action_event_count',
@@ -148,6 +153,26 @@ def read_yaml(path: Path) -> Any:
         return yaml.safe_load(path.read_text(encoding='utf-8'))
     except Exception:
         return None
+
+
+def canonical_control_path(parameters: dict[str, Any] | None) -> str:
+    """Return the stable comparison label for a benchmark control topology."""
+    params = parameters if isinstance(parameters, dict) else {}
+    explicit = str(params.get('control_path') or '').strip()
+    aliases = {
+        'internnav_direct_cmd_vel': CONTROL_PATH_DIRECT,
+        'external_direct_cmd_vel': CONTROL_PATH_DIRECT,
+        'arena_navigation_stack': CONTROL_PATH_DIRECT,
+        'nav2_follow_path': CONTROL_PATH_FOLLOW_PATH,
+    }
+    if explicit:
+        explicit = aliases.get(explicit, explicit)
+        if explicit not in CONTROL_PATHS:
+            raise ValueError(f'unsupported control_path label: {explicit!r}')
+        return explicit
+    if params.get('execution_mode') == 'nav2_follow_path':
+        return CONTROL_PATH_FOLLOW_PATH
+    return CONTROL_PATH_DIRECT
 
 
 def derive_benchmark_success(
@@ -297,7 +322,12 @@ def discover_run_dirs(roots: list[Path]) -> list[Path]:
     return sorted(found)
 
 
-def summarize_run(run_dir: Path, *, prefer_canonical: bool = True) -> dict[str, Any]:
+def summarize_run(
+    run_dir: Path,
+    *,
+    prefer_canonical: bool = True,
+    validation_path: Path | None = None,
+) -> dict[str, Any]:
     run_dir = Path(run_dir)
     if prefer_canonical:
         canonical = read_json(run_dir / 'benchmark_result.json')
@@ -310,6 +340,13 @@ def summarize_run(run_dir: Path, *, prefer_canonical: bool = True) -> dict[str, 
             and _canonical_result_is_current(run_dir, canonical)
         ):
             row = {field: canonical_summary.get(field, '') for field in SUMMARY_FIELDS}
+            row['control_path'] = canonical_control_path({
+                'control_path': (
+                    canonical_summary.get('control_path')
+                    or (canonical.get('model') or {}).get('control_path')
+                ),
+                'execution_mode': (canonical.get('execution') or {}).get('execution_mode'),
+            })
             row['run_id'] = run_dir.name
             row['run_dir'] = str(run_dir.resolve())
             return row
@@ -317,11 +354,20 @@ def summarize_run(run_dir: Path, *, prefer_canonical: bool = True) -> dict[str, 
     manifest = read_yaml(run_dir / 'run_manifest.yaml') or {}
     vln_task = read_json(run_dir / 'vln_task_metrics.json') or {}
     social = read_json(run_dir / 'social_metrics.json') or {}
-    validation = read_json(run_dir / 'artifact_validation.json') or {}
-    diagnostics = read_json(run_dir / 'internnav_diagnostic_summary.json') or {}
-    timing = read_json(run_dir / 'internnav_timing_summary.json') or {}
+    validation = read_json(validation_path or (run_dir / 'artifact_validation.json')) or {}
+    diagnostics = (
+        read_json(run_dir / 'model_diagnostic_summary.json')
+        or read_json(run_dir / 'internnav_diagnostic_summary.json')
+        or {}
+    )
+    timing = (
+        read_json(run_dir / 'timing_summary.json')
+        or read_json(run_dir / 'internnav_timing_summary.json')
+        or {}
+    )
 
     params = manifest.get('parameters', {}) if isinstance(manifest, dict) else {}
+    control_path = canonical_control_path(params)
     result = manifest.get('result', {}) if isinstance(manifest, dict) else {}
     checks = validation.get('checks', {}) if isinstance(validation, dict) else {}
     metrics_check = checks.get('metrics', {}) if isinstance(checks, dict) else {}
@@ -352,6 +398,9 @@ def summarize_run(run_dir: Path, *, prefer_canonical: bool = True) -> dict[str, 
             'pedestrian_traversal_preflight_failed',
             'vln_instruction_manifest_lookup_failed',
             'infrastructure_exception',
+            'episode_model_error',
+            'episode_control_error',
+            'model_error',
             'camera_not_ready',
             'required_inputs_not_ready',
         }
@@ -372,6 +421,12 @@ def summarize_run(run_dir: Path, *, prefer_canonical: bool = True) -> dict[str, 
     )
 
     command_stats = diagnostics.get('command_stats', {}) if isinstance(diagnostics, dict) else {}
+    if control_path == CONTROL_PATH_FOLLOW_PATH:
+        command_stats = {
+            'stop_count': int(
+                bool((checks.get('model_control') or {}).get('model_stop'))
+            )
+        }
     event_counts = diagnostics.get('event_counts', {}) if isinstance(diagnostics, dict) else {}
     fault = diagnostics.get('fault_candidates', {}) if isinstance(diagnostics, dict) else {}
     stale_camera_count = fault.get('stale_record_count', 0) if isinstance(fault, dict) else 0
@@ -409,13 +464,7 @@ def summarize_run(run_dir: Path, *, prefer_canonical: bool = True) -> dict[str, 
     min_footprint_sample = social.get('min_footprint_clearance_sample', {}) if isinstance(social, dict) else {}
     failed_checks = validation.get('failed_checks', []) if isinstance(validation, dict) else []
     warnings = validation.get('warnings', []) if isinstance(validation, dict) else []
-    benchmark_ready = (
-        valid_run
-        and strict_task_success
-        and strict_social_success
-        and artifact_pass
-        and social_nav_ready
-    )
+    benchmark_ready = valid_run and artifact_pass and social_nav_ready
     success_semantics = derive_benchmark_success(
         expected_human_count=params.get('expected_human_count'),
         strict_task_success=strict_task_success,
@@ -423,6 +472,7 @@ def summarize_run(run_dir: Path, *, prefer_canonical: bool = True) -> dict[str, 
         static_occupancy=static_occupancy,
     )
 
+    model_control_check = (checks.get('model_control') or {}) if isinstance(checks, dict) else {}
     row = {
         'schema_version': BENCHMARK_RESULT_SCHEMA_VERSION,
         'run_id': run_dir.name,
@@ -435,6 +485,7 @@ def summarize_run(run_dir: Path, *, prefer_canonical: bool = True) -> dict[str, 
         'world': params.get('world') or '',
         'robot': params.get('robot') or '',
         'planner': params.get('local_planner') or '',
+        'control_path': control_path,
         'human': params.get('human') or '',
         'scenario_file': params.get('scenario_file') or '',
         'expected_human_count': _int_or_zero(params.get('expected_human_count')),
@@ -454,7 +505,11 @@ def summarize_run(run_dir: Path, *, prefer_canonical: bool = True) -> dict[str, 
         'artifact_validation_pass': artifact_pass,
         'social_nav_ready': social_nav_ready,
         'valid_run': valid_run,
-        'result_status': 'passed' if benchmark_ready else ('failed' if valid_run else 'invalid'),
+        'result_status': (
+            'invalid'
+            if not valid_run
+            else ('passed' if success_semantics['benchmark_success'] else 'failed')
+        ),
         'benchmark_ready': benchmark_ready,
         'debug_overlay_fallback': _as_bool(debug_overlay.get('fallback')) if isinstance(debug_overlay, dict) else False,
         'debug_overlay_source_status': debug_overlay_source.get('status') if isinstance(debug_overlay_source, dict) else '',
@@ -512,12 +567,21 @@ def summarize_run(run_dir: Path, *, prefer_canonical: bool = True) -> dict[str, 
         'forward_count': _int_or_zero(command_stats.get('forward_count') if isinstance(command_stats, dict) else None),
         'rotate_count': _int_or_zero(command_stats.get('rotate_count') if isinstance(command_stats, dict) else None),
         'stop_count': _int_or_zero(command_stats.get('stop_count') if isinstance(command_stats, dict) else None),
-        'model_trace_present': _as_bool((checks.get('model_control') or {}).get('trace_present')) if isinstance(checks, dict) else False,
-        'model_control_pass': _as_bool((checks.get('model_control') or {}).get('pass')) if isinstance(checks, dict) else False,
-        'model_trace_record_count': _int_or_zero((checks.get('model_control') or {}).get('trace_record_count')) if isinstance(checks, dict) else 0,
-        'model_control_event_count': _int_or_zero((checks.get('model_control') or {}).get('direct_control_event_count')) if isinstance(checks, dict) else 0,
+        'model_trace_present': _as_bool(model_control_check.get('trace_present')),
+        'model_control_pass': _as_bool(model_control_check.get('pass')),
+        'model_trace_record_count': _int_or_zero(model_control_check.get('trace_record_count')),
+        'model_control_event_count': _int_or_zero(
+            model_control_check.get('model_control_event_count')
+            if model_control_check.get('model_control_event_count') is not None
+            else model_control_check.get('direct_control_event_count')
+        ),
+        'path_count': _int_or_zero(model_control_check.get('path_count')),
         'planning_request_count': _int_or_zero(event_counts.get('planning_request_started') if isinstance(event_counts, dict) else None),
-        'trajectory_event_count': _int_or_zero(event_counts.get('trajectory') if isinstance(event_counts, dict) else None),
+        'trajectory_event_count': _int_or_zero(
+            model_control_check.get('trajectory_event_count')
+            if model_control_check.get('trajectory_event_count') is not None
+            else (event_counts.get('trajectory') if isinstance(event_counts, dict) else None)
+        ),
         'discrete_action_event_count': _int_or_zero(event_counts.get('discrete_action') if isinstance(event_counts, dict) else None),
         'video_pass': _as_bool(video_check.get('pass')) if isinstance(video_check, dict) else False,
         'metrics_complete': metrics_complete,
@@ -622,6 +686,15 @@ def write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> 
 
 
 def aggregate_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    control_paths = {
+        canonical_control_path({'control_path': row.get('control_path')})
+        for row in rows
+    }
+    if len(control_paths) > 1:
+        raise ValueError(
+            'cross-path aggregation is forbidden; split inputs by control_path: '
+            + ', '.join(sorted(control_paths))
+        )
     failure_counter: Counter[str] = Counter()
     benchmark_success_failure_counter: Counter[str] = Counter()
     primary_failure_counter: Counter[str] = Counter()
@@ -653,6 +726,7 @@ def aggregate_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         'schema': 'arena.benchmark_aggregate',
         'schema_version': BENCHMARK_RESULT_SCHEMA_VERSION,
+        'control_path': next(iter(control_paths), None),
         'success_policy': {
             'policy': 'arena.task_and_social_safety.v1',
             'zero_human_formula': 'instruction_following_success',
@@ -771,8 +845,12 @@ def main(argv: list[str] | None = None) -> int:
     roots = [Path(path).expanduser() for path in args.root] + [Path(path).expanduser() for path in args.run_dir]
     run_dirs = discover_run_dirs(roots)
     rows = [summarize_run(run_dir) for run_dir in run_dirs]
+    try:
+        summary = aggregate_summary(rows)
+    except ValueError as exc:
+        print(f'aggregate rejected: {exc}')
+        return 2
     write_csv(Path(args.output_csv).expanduser(), rows, SUMMARY_FIELDS)
-    summary = aggregate_summary(rows)
     if args.summary_json:
         path = Path(args.summary_json).expanduser()
         path.parent.mkdir(parents=True, exist_ok=True)

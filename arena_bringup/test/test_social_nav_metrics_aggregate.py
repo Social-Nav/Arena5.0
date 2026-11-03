@@ -231,3 +231,80 @@ def test_aggregate_falls_back_to_internnav_odom_goal_progress(tmp_path):
     assert row["goal_progress_m"] == 3.1
     assert row["diagnostic_goal_progress_m"] == 3.1
     assert row["diagnostic_goal_distance_min_m"] == 1.6
+
+
+def _write_control_manifest(run_dir, execution_mode="nav2_follow_path"):
+    run_dir.mkdir()
+    (run_dir / "run_manifest.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "parameters": {
+                    "world": "grscenes_5",
+                    "robot": "Ai2_Bot2",
+                    "human": "hunav",
+                    "scenario_file": "default",
+                    "execution_mode": execution_mode,
+                },
+                "result": {"end_reason": "episode_sim_timeout"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_summary_propagates_unified_executor_counts(tmp_path):
+    run_dir = tmp_path / "run"
+    _write_control_manifest(run_dir)
+    (run_dir / "artifact_validation.json").write_text(
+        json.dumps(
+            {
+                "overall_pass": True,
+                "checks": {
+                    "model_control": {
+                        "pass": True,
+                        "trace_present": True,
+                        "trace_record_count": 411,
+                        "model_control_event_count": 253,
+                        "trajectory_event_count": 63,
+                        "path_count": 63,
+                        "direct_control_event_count": 0,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    row = summarize_run(run_dir)
+
+    assert row["model_control_event_count"] == 253
+    assert row["trajectory_event_count"] == 63
+    assert row["path_count"] == 63
+
+
+def test_summary_keeps_legacy_direct_control_counts(tmp_path):
+    run_dir = tmp_path / "run"
+    _write_control_manifest(run_dir, execution_mode="direct_cmd_vel")
+    (run_dir / "artifact_validation.json").write_text(
+        json.dumps(
+            {
+                "overall_pass": True,
+                "checks": {
+                    "model_control": {
+                        "pass": True,
+                        "trace_present": True,
+                        "trace_record_count": 12,
+                        "direct_control_event_count": 7,
+                        "path_count": 0,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    row = summarize_run(run_dir)
+
+    assert row["model_control_event_count"] == 7
+    assert row["trajectory_event_count"] == 0
+    assert row["path_count"] == 0

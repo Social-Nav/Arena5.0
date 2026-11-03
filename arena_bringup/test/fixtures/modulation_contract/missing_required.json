@@ -1,0 +1,6 @@
+{
+  "schema": "arena.hierarchical_modulation", "schema_version": 1, "update_semantics": "replace_all", "update_id": "missing-valid-until", "control_path": "lisn_style_social_mpc", "generated_at_ns": 1000000000,
+  "source_observation": {"id": "rgb-42", "frame_id": "camera", "stamp_ns": 900000000}, "target_frame": "map", "goal": null, "semantic_entities": [], "controller_mode": "cautious",
+  "controller_parameters": {"max_linear_velocity_mps": 0.35, "max_angular_velocity_rps": 1.4, "goal_weight": 1.0, "obstacle_weight": 15.0, "people_weight": 8.0},
+  "provenance": {"model_version": "dummy-v1", "prompt_version": "prompt-v1", "tool_version": "tools-v1", "reasoning_latency_ms": 1.0}, "reason": "Missing required field fixture"
+}

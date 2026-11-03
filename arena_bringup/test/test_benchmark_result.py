@@ -2,6 +2,7 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
 import yaml
 
 from arena_bringup.benchmark_result import (
@@ -25,7 +26,72 @@ def _write_complete_run(run_dir: Path) -> None:
     run_dir.mkdir()
     (run_dir / 'metrics.csv').write_text('result\nGOAL_REACHED\n', encoding='utf-8')
     (run_dir / 'internnav_trace.jsonl').write_text(
-        json.dumps({'event': 'trajectory'}) + '\n',
+        '\n'.join(json.dumps(record) for record in (
+            {
+                'wall_time': 10.0,
+                'monotonic_time_ns': 10_000_000_000,
+                'monotonic_clock': 'python.time.monotonic_ns',
+                'recorder_pid': 42,
+                'event_type': 'planning_request_started',
+                'parsed': {'debug': {'request_id': 0}},
+            },
+            {
+                'wall_time': 10.3,
+                'monotonic_time_ns': 10_300_000_000,
+                'monotonic_clock': 'python.time.monotonic_ns',
+                'recorder_pid': 42,
+                'event_type': 'trajectory',
+                'parsed': {'http_idx': 0},
+            },
+            {
+                'wall_time': 11.0,
+                'monotonic_time_ns': 11_000_000_000,
+                'monotonic_clock': 'python.time.monotonic_ns',
+                'recorder_pid': 42,
+                'event_type': 'planning_request_started',
+                'parsed': {'debug': {'request_id': 1}},
+            },
+            {
+                'wall_time': 11.4,
+                'monotonic_time_ns': 11_400_000_000,
+                'monotonic_clock': 'python.time.monotonic_ns',
+                'recorder_pid': 42,
+                'event_type': 'stop',
+                'parsed': {'http_idx': 1},
+            },
+            {
+                'wall_time': 12.0,
+                'monotonic_time_ns': 12_000_000_000,
+                'monotonic_clock': 'python.time.monotonic_ns',
+                'recorder_pid': 42,
+                'event_type': 'planning_request_started',
+                'parsed': {'debug': {'request_id': 2}},
+            },
+            {
+                'wall_time': 12.2,
+                'monotonic_time_ns': 12_200_000_000,
+                'monotonic_clock': 'python.time.monotonic_ns',
+                'recorder_pid': 42,
+                'event_type': 'discrete_action',
+                'parsed': {'http_idx': 2},
+            },
+            {
+                'wall_time': 13.0,
+                'monotonic_time_ns': 13_000_000_000,
+                'monotonic_clock': 'python.time.monotonic_ns',
+                'recorder_pid': 42,
+                'event_type': 'planning_request_started',
+                'parsed': {'debug': {'request_id': 3}},
+            },
+            {
+                'wall_time': 13.5,
+                'monotonic_time_ns': 13_500_000_000,
+                'monotonic_clock': 'python.time.monotonic_ns',
+                'recorder_pid': 42,
+                'event_type': 'trajectory',
+                'parsed': {'http_idx': 3},
+            },
+        )) + '\n',
         encoding='utf-8',
     )
     (run_dir / 'run_manifest.yaml').write_text(
@@ -42,17 +108,57 @@ def _write_complete_run(run_dir: Path) -> None:
                 'local_planner': 'dual_vln',
                 'human': 'hunav',
                 'episodes': 1,
+                'dual_vln_model_path': '/models/base',
                 'dual_vln_system2_model_path': '/models/socialgen',
+                'dual_vln_inference_rate_hz': 3.3333333333,
+                'internnav_direct_cmd_vel': True,
             },
             'runtime_adjustments': {'dual_vln_status_topic': '/status'},
-            'runtime_environment': {'ros_discovery': {'ROS_DOMAIN_ID': '1'}},
+            'runtime_environment': {
+                'ros_discovery': {'ROS_DOMAIN_ID': '1'},
+                'containers': {
+                    'arena': {
+                        'container_id': 'container-arena',
+                        'image_id': 'sha256:arena',
+                        'image_ref': 'arena:dev',
+                    },
+                    'isaac': {
+                        'container_id': 'container-isaac',
+                        'image_id': 'sha256:isaac',
+                        'image_ref': 'arena:dev',
+                    },
+                    'internnav': {
+                        'container_id': 'container-internnav',
+                        'image_id': 'sha256:internnav',
+                        'image_ref': 'arena:dev',
+                    },
+                },
+            },
             'model_provenance': {
+                'base_checkpoint': {
+                    'path': '/models/base',
+                    'index_sha256': 'base-index',
+                    'fingerprint_complete': True,
+                    'fingerprint_manifest_sha256': 'base-manifest',
+                },
                 'system2_checkpoint': {'path': '/models/socialgen', 'revision': {'revision': 'abc'}},
             },
             'provenance': {
                 'git_commit': 'abc123',
                 'git_branch': 'feat/internnav-eval-progress',
                 'git_dirty': False,
+                'git_submodules': ' deadbeef arena_evaluation',
+            },
+            'provenance_overlay': {
+                'schema': 'arena.vln.overlay_provenance.v1',
+                'source_worktree': '/worktrees/vln-target-merged',
+                'source_branch': 'feat/internnav-eval-progress',
+                'source_commit': 'b6500c8',
+                'source_dirty': False,
+                'install_root': '/tmp/unified_install_1001c7a',
+                'install_present': True,
+                'install_entry_count': 212,
+                'install_inventory_sha256': 'f' * 64,
             },
             'result': {
                 'finished_observed': True,
@@ -165,13 +271,112 @@ def test_generate_benchmark_result_writes_complete_canonical_schema(tmp_path):
     assert result['metrics']['task']['spl'] == 0.88
     assert result['metrics']['social']['min_footprint_clearance_m'] == 0.95
     assert result['metrics']['model']['forward_count'] == 10
+    timing = result['metrics']['system']['direct_policy_timing']
+    assert timing['measurement_valid'] is True
+    assert timing['raw_paired_sample_count'] == 4
+    assert timing['valid_sample_count'] == 3
+    assert timing['warmup_exclusion_samples_applied'] == 1
+    assert timing['latency_mean_sec'] == pytest.approx(0.3666666667)
+    assert timing['latency_p50_sec'] == pytest.approx(0.4)
+    assert timing['effective_planning_rate_hz'] == pytest.approx(1.0)
+    assert timing['effective_action_rate_hz'] == pytest.approx(0.9523809524)
+    assert timing['configured_planning_rate_hz'] == 3.3333333333
+    assert result['model']['base_checkpoint']['index_sha256'] == 'base-index'
+    assert result['model']['control_path'] == 'vln_direct_cmd_vel'
     assert result['model']['system2_path'] == '/models/socialgen'
     assert result['model']['system2_checkpoint']['revision']['revision'] == 'abc'
+    assert result['provenance']['simulator']['container']['image_id'] == 'sha256:isaac'
     artifact = result['artifacts']['files']['run_manifest.yaml']
     assert artifact['present'] is True
     assert artifact['size_bytes'] > 0
     assert len(artifact['sha256']) == 64
     assert json.loads((run_dir / 'benchmark_result.json').read_text()) == result
+
+
+def test_invalid_legacy_wall_timing_fails_closed_without_breaking_old_result(tmp_path):
+    run_dir = tmp_path / 'run'
+    _write_complete_run(run_dir)
+    (run_dir / 'internnav_trace.jsonl').write_text(
+        '\n'.join((
+            json.dumps({
+                'wall_time': 10.0,
+                'event_type': 'planning_request_started',
+                'parsed': {'debug': {'request_id': 0}},
+            }),
+            json.dumps({
+                'wall_time': 10.3,
+                'event_type': 'trajectory',
+                'parsed': {'http_idx': 0},
+            }),
+        )) + '\n',
+        encoding='utf-8',
+    )
+
+    result = generate_benchmark_result(run_dir)
+
+    timing = result['metrics']['system']['direct_policy_timing']
+    assert timing['measurement_valid'] is False
+    assert 'monotonic_timestamp_missing' in timing['invalid_reasons']
+    assert result['provenance']['qualification_evidence']['valid'] is False
+    assert result['verdict']['valid_run'] is False
+    assert result['verdict']['primary_failure'] == 'qualification_evidence_invalid'
+
+
+def test_qualification_reads_overlay_model_and_container_sidecars(tmp_path):
+    run_dir = tmp_path / 'run'
+    _write_complete_run(run_dir)
+    manifest = yaml.safe_load((run_dir / 'run_manifest.yaml').read_text())
+    manifest.pop('model_provenance', None)
+    manifest.pop('provenance_overlay', None)
+    manifest['runtime_environment'].pop('containers', None)
+    (run_dir / 'run_manifest.yaml').write_text(yaml.safe_dump(manifest), encoding='utf-8')
+    _write_json(run_dir / 'overlay_provenance.json', {
+        'schema': 'arena.vln.overlay_provenance.v1',
+        'source_worktree': '/worktrees/vln-target-merged',
+        'source_commit': 'b6500c8',
+        'install_root': '/tmp/unified_install_1001c7a',
+        'install_inventory_sha256': 'e' * 64,
+    })
+    _write_json(run_dir / 'model_provenance.json', {
+        'model': 'internnav',
+        'base_checkpoint': {
+            'path': '/opt/arena_ws/deps/models/InternVLA-N1-DualVLN',
+            'fingerprint_complete': True,
+            'fingerprint_manifest_sha256': 'base-manifest',
+            'fingerprint_source': 'nfs_registry',
+        },
+    })
+    _write_json(run_dir / 'container_provenance.json', {
+        'arena': {'container_id': 'c-arena', 'image_id': 'sha256:arena'},
+        'isaac': {'container_id': 'c-isaac', 'image_id': 'sha256:isaac'},
+        'internnav': {'container_id': 'c-internnav', 'image_id': 'sha256:internnav'},
+    })
+
+    result = generate_benchmark_result(run_dir)
+
+    qualification = result['provenance']['qualification_evidence']
+    assert qualification['valid'] is True, qualification
+    assert qualification['checks']['overlay_source_present'] is True
+    assert qualification['checks']['base_checkpoint_fingerprint_complete'] is True
+    assert qualification['checks']['container_image_digests_complete'] is True
+    assert result['provenance']['overlay_source']['source_commit'] == 'b6500c8'
+    assert result['model']['base_checkpoint']['fingerprint_source'] == 'nfs_registry'
+    assert result['verdict']['valid_run'] is True
+
+
+def test_missing_overlay_source_fails_qualification_closed(tmp_path):
+    run_dir = tmp_path / 'run'
+    _write_complete_run(run_dir)
+    manifest = yaml.safe_load((run_dir / 'run_manifest.yaml').read_text())
+    manifest.pop('provenance_overlay', None)
+    (run_dir / 'run_manifest.yaml').write_text(yaml.safe_dump(manifest), encoding='utf-8')
+
+    result = generate_benchmark_result(run_dir)
+
+    qualification = result['provenance']['qualification_evidence']
+    assert qualification['valid'] is False
+    assert 'overlay_source_present' in qualification['failure_reasons']
+    assert result['verdict']['valid_run'] is False
 
 
 def test_canonical_result_preserves_warning_boundaries(tmp_path):
@@ -246,21 +451,22 @@ def test_valid_task_failure_is_distinct_from_invalid_run(tmp_path):
     task['goal']['goal_reached'] = False
     _write_json(run_dir / 'vln_task_metrics.json', task)
     manifest = yaml.safe_load((run_dir / 'run_manifest.yaml').read_text())
-    manifest['result']['evaluator_returncode'] = 1
-    manifest['result']['artifact_validation_returncode'] = 1
+    manifest['result']['end_reason'] = 'episode_model_stop'
+    manifest['result']['evaluator_returncode'] = 0
+    manifest['result']['artifact_validation_returncode'] = 0
     (run_dir / 'run_manifest.yaml').write_text(yaml.safe_dump(manifest), encoding='utf-8')
     validation = json.loads((run_dir / 'artifact_validation.json').read_text())
-    validation['overall_pass'] = False
-    validation['social_nav_ready'] = False
-    validation['failed_checks'] = ['metrics']
-    validation['checks']['metrics']['pass'] = False
+    validation['overall_pass'] = True
+    validation['social_nav_ready'] = True
+    validation['failed_checks'] = []
+    validation['checks']['metrics']['pass'] = True
     validation['checks']['metrics']['strict_task_success'] = False
     _write_json(run_dir / 'artifact_validation.json', validation)
 
     result = generate_benchmark_result(run_dir)
 
     assert result['verdict']['valid_run'] is True
-    assert result['verdict']['benchmark_ready'] is False
+    assert result['verdict']['benchmark_ready'] is True
     assert result['verdict']['status'] == 'failed'
     assert result['verdict']['primary_failure'] == 'task_failure'
     assert benchmark_result_main([
@@ -270,7 +476,66 @@ def test_valid_task_failure_is_distinct_from_invalid_run(tmp_path):
     assert benchmark_result_main([
         '--dir', str(run_dir),
         '--require-ready',
-    ]) == 1
+    ]) == 0
+
+
+def test_postprocess_failure_is_invalid_and_not_benchmark_ready(tmp_path):
+    run_dir = tmp_path / 'postprocess_failed'
+    _write_complete_run(run_dir)
+    manifest = yaml.safe_load((run_dir / 'run_manifest.yaml').read_text())
+    manifest['result']['metrics_returncode'] = 2
+    (run_dir / 'run_manifest.yaml').write_text(
+        yaml.safe_dump(manifest), encoding='utf-8'
+    )
+
+    result = generate_benchmark_result(run_dir)
+
+    assert result['verdict']['execution_pass'] is False
+    assert result['verdict']['valid_run'] is False
+    assert result['verdict']['benchmark_ready'] is False
+    assert result['verdict']['status'] == 'invalid'
+
+
+def test_versioned_validation_can_drive_derived_canonical_without_overwrite(tmp_path, monkeypatch):
+    monkeypatch.setenv('ARENA_POSTPROCESS_SOURCE_COMMIT', 'parser123')
+    run_dir = tmp_path / 'versioned'
+    _write_complete_run(run_dir)
+    original = run_dir / 'artifact_validation.json'
+    original_payload = json.loads(original.read_text())
+    original_payload.update({
+        'overall_pass': False,
+        'social_nav_ready': False,
+        'failed_checks': ['metrics'],
+    })
+    original.write_text(json.dumps(original_payload), encoding='utf-8')
+    derived_payload = dict(original_payload)
+    derived_payload.update({
+        'schema_version': 2,
+        'semantics': 'artifact_evidence_validity_separate_from_task_outcome',
+        'overall_pass': True,
+        'social_nav_ready': True,
+        'failed_checks': [],
+    })
+    derived_payload['checks'] = dict(original_payload['checks'])
+    derived_payload['checks']['metrics'] = dict(original_payload['checks']['metrics'])
+    derived_payload['checks']['metrics']['pass'] = True
+    derived = run_dir / 'artifact_validation.semantic_v2.json'
+    derived.write_text(json.dumps(derived_payload), encoding='utf-8')
+    output = run_dir / 'benchmark_result.semantic_v2.json'
+
+    result = generate_benchmark_result(
+        run_dir,
+        output,
+        artifact_validation=derived,
+    )
+
+    assert original_payload == json.loads(original.read_text())
+    assert output.is_file()
+    assert result['verdict']['benchmark_ready'] is True
+    assert result['provenance']['artifact_validation_source']['path'] == str(derived)
+    assert result['provenance']['artifact_validation_source']['schema_version'] == 2
+    assert result['provenance']['derivation']['parser_git_commit'] == 'parser123'
+    assert result['provenance']['derivation']['source_run_git_commit'] == 'abc123'
 
 
 def test_zero_human_control_does_not_get_missing_humans_failure_tag(tmp_path):
@@ -297,6 +562,36 @@ def test_zero_human_control_does_not_get_missing_humans_failure_tag(tmp_path):
     assert result['verdict']['success'] is result['verdict']['instruction_following_success']
     assert result['verdict']['collision_free'] is None
     assert result['verdict']['social_distance_success'] is None
+
+
+def test_canonical_result_preserves_resolved_density_contract(tmp_path):
+    run_dir = tmp_path / 'density'
+    _write_complete_run(run_dir)
+    manifest = yaml.safe_load((run_dir / 'run_manifest.yaml').read_text())
+    contract = {
+        'schema': 'arena.density_consumer_contract.v1',
+        'applicable': True,
+        'valid': True,
+        'config_path_resolved': '/configs/task_generator_n05.yaml',
+        'config_sha256': 'a' * 64,
+        'configured_human_count': 5,
+        'expected_human_count': 5,
+        'consumer': {
+            'requested': 'random',
+            'resolved': 'random',
+            'required': 'random',
+        },
+        'failure_reasons': [],
+    }
+    manifest['density_contract'] = contract
+    manifest['parameters']['density_contract'] = contract
+    (run_dir / 'run_manifest.yaml').write_text(
+        yaml.safe_dump(manifest), encoding='utf-8'
+    )
+
+    result = generate_benchmark_result(run_dir)
+
+    assert result['run']['density_contract'] == contract
 
 
 def _derive_human_success(**social_overrides):
@@ -416,6 +711,64 @@ def test_aggregate_summary_has_counts_rates_and_groups(tmp_path):
     assert summary['mean_spl'] == 0.88
     assert summary['by_world']['grscenes_20_v1']['benchmark_ready_rate'] == 1.0
     assert summary['by_scenario']['grscenes_20_v1/default_2']['run_count'] == 1
+
+
+def test_follow_path_result_uses_canonical_control_path(tmp_path):
+    run_dir = tmp_path / 'follow_path'
+    _write_complete_run(run_dir)
+    manifest = yaml.safe_load((run_dir / 'run_manifest.yaml').read_text())
+    manifest['model_backend'] = 'internnav'
+    manifest['parameters'].update({
+        'model_backend': 'internnav',
+        'execution_mode': 'nav2_follow_path',
+        'control_path': 'nav2_follow_path_rpp',
+        'internnav_direct_cmd_vel': False,
+        'controller': 'regulated_pure_pursuit',
+    })
+    (run_dir / 'run_manifest.yaml').write_text(
+        yaml.safe_dump(manifest), encoding='utf-8'
+    )
+
+    result = generate_benchmark_result(run_dir)
+
+    assert result['model']['control_path'] == 'nav2_follow_path_rpp'
+    assert result['model']['interface'] == 'nav2_msgs/action/FollowPath'
+    assert result['execution']['control_path'] == 'nav2_follow_path_rpp'
+    assert result['summary']['control_path'] == 'nav2_follow_path_rpp'
+
+
+def test_aggregate_rejects_cross_control_path_rows(tmp_path):
+    run_dir = tmp_path / 'run'
+    _write_complete_run(run_dir)
+    direct = generate_benchmark_result(run_dir)['summary']
+    follow_path = {**direct, 'run_id': 'follow', 'control_path': 'nav2_follow_path_rpp'}
+
+    with pytest.raises(ValueError, match='cross-path aggregation is forbidden'):
+        aggregate_summary([direct, follow_path])
+
+
+def test_aggregate_cli_rejects_cross_control_path_without_writing_csv(tmp_path):
+    direct_dir = tmp_path / 'direct'
+    follow_dir = tmp_path / 'follow'
+    _write_complete_run(direct_dir)
+    _write_complete_run(follow_dir)
+    follow_manifest = yaml.safe_load((follow_dir / 'run_manifest.yaml').read_text())
+    follow_manifest['parameters'].update({
+        'execution_mode': 'nav2_follow_path',
+        'control_path': 'nav2_follow_path_rpp',
+        'internnav_direct_cmd_vel': False,
+    })
+    (follow_dir / 'run_manifest.yaml').write_text(
+        yaml.safe_dump(follow_manifest), encoding='utf-8'
+    )
+    output = tmp_path / 'mixed.csv'
+
+    assert aggregate_main([
+        '--run-dir', str(direct_dir),
+        '--run-dir', str(follow_dir),
+        '--output-csv', str(output),
+    ]) == 2
+    assert not output.exists()
 
 
 def test_density_provenance_is_exported_to_aggregate_rows(tmp_path):

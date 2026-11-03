@@ -160,7 +160,12 @@ def _episode_videos(video_index: dict[str, Any] | None) -> dict[str, Any]:
     return episodes[0] if episodes else {}
 
 
-def _check_videos(run_dir: Path, video_index: dict[str, Any] | None) -> dict[str, Any]:
+def _check_videos(
+    run_dir: Path,
+    video_index: dict[str, Any] | None,
+    *,
+    require_overlay: bool = True,
+) -> dict[str, Any]:
     ep = _episode_videos(video_index)
     required = {
         "ego_observation": ("ego_video", "ego_frames"),
@@ -168,6 +173,8 @@ def _check_videos(run_dir: Path, video_index: dict[str, Any] | None) -> dict[str
         "sim_top_down": ("sim_top_down_video", "sim_top_down_frames"),
         "map_top_down_follow": ("map_top_down_video", "top_down_frames"),
     }
+    if not require_overlay:
+        required.pop('ego_debug_overlay')
     results = {}
     for label, (path_key, frame_key) in required.items():
         path = Path(str(ep.get(path_key) or '')) if ep else Path('')
@@ -238,6 +245,19 @@ def _check_model_control(run_dir: Path, manifest: dict[str, Any]) -> dict[str, A
     artifacts = manifest.get('artifacts', {}) if isinstance(manifest, dict) else {}
     result = manifest.get('result', {}) if isinstance(manifest, dict) else {}
     params = manifest.get('parameters', {}) if isinstance(manifest, dict) else {}
+    if params.get('execution_mode') == 'nav2_follow_path':
+        from arena_vln_models.diagnostics import execution_evidence
+
+        evidence = execution_evidence(run_dir)
+        teleports = _odom_teleports(run_dir)
+        return {
+            **evidence,
+            'pass': evidence['pass'] and not teleports,
+            'large_teleports': teleports,
+            'missing_model_control_loop': not evidence['pass'],
+            'direct_cmd_vel': False,
+            'external_server': True,
+        }
     trace_path = Path(str(artifacts.get('internnav_trace_path') or run_dir / 'internnav_trace.jsonl'))
     status_path = Path(str(artifacts.get('dual_vln_status_path') or run_dir / 'internnav_status.json'))
     total, event_counts = _trace_events(trace_path)
@@ -282,6 +302,20 @@ def _check_metrics(
     metrics_path = run_dir / 'metrics.csv'
     vln_task_metrics_path = run_dir / 'vln_task_metrics.json'
     social_path = run_dir / 'social_metrics.json'
+    try:
+        metrics_rows = _read_csv(metrics_path)
+        metrics_csv_parse_error = None
+    except Exception as exc:
+        metrics_rows = []
+        metrics_csv_parse_error = f'{type(exc).__name__}: {exc}'
+    required_metrics_columns = {'episode', 'result', 'time', 'path_length'}
+    metrics_columns = set(metrics_rows[0]) if metrics_rows else set()
+    metrics_csv_parseable = bool(
+        metrics_rows
+        and metrics_csv_parse_error is None
+        and required_metrics_columns.issubset(metrics_columns)
+        and all(str(row.get('result') or '').strip() for row in metrics_rows)
+    )
     social_present = isinstance(social_metrics, dict)
     vln_task_metrics = _read_json(vln_task_metrics_path)
     strict_task_present = isinstance(vln_task_metrics, dict)
@@ -306,7 +340,10 @@ def _check_metrics(
     try:
         manifest = _read_yaml(run_dir / 'run_manifest.yaml') or {}
         params = manifest.get('parameters', {}) if isinstance(manifest, dict) else {}
-        is_dual_vln = str(params.get('local_planner', '')).lower() == 'dual_vln'
+        is_dual_vln = (
+            params.get('execution_mode') == 'nav2_follow_path'
+            or str(params.get('local_planner', '')).lower() == 'dual_vln'
+        )
     except Exception:
         is_dual_vln = False
     robot_moved = (not is_dual_vln) or path_length_m >= 0.1
@@ -328,24 +365,73 @@ def _check_metrics(
         if social_present
         else False
     )
+
+    def finite_number(container: Any, key: str) -> bool:
+        if not isinstance(container, dict) or key not in container:
+            return False
+        value = container.get(key)
+        if isinstance(value, bool):
+            return False
+        try:
+            return math.isfinite(float(value))
+        except (TypeError, ValueError):
+            return False
+
+    goal = vln_task_metrics.get('goal') if strict_task_present else None
+    task_vln = vln_task_metrics.get('vln') if strict_task_present else None
+    timing = vln_task_metrics.get('episode_timing') if strict_task_present else None
+    task_numeric_fields_valid = all((
+        finite_number(goal, 'navigation_error_m'),
+        finite_number(task_vln, 'spl'),
+        finite_number(task_vln, 'ndtw'),
+        finite_number(task_vln, 'sdtw'),
+        finite_number(task_vln, 'trajectory_length_m'),
+        finite_number(timing, 'duration_sec'),
+    ))
+    social_numeric_fields_valid = all(
+        finite_number(social_metrics, key)
+        for key in (
+            'path_length_m',
+            'max_humans_observed',
+            'moving_human_count',
+            'human_motion_time_sec',
+            'robot_motion_time_sec',
+        )
+    ) if social_present else False
+    vln_task_schema_valid = strict_task_present and task_schema_version >= 2
+    try:
+        social_metrics_schema_valid = (
+            social_present and int(social_metrics.get('schema_version') or 0) >= 1
+        )
+    except (TypeError, ValueError):
+        social_metrics_schema_valid = False
     return {
         "pass": (
-            metrics_path.exists()
-            and strict_task_present
-            and social_present
-            and (
-                expected_human_count == 0
-                or bool(social_metrics.get('humans_present'))
-            )
-            and strict_task_success
-            and strict_social_success
-            and robot_moved
+            metrics_csv_parseable
+            and vln_task_schema_valid
+            and social_metrics_schema_valid
+            and task_numeric_fields_valid
+            and social_numeric_fields_valid
             and required_social_fields_present
             and reference_path_ready
         ),
         "metrics_csv_present": metrics_path.exists(),
+        "metrics_csv_row_count": len(metrics_rows),
+        "metrics_csv_parseable": metrics_csv_parseable,
+        "metrics_csv_parse_error": metrics_csv_parse_error,
+        "metrics_csv_required_columns": sorted(required_metrics_columns),
         "vln_task_metrics_present": strict_task_present,
         "social_metrics_present": social_path.exists(),
+        "vln_task_schema_valid": vln_task_schema_valid,
+        "social_metrics_schema_valid": social_metrics_schema_valid,
+        "task_numeric_fields_valid": task_numeric_fields_valid,
+        "social_numeric_fields_valid": social_numeric_fields_valid,
+        "outcome_fields_excluded_from_artifact_pass": [
+            "strict_task_success",
+            "strict_social_success",
+            "episode_result",
+            "robot_moved",
+        ],
         "social_success": strict_social_success if social_present else None,
         "strict_social_success": social_metrics.get('strict_social_success') if social_present else None,
         "strict_task_success": strict_task_success if strict_task_present else None,
@@ -446,7 +532,10 @@ def _diagnostic_warnings(checks: dict[str, Any], manifest: dict[str, Any], socia
             path_length_m = float(social_metrics.get('path_length_m') or 0.0)
         except Exception:
             path_length_m = 0.0
-        if str(params.get('local_planner', '')).lower() == 'dual_vln' and path_length_m < 0.1:
+        if (
+            params.get('execution_mode') == 'nav2_follow_path'
+            or str(params.get('local_planner', '')).lower() == 'dual_vln'
+        ) and path_length_m < 0.1:
             warnings.append(f'robot appears stationary: path_length_m={path_length_m:.3f}')
         legacy_social_success = social_metrics.get('legacy_social_success', social_metrics.get('social_success'))
         if legacy_social_success and not social_metrics.get('strict_social_success'):
@@ -482,7 +571,41 @@ def _diagnostic_warnings(checks: dict[str, Any], manifest: dict[str, Any], socia
     return warnings
 
 
-def generate_artifact_validation(run_dir: str | os.PathLike[str]) -> dict[str, Any]:
+def _incomplete_reasons(checks: dict[str, Any], run_path: Path) -> list[str]:
+    """Engineering-incomplete markers that do not flip the artifact verdict."""
+    reasons: list[str] = []
+    videos = checks.get('videos', {}).get('videos', {})
+    ego = int(videos.get('ego_observation', {}).get('frames', 0) or 0)
+    top = int(videos.get('map_top_down_follow', {}).get('frames', 0) or 0)
+    if ego > 0 and top < ego * 0.5:
+        reasons.append(f'map_top_down_sparse:{top}/{ego}')
+    bridge = run_path / 'HUMAN_PEOPLE_BRIDGE.json'
+    if not bridge.is_file():
+        reasons.append('people_bridge_missing')
+    else:
+        try:
+            payload = json.loads(bridge.read_text(encoding='utf-8'))
+            count = len(payload.get('people') or []) if isinstance(payload, dict) else 0
+        except (OSError, ValueError):
+            count = 0
+        if count <= 0:
+            reasons.append('people_bridge_empty')
+    controller = run_path / 'CONTROLLER_PEOPLE.json'
+    if controller.is_file():
+        try:
+            payload = json.loads(controller.read_text(encoding='utf-8'))
+            people = payload.get('people') if isinstance(payload, dict) else None
+        except (OSError, ValueError):
+            people = None
+        if people is None or int(people) <= 0:
+            reasons.append('controller_people_zero')
+    return reasons
+
+
+def generate_artifact_validation(
+    run_dir: str | os.PathLike[str],
+    output: str | os.PathLike[str] | None = None,
+) -> dict[str, Any]:
     run_path = Path(run_dir)
     manifest = _read_yaml(run_path / 'run_manifest.yaml') or {}
     social_metrics = _read_json(run_path / 'social_metrics.json')
@@ -498,7 +621,14 @@ def generate_artifact_validation(run_dir: str | os.PathLike[str]) -> dict[str, A
         "environment": _check_environment(manifest),
         "humans": _check_humans(run_path, social_metrics, expected_human_count),
         "model_control": _check_model_control(run_path, manifest),
-        "videos": _check_videos(run_path, video_index),
+        "videos": _check_videos(
+            run_path,
+            video_index,
+            require_overlay=(
+                params.get('execution_mode') != 'nav2_follow_path'
+                or bool(params.get('eval_video_debug_overlay_topic'))
+            ),
+        ),
         "metrics": _check_metrics(run_path, social_metrics, expected_human_count),
         "dynamic_scene": _check_dynamic_scene(social_metrics, expected_human_count),
     }
@@ -507,27 +637,37 @@ def generate_artifact_validation(run_dir: str | os.PathLike[str]) -> dict[str, A
     if not frame_analysis.get('present'):
         warnings.append(frame_analysis.get('warning'))
     warnings.extend(_diagnostic_warnings(checks, manifest, social_metrics))
+    incomplete_reasons = _incomplete_reasons(checks, run_path)
 
     failed = [name for name, result in checks.items() if not result.get('pass')]
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "semantics": "artifact_evidence_validity_separate_from_task_outcome",
+        "parser": {
+            "implementation": "arena_bringup.social_nav_validation",
+            "git_commit": os.environ.get('ARENA_POSTPROCESS_SOURCE_COMMIT'),
+        },
         "run_dir": str(run_path),
         "overall_pass": not failed,
         "social_nav_ready": not failed,
         "failed_checks": failed,
         "warnings": [warning for warning in warnings if warning],
+        "incomplete": bool(incomplete_reasons),
+        "incomplete_reasons": incomplete_reasons,
         "checks": checks,
         "frame_analysis": frame_analysis,
     }
-    (run_path / 'artifact_validation.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
+    output_path = Path(output) if output else run_path / 'artifact_validation.json'
+    output_path.write_text(json.dumps(report, indent=2), encoding='utf-8')
     return report
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description='Validate Arena social-navigation eval artifacts.')
     parser.add_argument('--dir', required=True, help='Eval run directory')
+    parser.add_argument('--output', default='', help='Versioned output path; defaults to artifact_validation.json')
     args = parser.parse_args()
-    report = generate_artifact_validation(args.dir)
+    report = generate_artifact_validation(args.dir, args.output or None)
     return 0 if report.get('overall_pass') else 1
 
 

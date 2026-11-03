@@ -1,0 +1,19 @@
+{
+  "schema": "arena.hierarchical_modulation",
+  "schema_version": 1,
+  "update_semantics": "replace_all",
+  "update_id": "fixture-valid-001",
+  "control_path": "lisn_style_social_mpc",
+  "generated_at_ns": 1000000000,
+  "valid_until_ns": 2000000000,
+  "source_observation": {"id": "rgb-42", "frame_id": "Ai2_Bot2/head_camera", "stamp_ns": 900000000},
+  "target_frame": "map",
+  "goal": {"kind": "map_pose", "frame_id": "map", "stamp_ns": 900000000, "value": {"x": 1.0, "y": 2.0, "yaw": 0.0}},
+  "semantic_entities": [
+    {"class_name": "child", "instance_id": "mask-7", "frame_id": "map", "stamp_ns": 900000000, "confidence": 0.95, "geometry_ref": "fixture://mask-7/points", "cost_value": 230, "inflation_radius_m": 1.5, "decay_rate": 3.0}
+  ],
+  "controller_mode": "cautious",
+  "controller_parameters": {"max_linear_velocity_mps": 0.35, "max_angular_velocity_rps": 1.4, "goal_weight": 1.0, "obstacle_weight": 15.0, "people_weight": 8.0},
+  "provenance": {"model_version": "dummy-v1", "prompt_version": "lisn-port-prompt-v1", "tool_version": "lisn-tools-v1", "reasoning_latency_ms": 250.0},
+  "reason": "Deterministic offline golden fixture"
+}

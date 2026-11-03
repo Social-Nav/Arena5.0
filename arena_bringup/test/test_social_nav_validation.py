@@ -9,6 +9,7 @@ from arena_bringup.social_nav_validation import (
     _check_videos,
     _diagnostic_warnings,
     _trace_events,
+    generate_artifact_validation,
 )
 
 
@@ -17,6 +18,62 @@ def _write_rows(path, fieldnames, rows):
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _write_metric_bundle(tmp_path, *, task_success=True, social_success=True):
+    _write_rows(
+        tmp_path / "metrics.csv",
+        ["episode", "result", "time", "path_length"],
+        [{
+            "episode": 0,
+            "result": "GOAL_REACHED" if task_success else "MODEL_STOP",
+            "time": 4.0,
+            "path_length": 1.0,
+        }],
+    )
+    task = {
+        "schema_version": 3,
+        "strict_task_success": task_success,
+        "strict_task_failure_reasons": [] if task_success else ["goal_not_reached"],
+        "goal": {"navigation_error_m": 0.2 if task_success else 2.0},
+        "vln": {
+            "spl": 1.0 if task_success else 0.0,
+            "ndtw": 1.0 if task_success else 0.2,
+            "sdtw": 1.0 if task_success else 0.0,
+            "trajectory_length_m": 1.0,
+            "reference_path": {"available": True},
+        },
+        "episode_timing": {"duration_sec": 4.0},
+    }
+    (tmp_path / "vln_task_metrics.json").write_text(
+        json.dumps(task), encoding="utf-8"
+    )
+    social = {
+        "schema_version": 2,
+        "humans_present": True,
+        "social_success": social_success,
+        "strict_social_success": social_success,
+        "strict_social_failure_reasons": [] if social_success else ["footprint_near_miss"],
+        "path_length_m": 1.0,
+        "max_humans_observed": 1,
+        "moving_human_count": 1,
+        "human_motion_time_sec": 4.0,
+        "robot_motion_time_sec": 4.0,
+        "base_metrics": {"first": {"result": "GOAL_REACHED" if task_success else "MODEL_STOP"}},
+        "min_human_distance_m": 2.0,
+        "min_footprint_clearance_m": 1.45,
+        "personal_space_violation_time_sec": 0.0,
+        "footprint_personal_space_violation_time_sec": 0.0,
+        "near_miss_count": 0,
+        "human_collision_count": 0,
+        "footprint_near_miss_count": 0,
+        "footprint_human_collision_count": 0,
+        "crowd_freezing_time_sec": 0.0,
+    }
+    (tmp_path / "social_metrics.json").write_text(
+        json.dumps(social), encoding="utf-8"
+    )
+    return social
 
 
 def test_trace_events_accepts_official_client_event_field(tmp_path):
@@ -232,29 +289,8 @@ def test_dynamic_scene_validity_does_not_require_policy_to_enter_human_interacti
     assert result["human_robot_interaction_time_sec"] == 0.0
 
 
-def test_metrics_check_requires_strict_task_and_social_success(tmp_path):
-    _write_rows(tmp_path / "metrics.csv", ["result"], [{"result": "GOAL_REACHED"}])
-    (tmp_path / "vln_task_metrics.json").write_text(
-        json.dumps({"strict_task_success": True, "strict_task_failure_reasons": []}),
-        encoding="utf-8",
-    )
-    social_metrics = {
-        "humans_present": True,
-        "social_success": True,
-        "strict_social_success": True,
-        "strict_social_failure_reasons": [],
-        "path_length_m": 1.0,
-        "base_metrics": {"first": {"result": "GOAL_REACHED"}},
-        "min_human_distance_m": 2.0,
-        "min_footprint_clearance_m": 1.45,
-        "personal_space_violation_time_sec": 0.0,
-        "footprint_personal_space_violation_time_sec": 0.0,
-        "near_miss_count": 0,
-        "human_collision_count": 0,
-        "footprint_near_miss_count": 0,
-        "footprint_human_collision_count": 0,
-        "crowd_freezing_time_sec": 0.0,
-    }
+def test_metrics_check_accepts_valid_successful_episode(tmp_path):
+    social_metrics = _write_metric_bundle(tmp_path)
 
     result = _check_metrics(tmp_path, social_metrics)
 
@@ -265,88 +301,32 @@ def test_metrics_check_requires_strict_task_and_social_success(tmp_path):
     assert result["strict_social_success"] is True
 
 
-def test_metrics_check_fails_legacy_goal_reached_when_strict_task_failed(tmp_path):
-    _write_rows(tmp_path / "metrics.csv", ["result"], [{"result": "GOAL_REACHED"}])
-    (tmp_path / "vln_task_metrics.json").write_text(
-        json.dumps({"strict_task_success": False, "strict_task_failure_reasons": ["goal_not_reached"]}),
-        encoding="utf-8",
-    )
-    social_metrics = {
-        "humans_present": True,
-        "social_success": True,
-        "strict_social_success": True,
-        "strict_social_failure_reasons": [],
-        "path_length_m": 1.0,
-        "base_metrics": {"first": {"result": "GOAL_REACHED"}},
-        "min_human_distance_m": 2.0,
-        "min_footprint_clearance_m": 1.45,
-        "personal_space_violation_time_sec": 0.0,
-        "footprint_personal_space_violation_time_sec": 0.0,
-        "near_miss_count": 0,
-        "human_collision_count": 0,
-        "footprint_near_miss_count": 0,
-        "footprint_human_collision_count": 0,
-        "crowd_freezing_time_sec": 0.0,
-    }
+def test_metrics_check_accepts_valid_unsuccessful_episode(tmp_path):
+    social_metrics = _write_metric_bundle(tmp_path, task_success=False)
 
     result = _check_metrics(tmp_path, social_metrics)
 
-    assert result["pass"] is False
+    assert result["pass"] is True
     assert result["task_success"] is False
     assert result["social_success"] is True
     assert result["strict_task_success"] is False
     assert result["strict_task_failure_reasons"] == ["goal_not_reached"]
 
 
-def test_metrics_check_reports_strict_social_as_default_social_success(tmp_path):
-    _write_rows(tmp_path / "metrics.csv", ["result"], [{"result": "GOAL_REACHED"}])
-    (tmp_path / "vln_task_metrics.json").write_text(
-        json.dumps({"strict_task_success": True, "strict_task_failure_reasons": []}),
-        encoding="utf-8",
-    )
-    social_metrics = {
-        "humans_present": True,
-        "social_success": False,
-        "strict_social_success": False,
-        "strict_social_failure_reasons": ["footprint_near_miss"],
-        "path_length_m": 1.0,
-        "base_metrics": {"first": {"result": "GOAL_REACHED"}},
-        "min_human_distance_m": 2.0,
-        "min_footprint_clearance_m": 1.45,
-        "personal_space_violation_time_sec": 0.0,
-        "footprint_personal_space_violation_time_sec": 0.0,
-        "near_miss_count": 0,
-        "human_collision_count": 0,
-        "footprint_near_miss_count": 0,
-        "footprint_human_collision_count": 0,
-        "crowd_freezing_time_sec": 0.0,
-    }
+def test_metrics_check_preserves_social_failure_as_outcome(tmp_path):
+    social_metrics = _write_metric_bundle(tmp_path, social_success=False)
 
     result = _check_metrics(tmp_path, social_metrics)
 
-    assert result["pass"] is False
+    assert result["pass"] is True
     assert result["social_success"] is False
     assert result["strict_social_success"] is False
 
 
 def test_metrics_check_rejects_legacy_social_schema_without_footprint_fields(tmp_path):
-    _write_rows(tmp_path / "metrics.csv", ["result"], [{"result": "GOAL_REACHED"}])
-    (tmp_path / "vln_task_metrics.json").write_text(
-        json.dumps({"strict_task_success": True, "strict_task_failure_reasons": []}),
-        encoding="utf-8",
-    )
-    social_metrics = {
-        "humans_present": True,
-        "strict_social_success": True,
-        "social_success": True,
-        "strict_social_failure_reasons": [],
-        "path_length_m": 1.0,
-        "min_human_distance_m": 2.0,
-        "personal_space_violation_time_sec": 0.0,
-        "near_miss_count": 0,
-        "human_collision_count": 0,
-        "crowd_freezing_time_sec": 0.0,
-    }
+    social_metrics = _write_metric_bundle(tmp_path)
+    del social_metrics["min_footprint_clearance_m"]
+    del social_metrics["footprint_human_collision_count"]
 
     result = _check_metrics(tmp_path, social_metrics)
 
@@ -354,6 +334,39 @@ def test_metrics_check_rejects_legacy_social_schema_without_footprint_fields(tmp
     assert result["required_social_fields_present"] is False
     assert "min_footprint_clearance_m" in result["missing_social_fields"]
     assert "footprint_human_collision_count" in result["missing_social_fields"]
+
+
+def test_metrics_check_rejects_missing_or_corrupt_metrics(tmp_path):
+    social_metrics = _write_metric_bundle(tmp_path)
+    (tmp_path / "metrics.csv").unlink()
+    assert _check_metrics(tmp_path, social_metrics)["pass"] is False
+
+    (tmp_path / "metrics.csv").write_text(
+        'episode,result,time,path_length\n0,MODEL_STOP,4.0,1.0\n',
+        encoding='utf-8',
+    )
+    (tmp_path / "vln_task_metrics.json").write_text('{not-json', encoding='utf-8')
+    result = _check_metrics(tmp_path, social_metrics)
+    assert result["pass"] is False
+    assert result["vln_task_schema_valid"] is False
+
+
+def test_versioned_validation_output_does_not_overwrite_original(tmp_path, monkeypatch):
+    monkeypatch.setenv('ARENA_POSTPROCESS_SOURCE_COMMIT', 'parser123')
+    original = tmp_path / 'artifact_validation.json'
+    original.write_text('{"schema_version": 1, "sentinel": true}', encoding='utf-8')
+    (tmp_path / 'run_manifest.yaml').write_text(
+        'parameters:\n  expected_human_count: 0\n', encoding='utf-8'
+    )
+    derived = tmp_path / 'artifact_validation.semantic_v2.json'
+
+    report = generate_artifact_validation(tmp_path, derived)
+
+    assert json.loads(original.read_text())['sentinel'] is True
+    assert derived.is_file()
+    assert report['schema_version'] == 2
+    assert report['semantics'] == 'artifact_evidence_validity_separate_from_task_outcome'
+    assert report['parser']['git_commit'] == 'parser123'
 
 
 def test_diagnostic_warnings_report_unsupported_language_predicates(tmp_path):
