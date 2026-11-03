@@ -82,7 +82,6 @@ services:
     build:
       context: .
       dockerfile: src/Arena/_meta/docker/features/isaac/Dockerfile
-      network: host
       args:
         - HTTP_PROXY=${HTTP_PROXY:-}
         - HTTPS_PROXY=${HTTPS_PROXY:-}
@@ -91,6 +90,7 @@ services:
         - https_proxy=${https_proxy:-}
         - no_proxy=${no_proxy:-}
         - ROS_APT_MIRROR=${ROS_APT_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/ros2/ubuntu}
+    network_mode: host
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
       - "/tmp/.X11-unix:/tmp/.X11-unix:rw"

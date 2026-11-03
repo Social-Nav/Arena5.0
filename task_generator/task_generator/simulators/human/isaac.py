@@ -1,11 +1,8 @@
 import asyncio
-import random
 import typing
 from collections.abc import Sequence
 
-from arena_simulation_setup.tree.assets.Pedestrian import PedestrianIdentifier
-
-from task_generator.shared import DynamicObstacle, ModelWrapper
+from task_generator.shared import DynamicObstacle
 from task_generator.simulators.human.dummy import DummyHumanSimulator
 from task_generator.simulators.human.utils import ObstacleLayer
 from task_generator.simulators.sim import BaseSim
@@ -37,8 +34,6 @@ class IsaacHumanSimulator(DummyHumanSimulator):
                     name=obstacle.name,
                     obstacle=obstacle
                 )
-                model_name = random.choice(['F_Business_02', 'F_Medical_01', 'M_Medical_01', 'biped_demo', 'female_adult_police_01_new', 'female_adult_police_02', 'female_adult_police_03_new', 'male_adult_construction_01_new', 'male_adult_construction_03', 'male_adult_construction_05_new', 'male_adult_police_04', 'original_female_adult_business_02', 'original_female_adult_medical_01', 'original_female_adult_police_01', 'original_female_adult_police_02', 'original_female_adult_police_03', 'original_male_adult_construction_01', 'original_male_adult_construction_02', 'original_male_adult_construction_03', 'original_male_adult_construction_05', 'original_male_adult_medical_01', 'original_male_adult_police_04'])
-                obstacle.model = PedestrianIdentifier.inline(ModelWrapper.Constant(model_name, {}))
                 futures.append(self._simulator.pedestrian_spawn((obstacle,)))
             else:
                 futures.append(self._simulator.pedestrian_move((obstacle,)))

@@ -23,6 +23,11 @@ def generate_launch_description():
         default_value='jackal',
         description='robot model name (used for nav topic namespace)',
     )
+    headless = LaunchArgument(
+        name='headless',
+        default_value='false',
+        description='Run Isaac Sim without its GUI window.',
+    )
     world = LaunchArgument(
         name='world',
         default_value='',
@@ -132,6 +137,10 @@ def generate_launch_description():
         launch.actions.SetEnvironmentVariable(
             name='ARENA_WORLD',
             value=world.substitution,
+        ),
+        launch.actions.SetEnvironmentVariable(
+            name='ARENA_HEADLESS',
+            value=headless.substitution,
         ),
         launch.actions.SetEnvironmentVariable(
             name='ROS_DOMAIN_ID',

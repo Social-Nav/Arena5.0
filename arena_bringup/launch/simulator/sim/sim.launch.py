@@ -75,7 +75,9 @@ def generate_launch_description():
                 # Reaches the logger as --world; picks the dataset dir under
                 # social_gen/traj_data/grscenes/.
                 'world': world.substitution,
-                # 'headless': headless.substitution
+                # Forward the simulator UI mode as a boolean.  The top-level launch
+                # maps headless:=1/2 to True and headless:=0 to False.
+                'headless': headless.substitution,
             }.items(),
         )
     )

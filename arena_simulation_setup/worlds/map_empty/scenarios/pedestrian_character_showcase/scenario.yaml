@@ -1,0 +1,90 @@
+# Arena pedestrian character acceptance scene.
+#
+# The ten characters are placed in two rows and walk a short east-west loop.
+# Each `model` value is a stable key from Arena's curated character registry.
+
+dynamic:
+- name: showcase_female_medical
+  model: female_medical_01
+  pose: [5.0, 15.0, 0.0]
+  velocity: 0.65
+  desired_velocity: 0.65
+  behavior_tree: BTRegularNav.xml
+  waypoints: [[7.0, 15.0, 0.0], [5.0, 15.0, 180.0]]
+
+- name: showcase_male_medical
+  model: male_medical_01
+  pose: [10.0, 15.0, 0.0]
+  velocity: 0.65
+  desired_velocity: 0.65
+  behavior_tree: BTRegularNav.xml
+  waypoints: [[12.0, 15.0, 0.0], [10.0, 15.0, 180.0]]
+
+- name: showcase_female_business
+  model: female_business_01
+  pose: [15.0, 15.0, 0.0]
+  velocity: 0.65
+  desired_velocity: 0.65
+  behavior_tree: BTRegularNav.xml
+  waypoints: [[17.0, 15.0, 0.0], [15.0, 15.0, 180.0]]
+
+- name: showcase_female_casual
+  model: female_casual_01
+  pose: [20.0, 15.0, 0.0]
+  velocity: 0.65
+  desired_velocity: 0.65
+  behavior_tree: BTRegularNav.xml
+  waypoints: [[22.0, 15.0, 0.0], [20.0, 15.0, 180.0]]
+
+- name: showcase_female_senior
+  model: female_senior_01
+  pose: [25.0, 15.0, 0.0]
+  velocity: 0.55
+  desired_velocity: 0.55
+  behavior_tree: BTRegularNav.xml
+  waypoints: [[27.0, 15.0, 0.0], [25.0, 15.0, 180.0]]
+
+- name: showcase_male_casual_01
+  model: male_casual_01
+  pose: [5.0, 9.0, 0.0]
+  velocity: 0.65
+  desired_velocity: 0.65
+  behavior_tree: BTRegularNav.xml
+  waypoints: [[7.0, 9.0, 0.0], [5.0, 9.0, 180.0]]
+
+- name: showcase_male_casual_02
+  model: male_casual_02
+  pose: [10.0, 9.0, 0.0]
+  velocity: 0.65
+  desired_velocity: 0.65
+  behavior_tree: BTRegularNav.xml
+  waypoints: [[12.0, 9.0, 0.0], [10.0, 9.0, 180.0]]
+
+- name: showcase_male_senior
+  model: male_senior_01
+  pose: [15.0, 9.0, 0.0]
+  velocity: 0.55
+  desired_velocity: 0.55
+  behavior_tree: BTRegularNav.xml
+  waypoints: [[17.0, 9.0, 0.0], [15.0, 9.0, 180.0]]
+
+- name: showcase_female_young_adult
+  model: female_young_adult_01
+  pose: [20.0, 9.0, 0.0]
+  velocity: 0.7
+  desired_velocity: 0.7
+  behavior_tree: BTRegularNav.xml
+  waypoints: [[22.0, 9.0, 0.0], [20.0, 9.0, 180.0]]
+
+- name: showcase_male_young_adult
+  model: male_young_adult_01
+  pose: [25.0, 9.0, 0.0]
+  velocity: 0.7
+  desired_velocity: 0.7
+  behavior_tree: BTRegularNav.xml
+  waypoints: [[27.0, 9.0, 0.0], [25.0, 9.0, 180.0]]
+
+robot:
+  name: robot
+  pose: [15.0, 3.0, 90.0]
+  waypoints: [[15.0, 5.0, 90.0]]
