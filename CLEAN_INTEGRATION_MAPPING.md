@@ -290,3 +290,30 @@ branch and its committed behavior remain untouched.
   `jackal/robot_usds/turtlebot4` at their pinned SHAs.
 
 
+
+## Full social_yielding merge and arena_isaac compatibility merge (2026-11-04)
+
+- Parent merge `e9e311d` is a real two-parent merge of
+  `origin/feature/social_yielding` (`766fd9c`) into the clean branch; it is
+  not a squash or cherry-pick. `git merge-base --is-ancestor 766fd9c HEAD`
+  passes.
+- The first submodule attempt (`b45da4f`) only re-added the harness on top of
+  upstream `cbf1cf9` and dropped clean features. It is retained as history but
+  is NOT the final pin.
+- Compatibility merge `fbc6565` merges clean `80457d2` with upstream
+  `cbf1cf9`. It keeps the clean camera dynamic TF/backend/runtime registry,
+  rendered-state backend, animation clock/manual tick, pedestrian targeting,
+  odom ownership, USD scene loader, articulation writers, and their tests.
+  Conflicts were resolved file by file; the upstream differential-drive graph
+  wiring was adopted, and upstream appearance pools/waypoints/selector remain
+  in the merged tree.
+- `arena_robots` pin `370cc53` is upstream `a4bb1d1` plus the already-verified
+  Task34 0.8 m/s config.
+- The eval500 `worlds/*/scenarios/eval_*` set is byte-identical to the
+  pre-merge tree (500 files). Upstream changes landed only in `backup/` and
+  the new `map_empty` showcase.
+- Four-category engineering smoke was re-run on `fbc6565`; the `b45da4f`
+  smoke is retained as an earlier run but is not inherited as a pass for the
+  final source.
+- `arena_robots/deps/robot_usds` deeper humanoid submodules use SSH URLs and
+  are not fetchable without credentials; they are outside this scope.
