@@ -1,0 +1,5 @@
+<library path="arena_semantic_costmap_plugin_core">
+  <class name="arena_semantic_costmap_plugin::SemanticLayer" type="arena_semantic_costmap_plugin::SemanticLayer" base_class_type="nav2_costmap_2d::Layer">
+    <description>LISN-only graded semantic cost grid layer; consumes nav_msgs/OccupancyGrid and writes costs into the SocialMPC costmap.</description>
+  </class>
+</library>

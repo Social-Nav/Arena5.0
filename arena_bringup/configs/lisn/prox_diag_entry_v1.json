@@ -1,0 +1,93 @@
+{
+  "schema": "arena.prox_diag_entry.v1",
+  "version": "prox-diag-v1-20261103",
+  "pinned_prox": "2ba586262efa6f86de3743acc69859ff3573e805",
+  "namespace": "/task_generator_node/Ai2_Bot2",
+  "native_topic_audit": {
+    "prox_mpc_local_plan": {
+      "resolved_topic": "/task_generator_node/Ai2_Bot2/prox_mpc_local_plan",
+      "type": "nav_msgs/msg/Path",
+      "qos": "reliable depth 1",
+      "publisher": "ProxMpcController::traj_pub_",
+      "source_lines": "prox_mpc_controller.cpp:606-609",
+      "publish_condition": "every control cycle"
+    },
+    "prox_mpc_predicted_obstacles": {
+      "resolved_topic": "/task_generator_node/Ai2_Bot2/prox_mpc_predicted_obstacles",
+      "type": "visualization_msgs/msg/MarkerArray",
+      "qos": "reliable depth 1",
+      "publisher": "ProxMpcController::marker_pub_",
+      "source_lines": "prox_mpc_controller.cpp:614-619,2341",
+      "publish_condition": "only when predict_obstacles=true and get_subscription_count()>0",
+      "record_requirement": "subscriber must be up before controller activation"
+    },
+    "FollowPath_diagnostics": {
+      "resolved_topic": "/task_generator_node/Ai2_Bot2/FollowPath/diagnostics",
+      "type": "prox_mpc_msgs/msg/SolverDiagnostics",
+      "qos": "reliable depth 10",
+      "publisher": "ProxMpcController::diag_pub_",
+      "source_lines": "prox_mpc_controller.cpp:621-626",
+      "publish_condition": "only when publish_diagnostics=true"
+    },
+    "laser_scan": {
+      "resolved_topic": "/task_generator_node/Ai2_Bot2/laser_scan",
+      "type": "sensor_msgs/msg/LaserScan",
+      "qos": "SensorDataQoS best-effort"
+    },
+    "local_costmap": {
+      "resolved_topic": "/task_generator_node/Ai2_Bot2/local_costmap/costmap",
+      "type": "nav_msgs/msg/OccupancyGrid",
+      "qos": "reliable depth 1 / transient_local"
+    },
+    "local_costmap_raw": {
+      "resolved_topic": "/task_generator_node/Ai2_Bot2/local_costmap/costmap_raw",
+      "type": "nav2_msgs/msg/Costmap"
+    },
+    "tracked_obstacles": {
+      "resolved_topic": "/task_generator_node/Ai2_Bot2/tracked_obstacles",
+      "type": "prox_mpc_msgs/msg/ObstacleArray",
+      "qos": "reliable depth 5"
+    },
+    "grounded_goal": {
+      "resolved_topic": "/task_generator_node/Ai2_Bot2/lisn_slow_loop/grounded_goal",
+      "type": "geometry_msgs/msg/PoseStamped",
+      "frame_id": "map"
+    },
+    "published_footprint": {
+      "resolved_topic": "/task_generator_node/Ai2_Bot2/local_costmap/published_footprint",
+      "type": "geometry_msgs/msg/PolygonStamped"
+    },
+    "cmd_vel": {
+      "resolved_topic": "/task_generator_node/Ai2_Bot2/cmd_vel",
+      "type": "geometry_msgs/msg/Twist"
+    },
+    "odom": {
+      "resolved_topic": "/task_generator_node/Ai2_Bot2/odom",
+      "type": "nav_msgs/msg/Odometry"
+    },
+    "collision_monitor_state": {
+      "resolved_topic": "/task_generator_node/Ai2_Bot2/collision_monitor_state",
+      "type": "nav2_msgs/msg/CollisionMonitorState"
+    }
+  },
+  "record": {
+    "entry": "arena_bringup/prox_diag_recorder.py",
+    "default_duration_sec": 60.0,
+    "costmap_snapshot_hz": 5.0,
+    "scan_full_ranges": true,
+    "marker_subscribe_before_control": true,
+    "static_dynamic_split": "UNKNOWN",
+    "fallback": "UNKNOWN (controller internal not exposed)",
+    "age_semantics": "source_stamp and controller diagnostics stamp are recorded; callback-arrival age is not used as control-cycle freshness"
+  },
+  "render": {
+    "entry": "arena_bringup/render_prox_diag_video.py",
+    "fixed_frame": "Ai2_Bot2/odom",
+    "rviz_config": "arena_bringup/configs/rviz/prox_diag.rviz",
+    "fps": 5.0,
+    "output": "composite_prox_diag.mp4",
+    "pts_file": "video_frame_pts.json",
+    "xN_semantics": "sim_time_sec / wall_time_sec at the recorded frame",
+    "gt_boundary": "GT global map and HuNav truth are not controller inputs; if shown they are diagnostic-only and labeled"
+  }
+}

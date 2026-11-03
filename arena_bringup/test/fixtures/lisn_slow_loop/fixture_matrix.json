@@ -1,0 +1,23 @@
+{
+  "schema": "arena.lisn_slow_loop_fixture_matrix.v1",
+  "fixtures": [
+    {"name": "accepted", "mutation": "none", "adapter": "success", "timeline": "normal", "expected_decision": "accepted", "expected_reason": "ACCEPTED_ATOMIC_READBACK_MATCH"},
+    {"name": "not_due", "mutation": "none", "adapter": "success", "timeline": "not_due", "expected_decision": "not_due", "expected_reason": "NOT_DUE"},
+    {"name": "missed_tick", "mutation": "none", "adapter": "success", "timeline": "missed", "expected_decision": "missed_tick", "expected_reason": "MISSED_TICK_NO_CATCH_UP"},
+    {"name": "stale_observation", "mutation": "stale_observation", "adapter": "success", "timeline": "normal", "expected_decision": "rejected", "expected_reason": "OBSERVATION_STALE"},
+    {"name": "direct_path_isolated", "mutation": "direct_path", "adapter": "success", "timeline": "normal", "expected_decision": "rejected", "expected_reason": "CONTROL_PATH_ISOLATION_VIOLATION"},
+    {"name": "partial_snapshot", "mutation": "partial_snapshot", "adapter": "success", "timeline": "normal", "expected_decision": "rejected", "expected_reason": "SNAPSHOT_INVALID"},
+    {"name": "source_identity_mismatch", "mutation": "source_mismatch", "adapter": "success", "timeline": "normal", "expected_decision": "rejected", "expected_reason": "SOURCE_OBSERVATION_IDENTITY_MISMATCH"},
+    {"name": "update_id_mismatch", "mutation": "update_id_mismatch", "adapter": "success", "timeline": "normal", "expected_decision": "rejected", "expected_reason": "UPDATE_ID_MISMATCH"},
+    {"name": "proposal_budget", "mutation": "none", "adapter": "success", "timeline": "proposal_late", "expected_decision": "rejected", "expected_reason": "PROPOSAL_BUDGET_EXCEEDED"},
+    {"name": "evidence_budget", "mutation": "none", "adapter": "success", "timeline": "evidence_late", "expected_decision": "rejected", "expected_reason": "EVIDENCE_BUDGET_EXCEEDED"},
+    {"name": "timeline_nonmonotonic", "mutation": "none", "adapter": "success", "timeline": "nonmonotonic", "expected_decision": "rejected", "expected_reason": "TIMELINE_NON_MONOTONIC"},
+    {"name": "apply_rejected_clean", "mutation": "none", "adapter": "reject", "timeline": "normal", "expected_decision": "rejected", "expected_reason": "APPLY_REJECTED_NO_STATE_CHANGE"},
+    {"name": "partial_reject_rollback", "mutation": "none", "adapter": "reject_partial", "timeline": "rollback", "expected_decision": "rolled_back", "expected_reason": "ROLLBACK_SUCCEEDED_PREVIOUS_STATE_RETAINED"},
+    {"name": "readback_mismatch_rollback", "mutation": "none", "adapter": "mismatch", "timeline": "rollback", "expected_decision": "rolled_back", "expected_reason": "READBACK_MISMATCH"},
+    {"name": "readback_budget_rollback", "mutation": "none", "adapter": "success", "timeline": "readback_late", "expected_decision": "rolled_back", "expected_reason": "READBACK_BUDGET_EXCEEDED"},
+    {"name": "adapter_exception_rollback", "mutation": "none", "adapter": "exception_partial", "timeline": "rollback", "expected_decision": "rolled_back", "expected_reason": "ADAPTER_EXCEPTION"},
+    {"name": "rollback_failure_fault", "mutation": "none", "adapter": "rollback_fail", "timeline": "rollback", "expected_decision": "faulted", "expected_reason": "ROLLBACK_FAILED"},
+    {"name": "rollback_budget_fault", "mutation": "none", "adapter": "mismatch", "timeline": "rollback_late", "expected_decision": "faulted", "expected_reason": "ROLLBACK_BUDGET_OR_TIMELINE_INVALID"}
+  ]
+}

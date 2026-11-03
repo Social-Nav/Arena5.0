@@ -1,0 +1,97 @@
+{
+  "schema": "arena.lisn_slow_loop_contract",
+  "schema_version": 1,
+  "runtime_authorized": false,
+  "schedule": {
+    "clock": "time.monotonic_ns",
+    "period_ns": 10000000000,
+    "first_tick_offset_ns": 10000000000,
+    "catch_up": false,
+    "max_observation_age_ns": 5000000000,
+    "one_observation_per_tick": true
+  },
+  "budgets": {
+    "clock": "time.monotonic_ns",
+    "stage_deadline_offsets_ns": {
+      "proposal": 7000000000,
+      "validation": 7250000000,
+      "apply": 7750000000,
+      "readback": 8250000000,
+      "rollback": 9250000000,
+      "evidence": 9500000000,
+      "hard_wall": 10000000000
+    },
+    "minimum_final_reserve_ns": 500000000
+  },
+  "isolation": {
+    "active_control_path": "lisn_style_social_mpc",
+    "active_execution_interface": "nav2_follow_path_social_mpc",
+    "isolated_control_interfaces": [
+      "vln_direct_cmd_vel",
+      "nav2_follow_path_rpp"
+    ],
+    "cross_path_aggregation_allowed": false
+  },
+  "atomic_apply": {
+    "logical_parameter_allowlist": [
+      "max_linear_velocity_mps",
+      "max_angular_velocity_rps",
+      "goal_weight",
+      "obstacle_weight",
+      "people_weight"
+    ],
+    "parameter_bindings": {
+      "max_linear_velocity_mps": {
+        "candidate": "FollowPath.optimizer.max_linear_velocity",
+        "status": "exact_hot_reload_verified",
+        "note": "Verified in src/deps/nav2_social_mpc_controller/src/social_mpc_controller.cpp dynamicParametersCallback: plugin_name_+'.optimizer.max_linear_velocity' is handled and the optimizer is re-initialized."
+      },
+      "max_angular_velocity_rps": {
+        "candidate": "FollowPath.optimizer.max_angular_velocity",
+        "status": "declared_but_runtime_callback_ignores",
+        "note": "No branch in dynamicParametersCallback."
+      },
+      "goal_weight": {
+        "candidates": [
+          "FollowPath.optimizer.weights.distance_weight",
+          "FollowPath.optimizer.weights.goal_align_weight"
+        ],
+        "status": "ambiguous_no_one_to_one_mapping",
+        "note": "Neither candidate is hot-reloaded."
+      },
+      "obstacle_weight": {
+        "candidate": "FollowPath.optimizer.weights.obstacle_weight",
+        "status": "explicitly_excluded_from_runtime_callback",
+        "note": "The controller source intentionally excludes static-obstacle weights."
+      },
+      "people_weight": {
+        "candidates": [
+          "FollowPath.optimizer.weights.social_weight",
+          "FollowPath.optimizer.weights.proxemics_weight",
+          "FollowPath.optimizer.weights.proxemics_d0",
+          "FollowPath.optimizer.weights.proxemics_alpha"
+        ],
+        "status": "ambiguous_no_one_to_one_mapping",
+        "note": "People interaction is controlled by multiple independent terms."
+      }
+    },
+    "set_parameters_atomically_required": true,
+    "exact_readback_required": true,
+    "rollback_on_any_mismatch": true,
+    "fault_on_rollback_failure": true,
+    "runtime_ready": false,
+    "runtime_blockers": [
+      "Engineering profile applies only max_linear_velocity_mps; the other four logical parameters are observed and must not change.",
+      "A real LISN VLM producer endpoint is not available in the current environment.",
+      "No real apply/readback evidence exists yet; runtime_ready must stay false until a real producer and controller readback are recorded under a fresh prefix."
+    ]
+  },
+  "evidence": {
+    "schema": "arena.lisn_slow_loop_evidence",
+    "schema_version": 1,
+    "canonical_json": "RFC8259-sort-keys-no-NaN",
+    "previous_state_hash_required": true,
+    "readback_required": true,
+    "rollback_evidence_required": true
+  }
+}

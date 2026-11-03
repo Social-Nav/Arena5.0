@@ -1,0 +1,81 @@
+{
+  "schema": "arena.lisn_slow_loop_engineering",
+  "schema_version": 1,
+  "engineering_identity": "lisn_gemini_smoke_v1",
+  "not_scientific": true,
+  "runtime_ready": true,
+  "schedule": {
+    "clock": "time.monotonic_ns",
+    "period_ns": 30000000000,
+    "first_tick_offset_ns": 30000000000,
+    "catch_up": false,
+    "max_observation_age_ns": 5000000000,
+    "one_observation_per_tick": true
+  },
+  "budgets": {
+    "clock": "time.monotonic_ns",
+    "stage_deadline_offsets_ns": {
+      "proposal": 27000000000,
+      "validation": 27500000000,
+      "apply": 28000000000,
+      "readback": 28500000000,
+      "rollback": 29500000000,
+      "evidence": 29700000000,
+      "hard_wall": 30000000000
+    },
+    "minimum_final_reserve_ns": 500000000
+  },
+  "isolation": {
+    "active_control_path": "lisn_style_social_mpc",
+    "active_execution_interface": "nav2_follow_path_social_mpc",
+    "isolated_control_interfaces": ["vln_direct_cmd_vel", "nav2_follow_path_rpp"],
+    "cross_path_aggregation_allowed": false
+  },
+  "atomic_apply": {
+    "logical_parameter_allowlist": [
+      "max_linear_velocity_mps",
+      "max_angular_velocity_rps",
+      "goal_weight",
+      "obstacle_weight",
+      "people_weight"
+    ],
+    "parameter_bindings": {
+      "max_linear_velocity_mps": {
+        "candidate": "FollowPath.optimizer.max_linear_velocity",
+        "status": "exact_hot_reload_verified"
+      },
+      "max_angular_velocity_rps": {
+        "candidate": "FollowPath.optimizer.max_angular_velocity",
+        "status": "declared_but_runtime_callback_ignores"
+      },
+      "goal_weight": {
+        "candidates": ["FollowPath.optimizer.weights.distance_weight", "FollowPath.optimizer.weights.goal_align_weight"],
+        "status": "ambiguous_no_one_to_one_mapping"
+      },
+      "obstacle_weight": {
+        "candidate": "FollowPath.optimizer.weights.obstacle_weight",
+        "status": "explicitly_excluded_from_runtime_callback"
+      },
+      "people_weight": {
+        "candidates": ["FollowPath.optimizer.weights.social_weight", "FollowPath.optimizer.weights.proxemics_weight", "FollowPath.optimizer.weights.proxemics_d0", "FollowPath.optimizer.weights.proxemics_alpha"],
+        "status": "ambiguous_no_one_to_one_mapping"
+      }
+    },
+    "applied_parameter_allowlist": ["max_linear_velocity_mps"],
+    "unqualified_parameters_must_not_change": ["max_angular_velocity_rps", "goal_weight", "obstacle_weight", "people_weight"],
+    "set_parameters_atomically_required": true,
+    "exact_readback_required": true,
+    "rollback_on_any_mismatch": true,
+    "fault_on_rollback_failure": true,
+    "runtime_ready": true,
+    "runtime_blockers": []
+  },
+  "evidence": {
+    "schema": "arena.lisn_slow_loop_evidence",
+    "schema_version": 1,
+    "canonical_json": "RFC8259-sort-keys-no-NaN",
+    "previous_state_hash_required": true,
+    "readback_required": true,
+    "rollback_evidence_required": true
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "atomic_apply": {
+    "applied_parameter_allowlist": [
+      "max_linear_velocity_mps"
+    ],
+    "exact_readback_required": true,
+    "fault_on_rollback_failure": true,
+    "logical_parameter_allowlist": [
+      "max_linear_velocity_mps",
+      "max_angular_velocity_rps",
+      "goal_weight",
+      "obstacle_weight",
+      "people_weight"
+    ],
+    "parameter_bindings": {
+      "goal_weight": {
+        "candidates": [
+          "FollowPath.optimizer.weights.distance_weight",
+          "FollowPath.optimizer.weights.goal_align_weight"
+        ],
+        "status": "ambiguous_no_one_to_one_mapping"
+      },
+      "max_angular_velocity_rps": {
+        "candidate": "FollowPath.optimizer.max_angular_velocity",
+        "status": "declared_but_runtime_callback_ignores"
+      },
+      "max_linear_velocity_mps": {
+        "candidate": "FollowPath.optimizer.max_linear_velocity",
+        "status": "exact_hot_reload_verified"
+      },
+      "obstacle_weight": {
+        "candidate": "FollowPath.optimizer.weights.obstacle_weight",
+        "status": "explicitly_excluded_from_runtime_callback"
+      },
+      "people_weight": {
+        "candidates": [
+          "FollowPath.optimizer.weights.social_weight",
+          "FollowPath.optimizer.weights.proxemics_weight",
+          "FollowPath.optimizer.weights.proxemics_d0",
+          "FollowPath.optimizer.weights.proxemics_alpha"
+        ],
+        "status": "ambiguous_no_one_to_one_mapping"
+      }
+    },
+    "rollback_on_any_mismatch": true,
+    "runtime_blockers": [],
+    "runtime_ready": true,
+    "set_parameters_atomically_required": true,
+    "unqualified_parameters_must_not_change": [
+      "max_angular_velocity_rps",
+      "goal_weight",
+      "obstacle_weight",
+      "people_weight"
+    ]
+  },
+  "budgets": {
+    "clock": "time.monotonic_ns",
+    "minimum_final_reserve_ns": 1000000000,
+    "stage_deadline_offsets_ns": {
+      "proposal": 120000000000,
+      "validation": 122000000000,
+      "apply": 124000000000,
+      "readback": 126000000000,
+      "rollback": 128000000000,
+      "evidence": 129000000000,
+      "hard_wall": 130000000000
+    }
+  },
+  "engineering_identity": "lisn_gemini_smoke_v2_130s",
+  "engineering_note": "Measured Gemini 2.5 Pro latency 108.875s (single observation, not P99). HTTP/period deadlines are 120s/130s, but navigation observation freshness remains 5s: a 108s-old RGB proposal is rejected as OBSERVATION_STALE, not applied. A safe hold + fresh-observation validity check or a faster model is required for a real closure.",
+  "evidence": {
+    "canonical_json": "RFC8259-sort-keys-no-NaN",
+    "previous_state_hash_required": true,
+    "readback_required": true,
+    "rollback_evidence_required": true,
+    "schema": "arena.lisn_slow_loop_evidence",
+    "schema_version": 1
+  },
+  "isolation": {
+    "active_control_path": "lisn_style_social_mpc",
+    "active_execution_interface": "nav2_follow_path_social_mpc",
+    "cross_path_aggregation_allowed": false,
+    "isolated_control_interfaces": [
+      "vln_direct_cmd_vel",
+      "nav2_follow_path_rpp"
+    ]
+  },
+  "not_scientific": true,
+  "runtime_ready": true,
+  "schedule": {
+    "catch_up": false,
+    "clock": "time.monotonic_ns",
+    "first_tick_offset_ns": 130000000000,
+    "max_observation_age_ns": 5000000000,
+    "one_observation_per_tick": true,
+    "period_ns": 130000000000
+  },
+  "schema": "arena.lisn_slow_loop_engineering",
+  "schema_version": 1
+}

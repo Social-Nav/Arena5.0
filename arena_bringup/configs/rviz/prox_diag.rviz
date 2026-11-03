@@ -1,0 +1,151 @@
+Panels:
+  - Class: rviz_common/Displays
+    Help Height: 78
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /Local costmap1
+        - /Planner path1
+        - /Prox horizon1
+        - /Prox predicted obstacles1
+      Splitter Ratio: 0.5
+    Tree Height: 760
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Enabled: true
+      Name: Grid
+      Reference Frame: <Fixed Frame>
+      Cell Size: 1
+      Plane Cell Count: 20
+      Color: 160; 160; 164
+      Alpha: 0.3
+    - Class: rviz_default_plugins/Map
+      Enabled: true
+      Name: Local costmap
+      Topic:
+        Value: /task_generator_node/Ai2_Bot2/local_costmap/costmap
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+      Color Scheme: costmap
+      Alpha: 0.7
+    - Class: rviz_default_plugins/Path
+      Enabled: true
+      Name: Planner path
+      Topic:
+        Value: /task_generator_node/Ai2_Bot2/received_global_plan
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+      Color: 25; 120; 255
+      Line Style: Lines
+      Line Width: 0.03
+    - Class: rviz_default_plugins/Path
+      Enabled: true
+      Name: Prox horizon
+      Topic:
+        Value: /task_generator_node/Ai2_Bot2/prox_mpc_local_plan
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+      Color: 30; 200; 30
+      Line Style: Lines
+      Line Width: 0.04
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Prox predicted obstacles
+      Topic:
+        Value: /task_generator_node/Ai2_Bot2/prox_mpc_predicted_obstacles
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+    - Class: rviz_default_plugins/Odometry
+      Enabled: true
+      Name: Odom
+      Topic:
+        Value: /task_generator_node/Ai2_Bot2/odom
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+      Covariance:
+        Orientation:
+          Alpha: 0.3
+          Color: 255; 255; 0
+        Position:
+          Alpha: 0.3
+          Color: 255; 0; 0
+      Keep: 200
+      Shape: Arrow
+    - Class: rviz_default_plugins/Polygon
+      Enabled: true
+      Name: Footprint
+      Topic:
+        Value: /task_generator_node/Ai2_Bot2/local_costmap/published_footprint
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+      Color: 0; 255; 255
+    - Class: rviz_default_plugins/Pose
+      Enabled: true
+      Name: Qwen goal
+      Topic:
+        Value: /task_generator_node/Ai2_Bot2/lisn_slow_loop/grounded_goal
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+      Color: 255; 220; 0
+      Shape: Arrow
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: Ai2_Bot2/odom
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 12
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.06
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.01
+      Pitch: 0.6
+      Target Frame: <Fixed Frame>
+      Value: Orbit (rviz)
+      Yaw: 0
+    Saved: ~
+Window Geometry:
+  Height: 900
+  Width: 1400
+  X: 50
+  Y: 50
