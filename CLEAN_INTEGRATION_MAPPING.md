@@ -259,11 +259,10 @@ branch and its committed behavior remain untouched.
   - `cdbdd0f` adds the per-category smoke harness, aggregate verdict, and the
     authoritative eval500 validator.
   - `6ab861b` resolves the enclosing repo commit at runtime instead of
-    hardcoding an earlier SHA. This is the Main-verified harness commit and
-    the commit pinned by the parent clean branch.
+    hardcoding an earlier SHA. It is the Main-verified harness commit.
   - `80457d2` is a later retry-only fix for transient S3 HEAD failures in the
-    eval500 validator. It is pushed on the branch but intentionally not
-    pinned by the parent; the final 0-missing 1125 JSON records
+    eval500 validator. It is pushed on the branch and is the final commit
+    pinned by the parent clean branch; the final 0-missing 1125 JSON records
     `source_commit=80457d2` for exact provenance.
 - Authoritative eval500 validation (offline, `seed=20261103`):
   500 scenarios / 1125 dynamic entries; category counts 982 pedestrian,
@@ -285,9 +284,9 @@ branch and its committed behavior remain untouched.
   characters and is preserved as technical-failure evidence at
   `outputs/arena_isaac_character_smoke_2116_aborted_longrun/`. It is not a
   PASS.
-- The parent clean branch now pins `arena_isaac=6ab861b` and
-  `arena_robots=e116700`. A fresh recursive clone checked out `arena_isaac`
-  `6ab861b`, `arena_robots` `e116700`, and nested
+- The parent clean branch now pins `arena_isaac=80457d2` and
+  `arena_robots=e116700`. A bounded fresh recursive clone checked out
+  `arena_isaac` `80457d2`, `arena_robots` `e116700`, and nested
   `jackal/robot_usds/turtlebot4` at their pinned SHAs.
 
 
