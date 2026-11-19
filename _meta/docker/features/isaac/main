@@ -57,7 +57,12 @@ launch(){
     for _a in "$@"; do
         _args+=" $(printf '%q' "$_a")"
     done
-    arena_docker_compose exec -T isaac bash -c "source /opt/arena_ws/install/local_setup.bash && python3-arena /opt/arena_ws/build/arena_isaac/arena_isaac/run_isaacsim.py$_args" || return $?
+    local _env=()
+    if [[ -n "${ARENA_DATASET_ROOT:-}" ]]; then
+        _env+=(-e "ARENA_DATASET_ROOT=$ARENA_DATASET_ROOT")
+    fi
+    arena_docker_compose exec -T "${_env[@]}" isaac bash -c \
+        "source /opt/arena_ws/install/local_setup.bash && python3-arena /opt/arena_ws/build/arena_isaac/arena_isaac/run_isaacsim.py$_args" || return $?
 }
 
 # === MAIN SCRIPT ===

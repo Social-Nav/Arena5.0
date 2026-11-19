@@ -137,6 +137,13 @@ def generate_launch_description():
         default_value=PythonExpression(['"', train_config.substitution, '" != ""']),
         description='If true, RL env publishes cmd_vel directly; nav2 controller output is silenced. Implied when train_config is provided.'
     )
+    startup_reset = LaunchArgument(
+        name='startup_reset',
+        default_value='true',
+        choices=['true', 'false'],
+        description='Run the initial world-level reset during task_generator setup. '
+                    'Batch collection can set false and let its first scenario reset initialize the task.'
+    )
     save_snapshots = LaunchArgument(
         name='save_snapshots',
         default_value='false',
@@ -269,6 +276,7 @@ def generate_launch_description():
                     **debug.dict,
                     **save_data.dict,
                     **social_yielding.dict,
+                    **startup_reset.dict,
                     'namespace': namespace,
                     'headless': headlessness,
                     'reference': str(reference),

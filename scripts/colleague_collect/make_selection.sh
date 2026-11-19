@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+# Generate a two-column selection manifest for collect_worlds_local.sh.
+#
+# Example:
+#   bash make_selection.sh \
+#     --world-range 10 12 \
+#     --scenario-range 1 40 \
+#     --out selection.txt
+
+set -euo pipefail
+
+OUT_FILE="selection.txt"
+SCENARIO_PREFIX="scenario"
+SCENARIO_PAD=3
+INTERACTION_TYPE=""
+WORLD_LIST=""
+WORLD_RANGE_GIVEN=false
+SCENARIO_LIST=""
+SCENARIO_RANGE_GIVEN=false
+
+usage() {
+    cat <<'EOF'
+Usage:
+  bash make_selection.sh [options]
+
+Options:
+  --worlds LIST          Comma/space-separated world numbers, e.g. 10,12
+  --world-range A B      Generate grscenes_A through grscenes_B
+  --scenarios LIST       Comma/space-separated scenario numbers, e.g. 1,3,5
+  --scenario-range A B   Generate scenario_A through scenario_B
+  --scenario-prefix P    Scenario directory prefix (default: scenario)
+  --interaction-type T   Set prefix from an interaction type, e.g. perpendicular_traffic
+  --scenario-pad N       Zero-pad width (default: 3, e.g. 001)
+  --out FILE             Output manifest (default: selection.txt)
+  -h, --help             Show this help
+
+Examples:
+  # One world and scenarios 1 through 40.
+  bash make_selection.sh --worlds 10 --scenario-range 1 40
+
+  # Multiple worlds and selected scenarios.
+  bash make_selection.sh \
+    --world-range 10 12 \
+    --scenarios 1,3,5,8 \
+    --out selection_manual.txt
+
+  # Perpendicular-traffic batch, producing perpendicular_traffic_001 ... 040.
+  bash make_selection.sh \
+    --worlds 22,24,27 \
+    --scenario-range 1 40 \
+    --interaction-type perpendicular_traffic \
+    --out selection_perpendicular.txt
+EOF
+}
+
+die() {
+    echo "ERROR: $*" >&2
+    exit 2
+}
+
+is_uint() {
+    [[ "$1" =~ ^[0-9]+$ ]]
+}
+
+while (($#)); do
+    case "$1" in
+        --worlds)
+            (($# >= 2)) || die "--worlds requires a value"
+            WORLD_LIST="$2"
+            shift 2
+            ;;
+        --world-range)
+            (($# >= 3)) || die "--world-range requires A B"
+            WORLD_FIRST="$2"
+            WORLD_LAST="$3"
+            WORLD_RANGE_GIVEN=true
+            shift 3
+            ;;
+        --scenarios)
+            (($# >= 2)) || die "--scenarios requires a value"
+            SCENARIO_LIST="$2"
+            shift 2
+            ;;
+        --scenario-range)
+            (($# >= 3)) || die "--scenario-range requires A B"
+            SCENARIO_FIRST="$2"
+            SCENARIO_LAST="$3"
+            SCENARIO_RANGE_GIVEN=true
+            shift 3
+            ;;
+        --scenario-prefix)
+            (($# >= 2)) || die "--scenario-prefix requires a value"
+            SCENARIO_PREFIX="$2"
+            shift 2
+            ;;
+        --interaction-type)
+            (($# >= 2)) || die "--interaction-type requires a value"
+            INTERACTION_TYPE="$2"
+            shift 2
+            ;;
+        --scenario-pad)
+            (($# >= 2)) || die "--scenario-pad requires a value"
+            SCENARIO_PAD="$2"
+            shift 2
+            ;;
+        --out)
+            (($# >= 2)) || die "--out requires a value"
+            OUT_FILE="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            die "unknown argument: $1"
+            ;;
+    esac
+done
+
+if [[ -n "$INTERACTION_TYPE" ]]; then
+    SCENARIO_PREFIX="$INTERACTION_TYPE"
+fi
+
+is_uint "$SCENARIO_PAD" || die "scenario pad must be an integer"
+
+WORLDS=()
+if [[ "$WORLD_RANGE_GIVEN" == true ]]; then
+    is_uint "$WORLD_FIRST" && is_uint "$WORLD_LAST" || die "world range must be integers"
+    ((WORLD_FIRST >= 1 && WORLD_FIRST <= WORLD_LAST)) || \
+        die "world range must satisfy 1 <= A <= B"
+    for ((i = WORLD_FIRST; i <= WORLD_LAST; ++i)); do
+        WORLDS+=("$i")
+    done
+fi
+if [[ -n "$WORLD_LIST" ]]; then
+    IFS=', ' read -r -a extra <<<"$WORLD_LIST"
+    for value in "${extra[@]}"; do
+        [[ -n "$value" ]] || continue
+        is_uint "$value" || die "invalid world number: $value"
+        WORLDS+=("$value")
+    done
+fi
+((${#WORLDS[@]} > 0)) || die "provide --worlds or --world-range"
+
+SCENARIOS=()
+if [[ "$SCENARIO_RANGE_GIVEN" == true ]]; then
+    is_uint "$SCENARIO_FIRST" && is_uint "$SCENARIO_LAST" || \
+        die "scenario range must be integers"
+    ((SCENARIO_FIRST >= 1 && SCENARIO_FIRST <= SCENARIO_LAST)) || \
+        die "scenario range must satisfy 1 <= A <= B"
+    for ((i = SCENARIO_FIRST; i <= SCENARIO_LAST; ++i)); do
+        SCENARIOS+=("$i")
+    done
+fi
+if [[ -n "$SCENARIO_LIST" ]]; then
+    IFS=', ' read -r -a extra <<<"$SCENARIO_LIST"
+    for value in "${extra[@]}"; do
+        [[ -n "$value" ]] || continue
+        is_uint "$value" || die "invalid scenario number: $value"
+        SCENARIOS+=("$value")
+    done
+fi
+((${#SCENARIOS[@]} > 0)) || die "provide --scenarios or --scenario-range"
+
+tmp="$(mktemp "${OUT_FILE}.XXXXXX")"
+printf '# Generated by make_selection.sh\n' >"$tmp"
+
+for world in "${WORLDS[@]}"; do
+    for scenario in "${SCENARIOS[@]}"; do
+        printf 'grscenes_%s %s_%0*d\n' \
+            "$world" "$SCENARIO_PREFIX" "$SCENARIO_PAD" "$scenario" >>"$tmp"
+    done
+done
+
+mv "$tmp" "$OUT_FILE"
+echo "Wrote $(wc -l < "$OUT_FILE") lines (including header) to $OUT_FILE"

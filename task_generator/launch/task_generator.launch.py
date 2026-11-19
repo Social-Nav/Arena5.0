@@ -76,6 +76,11 @@ def generate_launch_description():
         name="train_mode",
         default_value="false",
     )
+    startup_reset = LaunchArgument(
+        name="startup_reset",
+        default_value="true",
+        choices=["true", "false"],
+    )
     social_yielding = LaunchArgument(
         name="social_yielding",
         # TRI-STATE string, not a bool: "auto" = not specified (defer to the scenario file),
@@ -158,6 +163,7 @@ def generate_launch_description():
                 **prefix.str_param,
                 **debug.param(bool),
                 **train_mode.param(bool),
+                **startup_reset.param(bool),
                 # str, not bool: carries the tri-state ("auto"/"true"/"false") through to
                 # tasks/robots/scenario.py, which resolves the precedence.
                 **social_yielding.str_param,

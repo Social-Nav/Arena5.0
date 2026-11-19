@@ -63,6 +63,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
 
         self._auto_reset = self.rosparam[bool].get('auto_reset', False)
         self._train_mode = self.rosparam[bool].get('train_mode', False)
+        self._startup_reset = self.rosparam[bool].get('startup_reset', True)
 
         self._reset_lock: asyncio.Lock = asyncio.Lock()
         self._start_time = self.time
@@ -107,7 +108,11 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         )
 
         await self._world_manager.sync()
-        await self.reset_task(reason='startup (first_map, during setup)', first_map=True)
+        if self._startup_reset:
+            await self.reset_task(reason='startup (first_map, during setup)', first_map=True)
+        else:
+            self._logger.info(
+                "startup reset disabled; the first external reset will initialize the task")
 
         self._check_status_task = asyncio.create_task(self._check_task_status())
 
@@ -181,7 +186,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
         async with self._reset_lock:
             self._start_time = self.sim_time
 
+            self._logger.warn(f"[Reset] {reason}: before_reset_task starting")
             await self._simulator.before_reset_task()
+            self._logger.warn(f"[Reset] {reason}: before_reset_task complete")
 
             # DEBUG, not WARN: these lines were added to diagnose spurious resets and that is
             # settled, so at WARN they only add noise to every episode. Re-enable with
@@ -194,7 +201,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode):
             self._number_of_resets += 1
             self._send_end_message_on_end()
 
+            self._logger.warn(f"[Reset] {reason}: after_reset_task starting")
             await self._simulator.after_reset_task()
+            self._logger.warn(f"[Reset] {reason}: after_reset_task complete")
 
             self.get_logger().warn("=============")
             self.get_logger().warn("Task Reset!")

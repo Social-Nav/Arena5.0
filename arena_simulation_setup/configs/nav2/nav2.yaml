@@ -222,7 +222,8 @@ global_costmap:
       # personal space (its intended use — the plugin's velocity-stretched ellipse only really
       # matters for global planning). Ordered before inflation so it maxes onto static and
       # inflation still runs last. amplitude kept LOW (see below) to avoid no-plan/freeze.
-      plugins: ["static_layer", "social_layer", "inflation_layer"] #"obstacle_layer",
+      plugins: ["static_layer", "social_layer", "inflation_layer"]
+      # plugins: ["obstacle_layer", "inflation_layer"] # LiDAR based navigation
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True

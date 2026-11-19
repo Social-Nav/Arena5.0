@@ -19,10 +19,12 @@ DATA_ROOT="src/social_gen/traj_data/grscenes"
 
 COOLDOWN_SECONDS="${COOLDOWN_SECONDS:-20}"
 READY_TIMEOUT="${READY_TIMEOUT:-600}"
+BATCH_SETTLE_SECONDS="${BATCH_SETTLE_SECONDS:-60}"
 RETRIES="${RETRIES:-2}"
 CONTINUE_ON_FAIL="${CONTINUE_ON_FAIL:-true}"
 ROBOT="${ROBOT:-Ai2_Bot2}"
-SOCIAL_YIELDING="${SOCIAL_YIELDING:-false}"
+KEEP_RAW="${KEEP_RAW:-true}"
+SKIP_PREVIEW_VIDEO="${SKIP_PREVIEW_VIDEO:-false}"
 SCENARIOS=(default default_1 default_2 default_3 default_4)
 
 usage() {
@@ -39,7 +41,9 @@ only; instruction/VLM generation is deliberately not included.
 
 Environment overrides:
   COOLDOWN_SECONDS=20  READY_TIMEOUT=600  RETRIES=2
-  CONTINUE_ON_FAIL=true  ROBOT=Ai2_Bot2  SOCIAL_YIELDING=false
+  CONTINUE_ON_FAIL=true  ROBOT=Ai2_Bot2
+  KEEP_RAW=true          Preserve raw NPY/JSON after verified postprocessing
+  SKIP_PREVIEW_VIDEO=false  Skip RGB preview MP4 generation (requires no ffmpeg)
   COLLECTED_STATE_FILE=/path/to/collected_worlds.txt
   COMPLETED_STATE_FILE=/path/to/completed_worlds.txt
 
@@ -127,7 +131,19 @@ wait_for_isaac_stop() {
     done
 }
 
+capture_isaac_state() {
+    local cid
+    cid="$(arena_docker_compose ps -q isaac 2>/dev/null | head -1 || true)"
+    [[ -n "$cid" ]] || return 0
+    local state_file="$LOG_ROOT/$CURRENT_WORLD/isaac_state.log"
+    mkdir -p "$(dirname "$state_file")"
+    docker inspect "$cid" \
+        --format 'OOMKilled={{.State.OOMKilled}} ExitCode={{.State.ExitCode}} Status={{.State.Status}} RestartCount={{.RestartCount}} StartedAt={{.State.StartedAt}} FinishedAt={{.State.FinishedAt}}' \
+        | tee -a "$state_file"
+}
+
 stop_current_launch() {
+    capture_isaac_state
     if [[ -n "$LAUNCH_PID" ]] && kill -0 -- "-$LAUNCH_PID" 2>/dev/null; then
         log "Stopping arena launch for ${CURRENT_WORLD} (SIGINT to launch process group)..."
         # launch is started through setsid below, so its PID is also the process-group
@@ -163,6 +179,7 @@ stop_current_launch() {
     # arena launch normally stops this service via its EXIT trap.  Keep this as a
     # defensive fallback if its shutdown path was interrupted.
     if isaac_running; then
+        capture_isaac_state
         log "Isaac is still running; requesting compose stop."
         arena_docker_compose stop isaac
     fi
@@ -182,7 +199,7 @@ trap cleanup EXIT INT TERM
 run_logged() {
     local logfile="$1"
     shift
-    "$@" 2>&1 | tee -a "$logfile"
+    PYTHONUNBUFFERED=1 "$@" 2>&1 | tee -a "$logfile"
     return "${PIPESTATUS[0]}"
 }
 
@@ -231,7 +248,7 @@ collect_world() {
             world:="$world" \
             tm_robots:=scenario \
             tm_obstacles:=scenario \
-            social_yielding:="$SOCIAL_YIELDING" \
+            startup_reset:=true \
             save_data:=true \
             headless:=2 >>"$launch_log" 2>&1 &
         LAUNCH_PID=$!
@@ -242,6 +259,7 @@ collect_world() {
             --scenarios "${SCENARIOS[@]}"
             --skip-rviz-check
             --ready-timeout "$READY_TIMEOUT"
+            --settle-s "$BATCH_SETTLE_SECONDS"
             --retries "$RETRIES"
             --failed-scenarios-file "$failed_scenarios_file"
         )
@@ -274,9 +292,34 @@ collect_world() {
     fi
 
     log "${world}: stage-1 postprocessing."
+    local postprocess_args=(
+        --data-path "$DATA_ROOT/$world"
+    )
+    case "${KEEP_RAW,,}" in
+        1|true|yes)
+            postprocess_args+=(--keep-src)
+            ;;
+        0|false|no)
+            ;;
+        *)
+            echo "KEEP_RAW must be true or false, got: $KEEP_RAW" >&2
+            return 2
+            ;;
+    esac
+    case "${SKIP_PREVIEW_VIDEO,,}" in
+        1|true|yes)
+            postprocess_args+=(--skip-video)
+            ;;
+        0|false|no)
+            ;;
+        *)
+            echo "SKIP_PREVIEW_VIDEO must be true or false, got: $SKIP_PREVIEW_VIDEO" >&2
+            return 2
+            ;;
+    esac
     if ! run_logged "$postprocess_log" \
         python3 "$POSTPROCESS_SCRIPT" \
-            --data-path "$DATA_ROOT/$world"; then
+            "${postprocess_args[@]}"; then
         echo "${world}: postprocessing failed; see $world_log_dir" >&2
         return 1
     fi
