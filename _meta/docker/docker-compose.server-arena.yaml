@@ -1,0 +1,59 @@
+# Standalone server configuration, not an override for docker-compose.yaml.
+# No named volumes, published ports, Docker socket, or Isaac service.
+# Initialization is explicit: the image entrypoint can mask build failures.
+services:
+  arena:
+    image: "${ARENA_IMAGE:-arena_human_interaction:dev}"
+    pull_policy: never
+    network_mode: host
+    working_dir: /opt/arena_ws
+    user: "${HOST_UID:-0}:${HOST_GID:-0}"
+    entrypoint: ["/bin/bash"]
+    command: ["-c", "exec sleep infinity"]
+    environment:
+      ARENA_IMAGE: "${ARENA_IMAGE:-arena_human_interaction:dev}"
+      ARENA_PROJECT_NAME: "${ARENA_PROJECT_NAME:-arena-server}"
+      ARENA_ROS_DISTRO: jazzy
+      HOST_UID: "${HOST_UID:-0}"
+      HOST_GID: "${HOST_GID:-0}"
+      HOST_ARENA_WS_DIR: "${HOST_ARENA_WS_DIR:?Set HOST_ARENA_WS_DIR to the absolute server workspace path}"
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-1}"
+      TMPDIR: /tmp/shared
+      UV_LINK_MODE: copy
+    volumes:
+      - type: bind
+        source: "${HOST_ARENA_WS_DIR}/src"
+        target: /opt/arena_ws/src
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${HOST_ARENA_WS_DIR}/build"
+        target: /opt/arena_ws/build
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${HOST_ARENA_WS_DIR}/install"
+        target: /opt/arena_ws/install
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${HOST_ARENA_WS_DIR}/log"
+        target: /opt/arena_ws/log
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${HOST_ARENA_WS_DIR}/src/Arena/.venv"
+        target: /opt/venv
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${HOST_ARENA_WS_DIR}/.env"
+        target: /opt/arena_ws/.env
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${HOST_ARENA_WS_DIR}/.cache/server-shared"
+        target: /tmp/shared
+        bind:
+          create_host_path: false

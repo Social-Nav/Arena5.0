@@ -144,6 +144,14 @@ def generate_launch_description():
         description='Run the initial world-level reset during task_generator setup. '
                     'Batch collection can set false and let its first scenario reset initialize the task.'
     )
+    start_sim = LaunchArgument(
+        name='start_sim',
+        default_value='true',
+        choices=['true', 'false'],
+        description='Start the selected simulator from this launch file. Set false when '
+                    'an external process manages the simulator directly (for example native '
+                    'Isaac process mode).'
+    )
     save_snapshots = LaunchArgument(
         name='save_snapshots',
         default_value='false',
@@ -327,7 +335,12 @@ def generate_launch_description():
         ),
         SetGlobalLogLevelAction(log_level.substitution),
         launch_task_generators,
-        IsolatedGroupAction([launch_simulator]),
+        IsolatedGroupAction(
+            [launch_simulator],
+            condition=launch.conditions.IfCondition(
+                PythonExpression(['"', start_sim.substitution, '" == "true"'])
+            ),
+        ),
         world_generator_node,
         launch.actions.ExecuteProcess(
             cmd=['ros2', 'run', 'arena_training', 'train_agent.py',

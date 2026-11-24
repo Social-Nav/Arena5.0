@@ -19,6 +19,9 @@ ANNOTATE_SCRIPT="$ARENA_DIR/arena_isaac/arena_isaac/arena_isaac/data_logging/pos
 BUILD_INSTRUCTION_MAP_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/build_instruction_map_from_state.py"
 INSTRUCTION_CONFIG="$ARENA_DIR/arena_isaac/arena_isaac/arena_isaac/data_logging/postprocess/social_interaction_instructions.yaml"
 DATA_ROOT="${ARENA_DATASET_ROOT:-src/social_gen/traj_data/grscenes}"
+ISAAC_LAUNCH_MODE="${ISAAC_LAUNCH_MODE:-docker}"
+ISAAC_PYTHON="${ISAAC_PYTHON:-/isaac-sim/python.sh}"
+ISAAC_RUN_SCRIPT="${ISAAC_RUN_SCRIPT:-/opt/arena_ws/build/arena_isaac/arena_isaac/run_isaacsim.py}"
 
 COOLDOWN_SECONDS="${COOLDOWN_SECONDS:-20}"
 READY_TIMEOUT="${READY_TIMEOUT:-1500}"
@@ -67,6 +70,9 @@ Environment overrides:
   KEEP_RAW=false         Delete raw NPY/JSON after verified postprocessing
   SKIP_PREVIEW_VIDEO=true  Skip RGB preview MP4 generation (requires no ffmpeg)
   INSTRUCTION_TYPE=perpendicular_traffic  Assign this fixed instruction after postprocess
+  ISAAC_LAUNCH_MODE=native  Run Isaac as a native process instead of via Docker
+  ISAAC_PYTHON=/isaac-sim/python.sh  Native Isaac Python entrypoint
+  ISAAC_RUN_SCRIPT=/path/run_isaacsim.py  Native Isaac main script
   SCENARIOS_CSV=default  Comma-separated scenarios to collect
   SCENARIO_GLOB=gpt56_*  Discover matching scenario directories per world
   SCENARIO_STATE_ROOT=/path  Per-world, per-scenario resume state directory
@@ -136,10 +142,76 @@ mkdir -p "$(dirname "$COLLECTED_STATE_FILE")"
 touch "$COLLECTED_STATE_FILE" "$COMPLETED_STATE_FILE"
 
 LAUNCH_PID=""
+ISAAC_PID=""
 CURRENT_WORLD=""
 
 log() {
     printf '[%(%F %T)T] %s\n' -1 "$*"
+}
+
+native_isaac_running() {
+    [[ -n "$ISAAC_PID" ]] && kill -0 "$ISAAC_PID" 2>/dev/null
+}
+
+start_native_isaac() {
+    local world="$1"
+    local robot="${2:-$ROBOT}"
+    local headless="${3:-2}"
+    local isaac_log="$LOG_ROOT/$world/isaac.log"
+    mkdir -p "$(dirname "$isaac_log")"
+
+    if [[ ! -x "$ISAAC_PYTHON" ]]; then
+        echo "Native Isaac Python not found or not executable: $ISAAC_PYTHON" >&2
+        return 1
+    fi
+    if [[ ! -f "$ISAAC_RUN_SCRIPT" ]]; then
+        echo "Native Isaac run script not found: $ISAAC_RUN_SCRIPT" >&2
+        return 1
+    fi
+
+    log "${world}: starting native Isaac process."
+    local headless_bool=false
+    if (( headless > 0 )); then
+        headless_bool=true
+    fi
+    setsid env \
+        ARENA_DATASET_ROOT="$DATA_ROOT" \
+        ARENA_ROBOT="$robot" \
+        ARENA_WORLD="$world" \
+        ARENA_HEADLESS="$headless_bool" \
+        ARENA_SAVE_DATA=true \
+        "$ISAAC_PYTHON" "$ISAAC_RUN_SCRIPT" \
+            --save-data true \
+            --robot "$robot" \
+            --world "$world" \
+            --headless "$headless_bool" \
+            >>"$isaac_log" 2>&1 &
+    ISAAC_PID=$!
+}
+
+stop_native_isaac() {
+    if [[ -z "$ISAAC_PID" ]]; then
+        return 0
+    fi
+    if ! kill -0 "$ISAAC_PID" 2>/dev/null; then
+        ISAAC_PID=""
+        return 0
+    fi
+
+    log "Stopping native Isaac process group."
+    kill -INT -- "-$ISAAC_PID" 2>/dev/null || kill -INT "$ISAAC_PID" 2>/dev/null || true
+    local deadline=$((SECONDS + 60))
+    while native_isaac_running && (( SECONDS < deadline )); do
+        sleep 2
+    done
+    if native_isaac_running; then
+        log "Native Isaac did not stop after SIGINT; sending SIGTERM/SIGKILL."
+        kill -TERM -- "-$ISAAC_PID" 2>/dev/null || kill -TERM "$ISAAC_PID" 2>/dev/null || true
+        sleep 5
+        kill -KILL -- "-$ISAAC_PID" 2>/dev/null || kill -KILL "$ISAAC_PID" 2>/dev/null || true
+    fi
+    wait "$ISAAC_PID" 2>/dev/null || true
+    ISAAC_PID=""
 }
 
 isaac_running() {
@@ -170,6 +242,33 @@ capture_isaac_state() {
 }
 
 stop_current_launch() {
+    if [[ "$ISAAC_LAUNCH_MODE" == "native" ]]; then
+        stop_native_isaac
+        if [[ -n "$LAUNCH_PID" ]] && kill -0 -- "-$LAUNCH_PID" 2>/dev/null; then
+            log "Stopping native arena launch for ${CURRENT_WORLD} (SIGINT to launch process group)..."
+            kill -INT -- "-$LAUNCH_PID" 2>/dev/null || true
+            local deadline=$((SECONDS + 180))
+            while kill -0 -- "-$LAUNCH_PID" 2>/dev/null; do
+                if (( SECONDS >= deadline )); then
+                    echo "arena launch process group did not exit within 180 s." >&2
+                    kill -TERM -- "-$LAUNCH_PID" 2>/dev/null || true
+                    local term_deadline=$((SECONDS + 30))
+                    while kill -0 -- "-$LAUNCH_PID" 2>/dev/null && (( SECONDS < term_deadline )); do
+                        sleep 2
+                    done
+                    kill -KILL -- "-$LAUNCH_PID" 2>/dev/null || true
+                    wait "$LAUNCH_PID" 2>/dev/null || true
+                    LAUNCH_PID=""
+                    return 1
+                fi
+                sleep 2
+            done
+            wait "$LAUNCH_PID" || true
+        fi
+        LAUNCH_PID=""
+        return 0
+    fi
+
     capture_isaac_state
     if [[ -n "$LAUNCH_PID" ]] && kill -0 -- "-$LAUNCH_PID" 2>/dev/null; then
         log "Stopping arena launch for ${CURRENT_WORLD} (SIGINT to launch process group)..."
@@ -215,7 +314,12 @@ stop_current_launch() {
 
 cleanup() {
     local status=$?
-    if [[ -n "$LAUNCH_PID" ]] || isaac_running; then
+    if [[ "$ISAAC_LAUNCH_MODE" == "native" ]]; then
+        if [[ -n "$LAUNCH_PID" ]] || native_isaac_running; then
+            log "Cleanup after interruption/failure."
+            stop_current_launch || true
+        fi
+    elif [[ -n "$LAUNCH_PID" ]] || isaac_running; then
         log "Cleanup after interruption/failure."
         stop_current_launch || true
     fi
@@ -286,19 +390,42 @@ collect_world() {
         # A new session is essential: killing a background shell alone does not
         # reliably interrupt its ros2-launch child.  The session/group is stopped
         # together by stop_current_launch().
-        setsid bash -c '
-            source /opt/arena_ws/source
-            arena launch "$@"
-        ' arena-launch \
-            sim:=isaac \
-            robot:="$ROBOT" \
-            world:="$world" \
-            tm_robots:=scenario \
-            tm_obstacles:=scenario \
-            startup_reset:=true \
-            save_data:=true \
-            headless:=2 >>"$launch_log" 2>&1 &
+        if [[ "$ISAAC_LAUNCH_MODE" == "native" ]]; then
+            setsid bash -c '
+                source /opt/arena_ws/source
+                ros2 launch arena_bringup arena.launch.py "$@"
+            ' arena-launch \
+                sim:=isaac \
+                robot:="$ROBOT" \
+                world:="$world" \
+                tm_robots:=scenario \
+                tm_obstacles:=scenario \
+                startup_reset:=true \
+                save_data:=true \
+                start_sim:=false \
+                headless:=2 >>"$launch_log" 2>&1 &
+        else
+            setsid bash -c '
+                source /opt/arena_ws/source
+                arena launch "$@"
+            ' arena-launch \
+                sim:=isaac \
+                robot:="$ROBOT" \
+                world:="$world" \
+                tm_robots:=scenario \
+                tm_obstacles:=scenario \
+                startup_reset:=true \
+                save_data:=true \
+                headless:=2 >>"$launch_log" 2>&1 &
+        fi
         LAUNCH_PID=$!
+
+        if [[ "$ISAAC_LAUNCH_MODE" == "native" ]]; then
+            start_native_isaac "$world" "$ROBOT" 2 || {
+                stop_current_launch
+                return 1
+            }
+        fi
 
         log "${world}: waiting for services/Nav2 through batch collector."
         local episode_base
